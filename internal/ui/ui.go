@@ -10,6 +10,7 @@ import (
 
 	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/config"
+	"github.com/PLNech/fipindicateur/internal/histlog"
 	"github.com/PLNech/fipindicateur/internal/icon"
 	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/mpris"
@@ -40,14 +41,19 @@ type App struct {
 
 	watchCancel context.CancelFunc
 
+	histPath string // resolved once; empty if unresolvable
+
 	// menu items
 	mNow      *systray.MenuItem
+	mVoirWiki *systray.MenuItem
+	mVoirLink *systray.MenuItem
 	mPlay     *systray.MenuItem
 	stationMI map[string]*systray.MenuItem
 	histMI    []*systray.MenuItem
 	mHiFi     *systray.MenuItem
 	mNotif    *systray.MenuItem
 	mAuto     *systray.MenuItem
+	mHistFile *systray.MenuItem
 }
 
 // New returns an App with loaded config.
@@ -99,8 +105,15 @@ func (a *App) OnExit() {
 }
 
 func (a *App) buildMenu() {
-	a.mNow = systray.AddMenuItem("FIP", "Titre en cours — cliquer pour ouvrir")
+	a.mNow = systray.AddMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
 	go a.onClick(a.mNow.ClickedCh, a.openNow)
+
+	voir := systray.AddMenuItem("Voir…", "Liens pour ce titre")
+	a.mVoirWiki = voir.AddSubMenuItem("Wikipédia (artiste)", "Chercher l'artiste sur fr.wikipedia.org")
+	go a.onClick(a.mVoirWiki.ClickedCh, a.openNow)
+	a.mVoirLink = voir.AddSubMenuItem("Écouter ailleurs (lien FIP)", "Lien musique fourni par Radio France")
+	a.mVoirLink.Disable()
+	go a.onClick(a.mVoirLink.ClickedCh, a.openNowLink)
 
 	systray.AddSeparator()
 	a.mPlay = systray.AddMenuItem("⏸ Pause", "Lecture / pause")
@@ -114,7 +127,6 @@ func (a *App) buildMenu() {
 		key := s.Key
 		go a.onClick(it.ClickedCh, func() { a.setStation(key) })
 	}
-	radios.AddSubMenuItem("—", "").Disable()
 	fipItem := radios.AddSubMenuItem("FIP sur radiofrance.fr", fipURL)
 	go a.onClick(fipItem.ClickedCh, func() { open.URL(fipURL) })
 
@@ -137,6 +149,8 @@ func (a *App) buildMenu() {
 	go a.onClick(a.mNotif.ClickedCh, a.toggleNotif)
 	a.mAuto = settings.AddSubMenuItemCheckbox("Lancer au démarrage", "", a.cfg.Autostart)
 	go a.onClick(a.mAuto.ClickedCh, a.toggleAutostart)
+	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
+	go a.onClick(a.mHistFile.ClickedCh, a.toggleHistFile)
 
 	systray.AddSeparator()
 	about := systray.AddMenuItem("À propos", "Ouvrir la page du projet")
@@ -210,6 +224,12 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	a.mNow.SetTitle(label)
 	a.mNow.SetTooltip(label)
 
+	if np.Link != "" {
+		a.mVoirLink.Enable()
+	} else {
+		a.mVoirLink.Disable()
+	}
+
 	if a.mpris != nil {
 		a.mpris.UpdateMetadata(np)
 	}
@@ -218,6 +238,33 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		if a.cfg.Notifications {
 			a.notify(np)
 		}
+		if a.cfg.HistoryFile {
+			a.appendHistFile(np)
+		}
+	}
+}
+
+// appendHistFile writes the track to the local jsonl log. Best-effort: any
+// error is logged once and never affects playback.
+func (a *App) appendHistFile(np metadata.NowPlaying) {
+	if a.histPath == "" {
+		p, err := histlog.DefaultPath()
+		if err != nil {
+			log.Printf("ui: history file path: %v", err)
+			return
+		}
+		a.histPath = p
+	}
+	err := histlog.Append(a.histPath, histlog.Entry{
+		Station: a.current.Key,
+		Artist:  np.Artist,
+		Title:   np.Title,
+		Album:   np.Album,
+		Year:    np.Year,
+		Label:   np.Label,
+	})
+	if err != nil {
+		log.Printf("ui: history file append: %v", err)
 	}
 }
 
@@ -229,7 +276,7 @@ func (a *App) notify(np metadata.NowPlaying) {
 		if np.Year > 0 {
 			extra = fmt.Sprintf("%s (%d)", np.Album, np.Year)
 		}
-		body = fmt.Sprintf("%s — %s", np.Artist, extra)
+		body = np.Artist + " · " + extra
 		if np.Label != "" {
 			body += " · " + np.Label
 		}
@@ -237,7 +284,7 @@ func (a *App) notify(np metadata.NowPlaying) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	iconPath := a.notif.FetchCover(ctx, np.CoverURL)
-	a.notif.Notify(summary, body, iconPath)
+	a.notif.Notify(summary, body, iconPath, a.cfg.NotifTimeoutMs)
 }
 
 // pushHistoryLocked prepends np to the history ring (caller holds a.mu).
@@ -335,6 +382,16 @@ func (a *App) toggleNotif() {
 	a.save()
 }
 
+func (a *App) toggleHistFile() {
+	a.cfg.HistoryFile = !a.cfg.HistoryFile
+	if a.cfg.HistoryFile {
+		a.mHistFile.Check()
+	} else {
+		a.mHistFile.Uncheck()
+	}
+	a.save()
+}
+
 func (a *App) toggleAutostart() {
 	a.cfg.Autostart = !a.cfg.Autostart
 	if a.cfg.Autostart {
@@ -365,15 +422,27 @@ func (a *App) openHistory(i int) {
 	a.openTrack(np)
 }
 
+// openTrack opens the primary link for a track: Wikipedia search for the
+// artist (fr.wp, FIP is French). DuckDuckGo is the fallback when the artist is
+// unknown. The metadata Link (often Apple Music) stays available as the
+// secondary "Voir…" item.
 func (a *App) openTrack(np metadata.NowPlaying) {
 	if np.Empty() {
 		return
 	}
-	if np.Link != "" {
-		open.URL(np.Link)
+	if np.Artist != "" {
+		open.URL(open.WikipediaFr(np.Artist))
 		return
 	}
-	open.URL(open.Search(np.Artist + " " + np.Title))
+	open.URL(open.Search(np.Title))
+}
+
+// openNowLink opens the current track's Radio France music link, if any.
+func (a *App) openNowLink() {
+	a.mu.Lock()
+	link := a.now.Link
+	a.mu.Unlock()
+	open.URL(link)
 }
 
 func (a *App) applyIcon()                 { systray.SetIcon(icon.Active(false)) }
