@@ -2,7 +2,13 @@ GO ?= go
 BIN := fipindicateur
 PKG := ./cmd/fipindicateur
 
-.PHONY: build run test lint fix icons clean
+# User-level install layout (no sudo).
+PREFIX  ?= $(HOME)/.local
+BINDIR  := $(PREFIX)/bin
+APPDIR  := $(PREFIX)/share/applications
+ICONDIR := $(PREFIX)/share/icons/hicolor
+
+.PHONY: build run test lint fix icons clean install uninstall
 
 build: ## Build the binary
 	$(GO) build -o $(BIN) $(PKG)
@@ -26,6 +32,28 @@ fix: ## Auto-format and tidy
 
 icons: ## Regenerate the tray icons
 	$(GO) run internal/icon/gen/main.go
+
+install: ## Build and install for the current user (binary, launcher, icons)
+	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps
+	$(GO) build -o $(BINDIR)/$(BIN) $(PKG)
+	sed "s|@BINDIR@|$(BINDIR)|" packaging/fipindicateur.desktop.in > $(APPDIR)/fipindicateur.desktop
+	install -m 644 internal/icon/icon_app_22.png  $(ICONDIR)/22x22/apps/fipindicateur.png
+	install -m 644 internal/icon/icon_app_44.png  $(ICONDIR)/44x44/apps/fipindicateur.png
+	install -m 644 internal/icon/icon_app_128.png $(ICONDIR)/128x128/apps/fipindicateur.png
+	-update-desktop-database $(APPDIR) 2>/dev/null || true
+	-gtk-update-icon-cache -q $(ICONDIR) 2>/dev/null || true
+	touch $(ICONDIR)
+	@echo "Installed. Launch from GNOME activities (FipIndicateur) or $(BINDIR)/$(BIN)."
+
+uninstall: ## Remove the user-level install (binary, launcher, icons, autostart)
+	rm -f $(BINDIR)/$(BIN)
+	rm -f $(APPDIR)/fipindicateur.desktop
+	rm -f $(ICONDIR)/22x22/apps/fipindicateur.png
+	rm -f $(ICONDIR)/44x44/apps/fipindicateur.png
+	rm -f $(ICONDIR)/128x128/apps/fipindicateur.png
+	rm -f $(HOME)/.config/autostart/fipindicateur.desktop
+	-update-desktop-database $(APPDIR) 2>/dev/null || true
+	touch $(ICONDIR) 2>/dev/null || true
 
 clean:
 	rm -f $(BIN)

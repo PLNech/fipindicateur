@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=FipIndicateur
+GenericName=Radio FIP
+Comment=Les webradios de FIP dans la barre système
+Exec=@BINDIR@/fipindicateur
+Icon=fipindicateur
+Terminal=false
+StartupNotify=false
+Categories=AudioVideo;Audio;Player;
+Keywords=fip;radio;musique;

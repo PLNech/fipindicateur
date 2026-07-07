@@ -50,6 +50,55 @@ func main() {
 			log.Printf("wrote %s", path)
 		}
 	}
+
+	// Launcher badge: light glyph on a dark rounded square, readable on any
+	// theme (the transparent monochrome tray glyphs disappear on matching
+	// backgrounds in the activities grid). Sizes for hicolor 22/44/128.
+	for _, s := range []int{22, 44, 128} {
+		img := renderBadge(s, light, color.NRGBA{0x2B, 0x2B, 0x2B, 0xFF})
+		path := filepath.Join(outDir, "icon_app_"+itoa(s)+".png")
+		if err := save(path, img); err != nil {
+			log.Fatalf("save %s: %v", path, err)
+		}
+		log.Printf("wrote %s", path)
+	}
+}
+
+// renderBadge draws the glyph over a rounded-square background.
+func renderBadge(size int, ink, bg color.NRGBA) *image.NRGBA {
+	img := render(size, ink)
+	f := float64(size)
+	radius := f * 0.22
+	out := image.NewNRGBA(image.Rect(0, 0, size, size))
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			px := float64(x) + 0.5
+			py := float64(y) + 0.5
+			// signed distance to the rounded rectangle (inset 0.5px)
+			hw := f/2 - 0.5
+			dx := math.Abs(px-f/2) - (hw - radius)
+			dy := math.Abs(py-f/2) - (hw - radius)
+			if dx < 0 {
+				dx = 0
+			}
+			if dy < 0 {
+				dy = 0
+			}
+			d := math.Hypot(dx, dy) - radius
+			cov := clamp01(-d + 0.5)
+			if cov <= 0 {
+				continue
+			}
+			// composite glyph over background
+			g := img.NRGBAAt(x, y)
+			ga := float64(g.A) / 255
+			r := float64(g.R)*ga + float64(bg.R)*(1-ga)
+			gg := float64(g.G)*ga + float64(bg.G)*(1-ga)
+			b := float64(g.B)*ga + float64(bg.B)*(1-ga)
+			out.SetNRGBA(x, y, color.NRGBA{uint8(r), uint8(gg), uint8(b), uint8(cov * 255)})
+		}
+	}
+	return out
 }
 
 func dim(c color.NRGBA) color.NRGBA {
