@@ -84,13 +84,13 @@ func TestEnvelopeAttackInstant(t *testing.T) {
 }
 
 func TestEnvelopeDecayBounded(t *testing.T) {
-	h := Heights{7, 7, 7, 7}
+	h := Heights{4, 4, 4, 4}
 	target := Heights{}
 	steps := []Heights{
-		{5, 5, 5, 5},
 		{3, 3, 3, 3},
+		{2, 2, 2, 2},
 		{1, 1, 1, 1},
-		{0, 0, 0, 0}, // 1-2 clamps to target 0
+		{0, 0, 0, 0},
 		{0, 0, 0, 0}, // stays at floor
 	}
 	for i, want := range steps {
@@ -99,12 +99,24 @@ func TestEnvelopeDecayBounded(t *testing.T) {
 			t.Fatalf("decay step %d: got %v want %v", i, h, want)
 		}
 	}
+	// Full-scale decay takes MaxHeight frames at 1 unit/frame.
+	h = Heights{MaxHeight, MaxHeight, MaxHeight, MaxHeight}
+	for i := 0; i < MaxHeight; i++ {
+		h = Envelope(h, target)
+	}
+	if h != (Heights{}) {
+		t.Errorf("full decay should reach zero, got %v", h)
+	}
 }
 
 func TestEnvelopeNeverBelowTarget(t *testing.T) {
 	h := Envelope(Heights{7, 7, 7, 7}, Heights{6, 6, 6, 6})
 	if h != (Heights{6, 6, 6, 6}) {
 		t.Errorf("decay must floor at target, got %v", h)
+	}
+	h = Envelope(Heights{9, 9, 9, 9}, Heights{3, 3, 3, 3})
+	if h != (Heights{8, 8, 8, 8}) {
+		t.Errorf("decay is bounded per frame, got %v", h)
 	}
 }
 

@@ -12,16 +12,16 @@ import (
 
 // The animated tray icon: polls real audio levels from mpv's astats filter
 // and renders a 4-bar VU glyph. CPU discipline, in order of importance:
-//  1. low frame rate (3 fps, one ticker, only while playing);
+//  1. low frame rate (6 fps, one ticker, only while playing);
 //  2. quantized frame cache (icon.BarsIcon renders each state once);
 //  3. skip SetIcon entirely when the quantized state is unchanged
 //     (the dbus round-trip + shell redraw is the real cost, not our pixels).
 const (
-	animFPS      = 3
+	animFPS      = 6
 	animInterval = time.Second / animFPS
-	// ~5s of consecutive astats failures: assume the filter is unavailable in
+	// ~5s of consecutive astats failures while audio flows: assume the filter
 	// this libmpv and auto-disable for the rest of the run.
-	animMaxErrs = 15
+	animMaxErrs = 5 * animFPS
 )
 
 type animator struct {

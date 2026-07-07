@@ -16,7 +16,10 @@ import (
 // The real per-frame cost is SetIcon (dbus + shell redraw), which the caller
 // skips when the state tuple is unchanged.
 
-const barsSize = 22
+// barsSize matches the 44px embedded static icons: at 44px each of the 12
+// quantized heights gets a uniform 3px step (at 22px the choice was 8 chunky
+// levels of 2px or 12 squat levels of 1px, so the canvas grew instead).
+const barsSize = 44
 
 var (
 	barsCacheMu sync.Mutex
@@ -68,17 +71,17 @@ func renderBars(h vu.Heights, dark bool) []byte {
 	img := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
 
 	const (
-		barW   = 3
-		gap    = 2
-		bottom = barsSize - 2
-		unit   = 2 // pixels per height step
-		stub   = 2 // minimum visible bar so silence still shows life
+		barW   = 6
+		gap    = 4
+		bottom = barsSize - 3
+		unit   = 3 // pixels per height step: 11 levels above stub = 33px travel
+		stub   = 3 // minimum visible bar so silence still shows life
 	)
-	// 4*3 + 3*2 = 18 px of bars, centered in 22.
+	// 4*6 + 3*4 = 36 px of bars, centered in 44.
 	x0 := (barsSize - (vu.Bars*barW + (vu.Bars-1)*gap)) / 2
 
 	for i := 0; i < vu.Bars; i++ {
-		barH := stub + int(h[i])*unit // 2..16 px
+		barH := stub + int(h[i])*unit // 3..36 px
 		xs := x0 + i*(barW+gap)
 		for y := bottom - barH; y < bottom; y++ {
 			for x := xs; x < xs+barW; x++ {

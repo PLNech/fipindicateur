@@ -10,9 +10,11 @@ import "math"
 const Bars = 4
 
 // MaxHeight is the top quantized bar height; heights range 0..MaxHeight.
-// Quantizing to 8 discrete levels keeps the number of distinct icon frames
-// tiny, so frames cache well and identical frames are skipped cheaply.
-const MaxHeight = 7
+// 12 discrete levels (0..11): finer than the original 8 for smoother motion
+// at 6 fps, while still few enough that frames cache well and identical
+// frames are skipped cheaply. The 44px canvas gives each level a uniform 3px
+// step (see the icon package).
+const MaxHeight = 11
 
 // Heights is a quantized icon state: one height per bar. It is a comparable
 // array on purpose: it serves directly as the frame-cache key and as the
@@ -70,8 +72,10 @@ func Targets(level float64, frame int) Heights {
 
 // decayPerFrame is how many height units a bar may fall per frame. Attack is
 // instant (a rising target is taken immediately); decay is slower, which is
-// what makes a VU meter feel alive instead of jittery.
-const decayPerFrame = 2
+// what makes a VU meter feel alive instead of jittery. Tuned for 6 fps: the
+// per-frame decay is half the old 3 fps value, so the wall-clock fall speed
+// stays familiar while motion doubles in temporal resolution.
+const decayPerFrame = 1
 
 // Envelope applies VU physics: instant attack, bounded decay.
 func Envelope(prev, target Heights) Heights {
