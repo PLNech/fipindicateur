@@ -42,6 +42,7 @@ type App struct {
 	watchCancel context.CancelFunc
 
 	histPath string // resolved once; empty if unresolvable
+	anim     animator
 
 	// menu items
 	mNow      *systray.MenuItem
@@ -54,6 +55,7 @@ type App struct {
 	mNotif    *systray.MenuItem
 	mAuto     *systray.MenuItem
 	mHistFile *systray.MenuItem
+	mAnim     *systray.MenuItem
 }
 
 // New returns an App with loaded config.
@@ -82,6 +84,7 @@ func (a *App) OnReady() {
 	}
 
 	a.notif = notify.New()
+	a.anim.app = a
 
 	a.buildMenu()
 	a.applyIcon()
@@ -90,6 +93,7 @@ func (a *App) OnReady() {
 
 // OnExit tears everything down.
 func (a *App) OnExit() {
+	a.anim.stop()
 	if a.watchCancel != nil {
 		a.watchCancel()
 	}
@@ -155,6 +159,8 @@ func (a *App) buildMenu() {
 	}
 	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
 	go a.onClick(a.mHistFile.ClickedCh, a.toggleHistFile)
+	a.mAnim = settings.AddSubMenuItemCheckbox("Icône animée", "Barres qui suivent le niveau audio", a.cfg.AnimatedIcon)
+	go a.onClick(a.mAnim.ClickedCh, a.toggleAnim)
 
 	systray.AddSeparator()
 	about := systray.AddMenuItem("À propos", "Ouvrir la page du projet")
@@ -339,10 +345,33 @@ func (a *App) setPlayingUI(playing bool) {
 	} else {
 		a.mPlay.SetTitle("▶ Play")
 	}
-	a.applyIconState(!playing)
+	if playing {
+		// Static icon first (in case animation is off or breaks), then the
+		// animator takes over within one frame if enabled.
+		a.applyIconState(false)
+		a.anim.start()
+	} else {
+		a.anim.stop()
+		a.applyIconState(true)
+	}
 	if a.mpris != nil {
 		a.mpris.SetPlaybackStatus(playing)
 	}
+}
+
+func (a *App) toggleAnim() {
+	a.cfg.AnimatedIcon = !a.cfg.AnimatedIcon
+	if a.cfg.AnimatedIcon {
+		a.mAnim.Check()
+		if a.player.IsPlaying() {
+			a.anim.start()
+		}
+	} else {
+		a.mAnim.Uncheck()
+		a.anim.stop()
+		a.applyIconState(!a.player.IsPlaying())
+	}
+	a.save()
 }
 
 func (a *App) setStation(key string) {

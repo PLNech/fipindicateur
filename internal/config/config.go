@@ -15,6 +15,7 @@ type Config struct {
 	NotifTimeoutMs int    `json:"notif_timeout_ms"` // notification expire hint (GNOME ignores it; dunst/KDE honor it)
 	Autostart      bool   `json:"autostart"`        // launch at login
 	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
+	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
 }
 
 // Default returns the initial config: FIP, midfi, notifications on.
@@ -26,6 +27,7 @@ func Default() Config {
 		NotifTimeoutMs: 10000,
 		Autostart:      false,
 		HistoryFile:    false,
+		AnimatedIcon:   true,
 	}
 }
 
