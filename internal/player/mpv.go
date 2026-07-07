@@ -118,6 +118,42 @@ func (m *MPV) Stop() {
 	m.command([]string{"stop"})
 }
 
+// SetVolume sets the playback volume in percent (clamped to 0..100). Safe to
+// call before the first loadfile: mpv volume is a global property.
+func (m *MPV) SetVolume(pct float64) {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	cn := C.CString("volume")
+	defer C.free(unsafe.Pointer(cn))
+	if err := m.check(C.mpv_set_property_async(m.handle, 1, cn, C.MPV_FORMAT_DOUBLE, unsafe.Pointer(&pct))); err != nil {
+		log.Printf("player: set volume: %v", err)
+	}
+}
+
+// SetMute sets the mute state (deterministic, unlike a toggle).
+func (m *MPV) SetMute(mute bool) {
+	v := "no"
+	if mute {
+		v = "yes"
+	}
+	m.setPropertyString("mute", v)
+}
+
+// setPropertyString sets a string property asynchronously.
+func (m *MPV) setPropertyString(name, value string) {
+	cn := C.CString(name)
+	defer C.free(unsafe.Pointer(cn))
+	cv := C.CString(value)
+	defer C.free(unsafe.Pointer(cv))
+	if err := m.check(C.mpv_set_property_async(m.handle, 1, cn, C.MPV_FORMAT_STRING, unsafe.Pointer(&cv))); err != nil {
+		log.Printf("player: set %s: %v", name, err)
+	}
+}
+
 // IsPlaying reports whether the player is in the playing state.
 func (m *MPV) IsPlaying() bool {
 	m.mu.Lock()
