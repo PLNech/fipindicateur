@@ -6,6 +6,11 @@ import (
 	"path/filepath"
 )
 
+// AutostartSupported reports whether "launch at login" is wired on this OS.
+// Only Linux has an implementation (XDG autostart .desktop); the menu item is
+// hidden elsewhere.
+const AutostartSupported = true
+
 // autostartPath returns ~/.config/autostart/fipindicateur.desktop.
 func autostartPath() (string, error) {
 	base, err := os.UserConfigDir()
