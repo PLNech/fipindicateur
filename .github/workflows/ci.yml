@@ -21,6 +21,11 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt (run 'make fix'):"; echo "$unformatted"; exit 1
           fi
+      - name: no em dashes
+        run: |
+          if grep -rIn --exclude-dir=.git "$(printf '\342\200\224')" .; then
+            echo "em dash (U+2014) found, replace it (house style: middot, colon, parentheses)"; exit 1
+          fi
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...

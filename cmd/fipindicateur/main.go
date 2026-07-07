@@ -1,6 +1,6 @@
 // Command fipindicateur is a tiny system-tray app to listen to FIP webradios.
 //
-// le fipindicateur — unofficial FIP (Radio France) client.
+// le fipindicateur, an unofficial FIP (Radio France) client.
 // Copyright (C) 2026  fipindicateur contributors
 // Licensed under the GNU General Public License v3.0 (see LICENSE).
 package main
