@@ -33,6 +33,12 @@ are kept buildable and planned.
   track and cover in your desktop's media widget.
 - **Desktop notifications** on track change, with cover art, crediting the
   album, year and label when known.
+- **Icône animée**: while playing, the tray glyph becomes a 4-bar VU meter
+  driven by real audio levels (mpv astats filter), with VU physics (instant
+  attack, slow decay). Engineered cheap: 3 fps cap, quantized frame cache,
+  identical frames never redrawn (mesuré: ~0.3% CPU d'un cœur, 5.05% en
+  lecture avec animation contre 4.77% sans, le gros étant le décodage audio
+  mpv lui-même). Toggle in Réglages, on by default.
 - **Historique local (opt-in, off by default)**: append every track change to
   `~/.local/share/fipindicateur/history.jsonl`, one JSON object per line
   (`{v, ts, station, artist, title, album, year, label}`). Greppable, easy to
