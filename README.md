@@ -20,10 +20,14 @@ are kept buildable and planned.
 - **13 FIP webradios**: FIP, Rock, Jazz, Groove, Monde, Nouveautés, Reggae,
   Electro, Hip-Hop, Metal, Sacré français !, Pop, Cultes.
 - **Now playing**: artist and title, live, from Radio France's metadata (with
-  an ICY stream-title fallback). Click the track to look the artist up on
-  **Wikipédia** (fr); the « Voir… » submenu also offers the Radio France music
-  link (often Apple Music) as a secondary option. When the artist is unknown, a
-  DuckDuckGo search is the fallback.
+  an ICY stream-title fallback). Click the track to open the artist's
+  **Wikipédia article**: the app cleans the credit string down to the primary
+  artist (Radio France's curated `highlightedArtists` when present, else the
+  credit cut at the first separator), resolves it via the opensearch API on
+  fr.wikipedia then en.wikipedia (niche artists often live on en only), and
+  falls back to the fr search page, so a click never dead-ends. The « Voir… »
+  submenu also offers the Radio France music link (often Apple Music) as a
+  secondary option. When no artist is known, a DuckDuckGo search steps in.
 - **Play / pause**: for live radio, pause is a full stop and play rejoins the
   live edge (no stale buffer).
 - **Historique**: the last ten tracks you heard, click to reopen.
@@ -32,8 +36,12 @@ are kept buildable and planned.
 - **MPRIS2**: controllable with `playerctl` and desktop media keys; shows
   track and cover in your desktop's media widget. The Volume property is
   read/write, so `playerctl volume 0.5` works and the menu follows.
-- **Volume**: tray submenu with Muet and 10/25/50/75/100 % presets, persisted
-  and applied at startup.
+- **Volume, one knob**: the tray submenu (Muet + 10/25/50/75/100 % presets)
+  drives the app's **PulseAudio stream volume** (mpv `ao-volume`), the same
+  per-app slider pavucontrol and GNOME show. Adjust it there and the menu +
+  MPRIS follow. PulseAudio itself remembers the level across restarts
+  (module-stream-restore); the app never overwrites it at startup, and only
+  an explicit preset click, Muet, or MPRIS write touches the stream.
 - **Desktop notifications** on track change, with cover art, crediting the
   album, year and label when known.
 - **Icône animée**: while playing, the tray glyph becomes a 4-bar VU meter
@@ -58,7 +66,18 @@ streams).
 | Arch | `sudo pacman -S mpv` | `sudo pacman -S mpv` |
 | macOS | planned | `brew install mpv` |
 
-Then:
+Then the recommended path is a user-level desktop install (no sudo):
+
+```sh
+make install     # builds to ~/.local/bin, adds launcher + icons
+make uninstall   # removes everything (binary, launcher, icons, autostart)
+```
+
+After `make install` the app appears in GNOME activities (Super, type
+"fip"). Launching it while it already runs exits the second copy cleanly
+(single-instance guard on the MPRIS D-Bus name).
+
+Or just build and run in place:
 
 ```sh
 go build -o fipindicateur ./cmd/fipindicateur
