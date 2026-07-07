@@ -4,7 +4,14 @@
 // D-Bus spec). The API mirrors the Linux build so callers stay portable.
 package mpris
 
-import "github.com/PLNech/fipindicateur/internal/metadata"
+import (
+	"errors"
+
+	"github.com/PLNech/fipindicateur/internal/metadata"
+)
+
+// ErrAlreadyRunning mirrors the Linux build (never returned off Linux).
+var ErrAlreadyRunning = errors.New("mpris: name already taken (another instance is running)")
 
 // Controller receives playback commands (unused off Linux).
 type Controller interface {

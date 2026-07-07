@@ -32,6 +32,8 @@ import (
 const (
 	propMediaTitle C.uint64_t = 1
 	propCoreIdle   C.uint64_t = 2
+	propAoVolume   C.uint64_t = 3
+	propAoMute     C.uint64_t = 4
 )
 
 // MPV is a libmpv-backed player for a single live stream.
@@ -46,9 +48,23 @@ type MPV struct {
 
 	exit chan struct{}
 
-	// TitleChanged is invoked (best-effort) when mpv's media-title property
-	// changes; used for ICY metadata fallback. Set before Initialize.
+	// Callbacks, all best-effort and invoked from the event goroutine.
+	// Set them before Initialize.
+
+	// TitleChanged fires when mpv's media-title property changes; used for
+	// ICY metadata fallback.
 	TitleChanged func(title string)
+	// VolumeChanged fires when the PulseAudio stream volume (ao-volume)
+	// changes, including external changes from pavucontrol/GNOME.
+	VolumeChanged func(pct float64)
+	// MuteChanged fires when the stream mute state (ao-mute) changes.
+	MuteChanged func(mute bool)
+	// PlaybackRestarted fires when playback (re)starts, i.e. when the audio
+	// output exists again: the moment to READ ao-volume/ao-mute and sync the
+	// UI. Never write a stored volume here: PulseAudio's stream-restore is
+	// the single source of truth for the per-app level, and overwriting it
+	// once stomped a live pavucontrol adjustment during a call.
+	PlaybackRestarted func()
 }
 
 // Initialize creates and configures the libmpv handle.
@@ -93,6 +109,8 @@ func (m *MPV) Initialize() error {
 
 	m.observe("media-title", propMediaTitle, C.MPV_FORMAT_STRING)
 	m.observe("core-idle", propCoreIdle, C.MPV_FORMAT_FLAG)
+	m.observe("ao-volume", propAoVolume, C.MPV_FORMAT_DOUBLE)
+	m.observe("ao-mute", propAoMute, C.MPV_FORMAT_FLAG)
 
 	go m.eventLoop()
 	return nil
@@ -118,40 +136,72 @@ func (m *MPV) Stop() {
 	m.command([]string{"stop"})
 }
 
-// SetVolume sets the playback volume in percent (clamped to 0..100). Safe to
-// call before the first loadfile: mpv volume is a global property.
-func (m *MPV) SetVolume(pct float64) {
+// SetVolume sets the PulseAudio stream volume in percent (ao-volume): the
+// SAME per-app knob pavucontrol and GNOME show, so there is one volume, not
+// two stacked ones. Only call this for EXPLICIT user intent (menu preset,
+// MPRIS write): PulseAudio owns volume persistence. ao-volume only exists
+// while the audio output is open; returns false when not applied.
+func (m *MPV) SetVolume(pct float64) bool {
 	if pct < 0 {
 		pct = 0
 	}
 	if pct > 100 {
 		pct = 100
 	}
-	cn := C.CString("volume")
-	defer C.free(unsafe.Pointer(cn))
-	if err := m.check(C.mpv_set_property_async(m.handle, 1, cn, C.MPV_FORMAT_DOUBLE, unsafe.Pointer(&pct))); err != nil {
-		log.Printf("player: set volume: %v", err)
-	}
+	return m.setPropDouble("ao-volume", pct)
 }
 
-// SetMute sets the mute state (deterministic, unlike a toggle).
+// SetMute sets the stream mute state (ao-mute, the pavucontrol mute), falling
+// back to mpv's internal mute when the AO is not open yet.
 func (m *MPV) SetMute(mute bool) {
-	v := "no"
-	if mute {
-		v = "yes"
+	if m.setPropFlag("ao-mute", mute) {
+		return
 	}
-	m.setPropertyString("mute", v)
+	if !m.setPropFlag("mute", mute) {
+		log.Printf("player: set mute failed")
+	}
 }
 
-// setPropertyString sets a string property asynchronously.
-func (m *MPV) setPropertyString(name, value string) {
+// Volume reads the current PulseAudio stream volume percent (ao-volume);
+// ok=false while the audio output is closed.
+func (m *MPV) Volume() (float64, bool) {
+	cn := C.CString("ao-volume")
+	defer C.free(unsafe.Pointer(cn))
+	var v C.double
+	if C.mpv_get_property(m.handle, cn, C.MPV_FORMAT_DOUBLE, unsafe.Pointer(&v)) < 0 {
+		return 0, false
+	}
+	return float64(v), true
+}
+
+// Mute reads the current stream mute state (ao-mute); ok=false while the
+// audio output is closed.
+func (m *MPV) Mute() (bool, bool) {
+	cn := C.CString("ao-mute")
+	defer C.free(unsafe.Pointer(cn))
+	var v C.int
+	if C.mpv_get_property(m.handle, cn, C.MPV_FORMAT_FLAG, unsafe.Pointer(&v)) < 0 {
+		return false, false
+	}
+	return v != 0, true
+}
+
+// setPropDouble synchronously sets a double property; false if unavailable.
+func (m *MPV) setPropDouble(name string, v float64) bool {
 	cn := C.CString(name)
 	defer C.free(unsafe.Pointer(cn))
-	cv := C.CString(value)
-	defer C.free(unsafe.Pointer(cv))
-	if err := m.check(C.mpv_set_property_async(m.handle, 1, cn, C.MPV_FORMAT_STRING, unsafe.Pointer(&cv))); err != nil {
-		log.Printf("player: set %s: %v", name, err)
+	return C.mpv_set_property(m.handle, cn, C.MPV_FORMAT_DOUBLE, unsafe.Pointer(&v)) >= 0
+}
+
+// setPropFlag synchronously sets a boolean property; false if unavailable.
+func (m *MPV) setPropFlag(name string, v bool) bool {
+	cv := C.int(0)
+	if v {
+		cv = 1
 	}
+	cn := C.CString(name)
+	defer C.free(unsafe.Pointer(cn))
+	return C.mpv_set_property(m.handle, cn, C.MPV_FORMAT_FLAG, unsafe.Pointer(&cv)) >= 0
 }
 
 // IsPlaying reports whether the player is in the playing state.
@@ -316,6 +366,9 @@ func (m *MPV) eventLoop() {
 			log.Println("player: end-file")
 		case C.MPV_EVENT_PLAYBACK_RESTART:
 			log.Println("player: playback-restart")
+			if m.PlaybackRestarted != nil {
+				m.PlaybackRestarted()
+			}
 		case C.MPV_EVENT_PROPERTY_CHANGE:
 			m.onPropertyChange(event)
 		}
@@ -341,6 +394,14 @@ func (m *MPV) onPropertyChange(event *C.mpv_event) {
 			m.mu.Lock()
 			m.coreIdle = idle
 			m.mu.Unlock()
+		}
+	case propAoVolume:
+		if prop.format == C.MPV_FORMAT_DOUBLE && prop.data != nil && m.VolumeChanged != nil {
+			m.VolumeChanged(float64(*(*C.double)(prop.data)))
+		}
+	case propAoMute:
+		if prop.format == C.MPV_FORMAT_FLAG && prop.data != nil && m.MuteChanged != nil {
+			m.MuteChanged(*(*C.int)(prop.data) != 0)
 		}
 	}
 }

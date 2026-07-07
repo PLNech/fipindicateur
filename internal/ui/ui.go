@@ -4,9 +4,11 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"sync"
 
 	"fyne.io/systray"
@@ -19,6 +21,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/player"
 	"github.com/PLNech/fipindicateur/internal/stations"
+	"github.com/PLNech/fipindicateur/internal/wiki"
 )
 
 const (
@@ -44,6 +47,7 @@ type App struct {
 
 	histPath string // resolved once; empty if unresolvable
 	anim     animator
+	wiki     *wiki.Resolver
 
 	// menu items
 	mNow      *systray.MenuItem
@@ -70,6 +74,7 @@ func New() *App {
 	return &App{
 		cfg:       config.Load(),
 		meta:      metadata.NewManager(),
+		wiki:      wiki.NewResolver(),
 		stationMI: map[string]*systray.MenuItem{},
 	}
 }
@@ -79,15 +84,28 @@ func New() *App {
 func (a *App) OnReady() {
 	a.current = stations.ByKey(a.cfg.Station)
 
-	a.player = &player.MPV{TitleChanged: a.meta.PushTitle}
+	a.player = &player.MPV{
+		TitleChanged: a.meta.PushTitle,
+		// ao-volume/ao-mute observers: external pavucontrol/GNOME changes
+		// flow back into the menu and MPRIS.
+		VolumeChanged: a.onExternalVolume,
+		MuteChanged:   a.onExternalMute,
+		// On restart we READ the stream state and sync the UI. PulseAudio
+		// owns volume persistence; we never restore a stored level onto it.
+		PlaybackRestarted: a.onPlaybackRestart,
+	}
 	if err := a.player.Initialize(); err != nil {
 		log.Fatalf("ui: player init: %v", err)
 	}
-	// Apply persisted volume/mute before the first loadfile.
-	a.player.SetVolume(float64(a.cfg.Volume))
-	a.player.SetMute(a.cfg.Mute)
 
 	if ins, err := mpris.Connect(a); err != nil {
+		if errors.Is(err, mpris.ErrAlreadyRunning) {
+			// Single-instance guard: an activities/menu launch while the app
+			// runs must not spawn a second tray icon.
+			log.Printf("another instance is already running, exiting")
+			a.player.Close()
+			os.Exit(0)
+		}
 		log.Printf("ui: mpris unavailable: %v", err)
 	} else {
 		a.mpris = ins
@@ -475,6 +493,9 @@ func (a *App) setVolume(pct int) {
 	if pct != a.cfg.Volume {
 		a.cfg.Volume = pct
 		a.save()
+		// ao-volume applies only while the AO is open; when it is not (e.g.
+		// paused), the persisted value is applied on the next playback
+		// restart. Either way the menu reflects the chosen level now.
 		a.player.SetVolume(float64(pct))
 		if a.mpris != nil {
 			a.mpris.SetVolume(float64(pct) / 100)
@@ -490,17 +511,52 @@ func (a *App) toggleMute() {
 	a.applyVolumeUI()
 }
 
+// onPlaybackRestart READS the PulseAudio stream state and syncs the UI to it.
+// PulseAudio (module-stream-restore) is the single source of truth for the
+// per-app volume: it remembers the level across app restarts, including any
+// live pavucontrol adjustment. We never write a stored volume onto the
+// stream here; an earlier version did and stomped the user's duck during a
+// call. Config only caches the last-known level for pre-playback display.
+func (a *App) onPlaybackRestart() {
+	if v, ok := a.player.Volume(); ok {
+		a.onExternalVolume(v)
+	}
+	if mu, ok := a.player.Mute(); ok {
+		a.onExternalMute(mu)
+	}
+}
+
+// onExternalVolume handles an ao-volume observer event: the PulseAudio stream
+// volume changed, possibly from pavucontrol/GNOME (or as the echo of our own
+// set, which the equal-value guard swallows). Syncs config, menu and MPRIS.
+func (a *App) onExternalVolume(v float64) {
+	pct := clampPct(int(math.Round(v)))
+	if pct == a.cfg.Volume {
+		return
+	}
+	a.cfg.Volume = pct
+	a.save()
+	a.applyVolumeUI()
+	if a.mpris != nil {
+		a.mpris.SetVolume(float64(pct) / 100)
+	}
+}
+
+// onExternalMute handles an ao-mute observer event (pavucontrol mute button).
+func (a *App) onExternalMute(mute bool) {
+	if mute == a.cfg.Mute {
+		return
+	}
+	a.cfg.Mute = mute
+	a.save()
+	a.applyVolumeUI()
+}
+
 // SetVolumeFrac implements mpris.Controller: an external client (playerctl,
 // GNOME) wrote the Volume property. Reflect it in player, config and menu.
 // The equal-value early return breaks any publish/callback echo loop.
 func (a *App) SetVolumeFrac(v float64) {
-	pct := int(math.Round(v * 100))
-	if pct < 0 {
-		pct = 0
-	}
-	if pct > 100 {
-		pct = 100
-	}
+	pct := clampPct(int(math.Round(v * 100)))
 	if pct == a.cfg.Volume {
 		return
 	}
@@ -508,6 +564,16 @@ func (a *App) SetVolumeFrac(v float64) {
 	a.save()
 	a.player.SetVolume(float64(pct))
 	a.applyVolumeUI()
+}
+
+func clampPct(pct int) int {
+	if pct < 0 {
+		return 0
+	}
+	if pct > 100 {
+		return 100
+	}
+	return pct
 }
 
 func (a *App) toggleHistFile() {
@@ -550,19 +616,28 @@ func (a *App) openHistory(i int) {
 	a.openTrack(np)
 }
 
-// openTrack opens the primary link for a track: Wikipedia search for the
-// artist (fr.wp, FIP is French). DuckDuckGo is the fallback when the artist is
-// unknown. The metadata Link (often Apple Music) stays available as the
-// secondary "Voir…" item.
+// openTrack opens the primary link for a track: the artist's Wikipedia
+// article, resolved via opensearch on fr.wp then en.wp, falling back to the
+// fr.wp search page (never a dead end). Resolution uses the cleaned primary
+// artist (highlightedArtists or the credit cut at the first separator) and
+// runs in a goroutine so the menu never blocks on the network. DuckDuckGo is
+// the fallback when no artist is known at all. The metadata Link (often Apple
+// Music) stays available as the secondary "Voir…" item.
 func (a *App) openTrack(np metadata.NowPlaying) {
 	if np.Empty() {
 		return
 	}
-	if np.Artist != "" {
-		open.URL(open.WikipediaFr(np.Artist))
+	artist := np.PrimaryArtist
+	if artist == "" {
+		artist = np.Artist
+	}
+	if artist == "" {
+		open.URL(open.Search(np.Title))
 		return
 	}
-	open.URL(open.Search(np.Title))
+	go func() {
+		open.URL(a.wiki.ArtistURL(context.Background(), artist))
+	}()
 }
 
 // openNowLink opens the current track's Radio France music link, if any.

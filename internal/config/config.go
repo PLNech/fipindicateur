@@ -16,8 +16,12 @@ type Config struct {
 	Autostart      bool   `json:"autostart"`        // launch at login
 	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
 	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
-	Volume         int    `json:"volume"`           // playback volume percent (0..100)
-	Mute           bool   `json:"mute"`             // muted
+	// Volume/Mute cache the last-known PulseAudio stream state for
+	// pre-playback DISPLAY only. PulseAudio (module-stream-restore) is the
+	// single source of truth: these values are never written onto the audio
+	// stream except on an explicit user action (menu preset, Muet, MPRIS).
+	Volume int  `json:"volume"` // last-known stream volume percent (0..100)
+	Mute   bool `json:"mute"`   // last-known stream mute state
 }
 
 // Default returns the initial config: FIP, midfi, notifications on.

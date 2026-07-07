@@ -20,6 +20,13 @@ import (
 
 const wellKnownName = "org.mpris.MediaPlayer2.fipindicateur"
 
+// ErrAlreadyRunning means another instance owns the MPRIS name. The
+// well-known name doubles as the single-instance lock: a second launch (e.g.
+// from GNOME activities) must exit cleanly instead of spawning a second tray
+// icon. D-Bus releases the name automatically if its owner dies, so the lock
+// cannot go stale.
+var ErrAlreadyRunning = errors.New("mpris: name already taken (another instance is running)")
+
 // Controller receives playback commands issued over D-Bus.
 type Controller interface {
 	Play()
@@ -64,12 +71,15 @@ func Connect(ctrl Controller) (*Instance, error) {
 		return nil, err
 	}
 
-	reply, err := conn.RequestName(wellKnownName, dbus.NameFlagReplaceExisting)
+	// No ReplaceExisting: failing to own the name IS the single-instance
+	// signal, not something to override.
+	reply, err := conn.RequestName(wellKnownName, 0)
 	if err != nil {
 		return nil, err
 	}
 	if reply != dbus.RequestNameReplyPrimaryOwner {
-		return nil, errors.New("mpris: name already taken")
+		_ = conn.Close()
+		return nil, ErrAlreadyRunning
 	}
 	return ins, nil
 }
