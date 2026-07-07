@@ -11,6 +11,7 @@ type Controller interface {
 	Play()
 	Pause()
 	Toggle()
+	SetVolumeFrac(v float64)
 }
 
 // Instance is a no-op MPRIS instance.
@@ -24,6 +25,9 @@ func (*Instance) SetPlaybackStatus(bool) {}
 
 // UpdateMetadata is a no-op.
 func (*Instance) UpdateMetadata(metadata.NowPlaying) {}
+
+// SetVolume is a no-op.
+func (*Instance) SetVolume(float64) {}
 
 // Close is a no-op.
 func (*Instance) Close() {}

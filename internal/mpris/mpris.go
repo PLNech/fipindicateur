@@ -25,6 +25,9 @@ type Controller interface {
 	Play()
 	Pause() // full stop for live radio
 	Toggle()
+	// SetVolumeFrac applies an externally requested volume in 0..1 (the MPRIS
+	// Volume unit) and reflects it in the app UI.
+	SetVolumeFrac(v float64)
 }
 
 // Instance owns the D-Bus connection and exported properties.
@@ -88,6 +91,12 @@ func (ins *Instance) UpdateMetadata(np metadata.NowPlaying) {
 	ins.props.SetMust("org.mpris.MediaPlayer2.Player", "Metadata", metadataMap(np))
 }
 
+// SetVolume publishes the current volume (0..1) to MPRIS clients. The app
+// guards against echo loops by ignoring no-op volume applications.
+func (ins *Instance) SetVolume(v float64) {
+	ins.props.SetMust("org.mpris.MediaPlayer2.Player", "Volume", v)
+}
+
 // Close releases the D-Bus connection.
 func (ins *Instance) Close() {
 	if ins.conn != nil {
@@ -145,7 +154,7 @@ func (m *mediaPlayer2) playerProps() map[string]*prop.Prop {
 		"PlaybackStatus": ro("Playing"),
 		"Rate":           roCB(1.0, notImplemented),
 		"Metadata":       ro(map[string]dbus.Variant{}),
-		"Volume":         ro(1.0),
+		"Volume":         roCB(1.0, m.onVolumeChange),
 		"Position":       ro(int64(0)),
 		"MinimumRate":    ro(1.0),
 		"MaximumRate":    ro(1.0),
@@ -175,6 +184,17 @@ func (m *mediaPlayer2) Stop() *dbus.Error {
 
 func (m *mediaPlayer2) PlayPause() *dbus.Error {
 	m.ins.ctrl.Toggle()
+	return nil
+}
+
+// onVolumeChange handles an external write to the Volume property
+// (e.g. playerctl volume 0.5) and forwards it to the app.
+func (m *mediaPlayer2) onVolumeChange(c *prop.Change) *dbus.Error {
+	v, ok := c.Value.(float64)
+	if !ok {
+		return dbus.MakeFailedError(errors.New("volume must be a double"))
+	}
+	m.ins.ctrl.SetVolumeFrac(v)
 	return nil
 }
 
