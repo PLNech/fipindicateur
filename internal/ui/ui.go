@@ -147,8 +147,12 @@ func (a *App) buildMenu() {
 	go a.onClick(a.mHiFi.ClickedCh, a.toggleHiFi)
 	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
 	go a.onClick(a.mNotif.ClickedCh, a.toggleNotif)
-	a.mAuto = settings.AddSubMenuItemCheckbox("Lancer au démarrage", "", a.cfg.Autostart)
-	go a.onClick(a.mAuto.ClickedCh, a.toggleAutostart)
+	// Launch at login is XDG-only (writes ~/.config/autostart/*.desktop); hide
+	// it where config.SetAutostart is a no-op (macOS and other non-Linux).
+	if config.AutostartSupported {
+		a.mAuto = settings.AddSubMenuItemCheckbox("Lancer au démarrage", "", a.cfg.Autostart)
+		go a.onClick(a.mAuto.ClickedCh, a.toggleAutostart)
+	}
 	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
 	go a.onClick(a.mHistFile.ClickedCh, a.toggleHistFile)
 
