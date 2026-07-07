@@ -20,8 +20,10 @@ package player
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"sync"
 	"unsafe"
 )
@@ -75,6 +77,11 @@ func (m *MPV) Initialize() error {
 	m.setOptionString("vid", "no")
 
 	m.setOptionInt("cache-secs", 3)
+
+	// astats filter: exposes per-window audio levels as filter metadata, used
+	// by the animated tray icon. Labeled @astats so the property path is
+	// stable. Negligible DSP cost (it runs on Android radios).
+	m.setOptionString("af", "@astats:lavfi=[astats=metadata=1:reset=6]")
 
 	m.setOptionFlag("terminal", false)
 	m.setOptionFlag("input-terminal", false)
@@ -130,6 +137,48 @@ func (m *MPV) URL() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.url
+}
+
+// RMSLevelDB returns the current overall RMS level in dB (typically -60..0)
+// from the astats filter, or ok=false when unavailable (stopped, buffering,
+// filter missing).
+//
+// It fetches the WHOLE af-metadata/astats map and parses the JSON: asking
+// libmpv for the sub-key path ("af-metadata/astats/lavfi.astats...") segfaults
+// libmpv 2.2 (verified on Ubuntu 24.04). Never use sub-key access here.
+func (m *MPV) RMSLevelDB() (float64, bool) {
+	m.mu.Lock()
+	handle := m.handle
+	running := m.running
+	m.mu.Unlock()
+	if handle == nil || !running {
+		return 0, false
+	}
+
+	cn := C.CString("af-metadata/astats")
+	defer C.free(unsafe.Pointer(cn))
+	cs := C.mpv_get_property_string(handle, cn)
+	if cs == nil {
+		return 0, false
+	}
+	defer C.mpv_free(unsafe.Pointer(cs))
+
+	var meta map[string]string
+	if err := json.Unmarshal([]byte(C.GoString(cs)), &meta); err != nil {
+		return 0, false
+	}
+	raw, ok := meta["lavfi.astats.Overall.RMS_level"]
+	if !ok {
+		return 0, false
+	}
+	if raw == "-inf" { // digital silence
+		return -60, true
+	}
+	db, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
+	}
+	return db, true
 }
 
 // Close tears down libmpv cleanly.
