@@ -47,11 +47,10 @@ are kept buildable and planned.
 - **Icône animée**: while playing, the tray glyph becomes a 4-bar VU meter
   driven by real audio levels (mpv astats filter), with VU physics (instant
   attack, slow decay). Engineered cheap: 6 fps cap, 12 quantized levels,
-  frame cache, identical frames never redrawn. Measured at the earlier 3 fps
-  tuning: ~0.3% CPU of one core (5.05% playing with animation vs 4.77%
-  without, the bulk being mpv's audio decoding itself); the 6 fps figure is
-  pending re-measure and expected under ~0.6%. Toggle in Réglages, on by
-  default.
+  frame cache, identical frames never redrawn. Measured (pidstat, 60 s,
+  hifi stream): ~6.4% of one core playing with animation vs ~4.8% without,
+  so the animation itself costs ~1.6%; the bulk is mpv's audio decoding.
+  Toggle in Réglages, on by default.
 - **Historique local (opt-in, off by default)**: append every track change to
   `~/.local/share/fipindicateur/history.jsonl`, one JSON object per line
   (`{v, ts, station, artist, title, album, year, label}`). Greppable, easy to
