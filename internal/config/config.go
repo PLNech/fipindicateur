@@ -9,19 +9,23 @@ import (
 
 // Config is the persisted user state.
 type Config struct {
-	Station       string `json:"station"`       // station key
-	HiFi          bool   `json:"hifi"`          // true = AAC 192k
-	Notifications bool   `json:"notifications"` // desktop notifications
-	Autostart     bool   `json:"autostart"`     // launch at login
+	Station        string `json:"station"`          // station key
+	HiFi           bool   `json:"hifi"`             // true = AAC 192k
+	Notifications  bool   `json:"notifications"`    // desktop notifications
+	NotifTimeoutMs int    `json:"notif_timeout_ms"` // notification expire hint (GNOME ignores it; dunst/KDE honor it)
+	Autostart      bool   `json:"autostart"`        // launch at login
+	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
 }
 
 // Default returns the initial config: FIP, midfi, notifications on.
 func Default() Config {
 	return Config{
-		Station:       "fip",
-		HiFi:          false,
-		Notifications: true,
-		Autostart:     false,
+		Station:        "fip",
+		HiFi:           false,
+		Notifications:  true,
+		NotifTimeoutMs: 10000,
+		Autostart:      false,
+		HistoryFile:    false,
 	}
 }
 
@@ -60,6 +64,9 @@ func Load() Config {
 	_ = json.Unmarshal(data, &c) // tolerate partial/invalid: keep defaults
 	if c.Station == "" {
 		c.Station = "fip"
+	}
+	if c.NotifTimeoutMs <= 0 {
+		c.NotifTimeoutMs = Default().NotifTimeoutMs
 	}
 	return c
 }

@@ -13,7 +13,7 @@ type Notifier struct{}
 func New() *Notifier { return &Notifier{} }
 
 // Notify is a no-op.
-func (*Notifier) Notify(string, string, string) {}
+func (*Notifier) Notify(string, string, string, int) {}
 
 // FetchCover is a no-op returning no path.
 func (*Notifier) FetchCover(context.Context, string) string { return "" }

@@ -40,10 +40,16 @@ func New() *Notifier {
 }
 
 // Notify posts a notification, replacing the previous one. iconPath may be an
-// empty string. summary is the title, body the artist/album line.
-func (n *Notifier) Notify(summary, body, iconPath string) {
+// empty string. summary is the title, body the artist/album line. timeoutMs is
+// the expire hint in milliseconds: GNOME Shell ignores it (banners stay ~4s,
+// missed ones land in the clock menu) but dunst, KDE and most other daemons
+// honor it, so passing it keeps the app correct everywhere.
+func (n *Notifier) Notify(summary, body, iconPath string, timeoutMs int) {
 	if n == nil || n.conn == nil {
 		return
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 10000
 	}
 	obj := n.conn.Object("org.freedesktop.Notifications", "/org/freedesktop/Notifications")
 	call := obj.Call("org.freedesktop.Notifications.Notify", 0,
@@ -54,7 +60,7 @@ func (n *Notifier) Notify(summary, body, iconPath string) {
 		body,                      // body
 		[]string{},                // actions
 		map[string]dbus.Variant{}, // hints
-		int32(5000),               // expire_timeout ms
+		int32(timeoutMs),          // expire_timeout ms
 	)
 	if call.Err != nil {
 		log.Printf("notify: %v", call.Err)
