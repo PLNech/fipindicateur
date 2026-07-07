@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install libmpv
+        run: sudo apt-get update && sudo apt-get install -y libmpv-dev
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l . | grep -v '/gen/' || true)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt (run 'make fix'):"; echo "$unformatted"; exit 1
+          fi
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build ./...
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install mpv
+        run: brew install mpv
+      # Portability canary for the future macOS target. If this fails, fix the
+      # //go:build linux gating (mpris/notify), do not remove this job.
+      - run: go build ./...
