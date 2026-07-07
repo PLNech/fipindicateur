@@ -16,6 +16,8 @@ type Config struct {
 	Autostart      bool   `json:"autostart"`        // launch at login
 	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
 	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
+	Volume         int    `json:"volume"`           // playback volume percent (0..100)
+	Mute           bool   `json:"mute"`             // muted
 }
 
 // Default returns the initial config: FIP, midfi, notifications on.
@@ -28,6 +30,8 @@ func Default() Config {
 		Autostart:      false,
 		HistoryFile:    false,
 		AnimatedIcon:   true,
+		Volume:         100,
+		Mute:           false,
 	}
 }
 
@@ -69,6 +73,9 @@ func Load() Config {
 	}
 	if c.NotifTimeoutMs <= 0 {
 		c.NotifTimeoutMs = Default().NotifTimeoutMs
+	}
+	if c.Volume < 0 || c.Volume > 100 {
+		c.Volume = Default().Volume
 	}
 	return c
 }

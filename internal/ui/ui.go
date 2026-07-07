@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"sync"
 
 	"fyne.io/systray"
@@ -56,7 +57,13 @@ type App struct {
 	mAuto     *systray.MenuItem
 	mHistFile *systray.MenuItem
 	mAnim     *systray.MenuItem
+	mVolume   *systray.MenuItem
+	mMute     *systray.MenuItem
+	volMI     map[int]*systray.MenuItem
 }
+
+// volumePresets are the quick-pick volume levels in the tray menu.
+var volumePresets = []int{10, 25, 50, 75, 100}
 
 // New returns an App with loaded config.
 func New() *App {
@@ -76,6 +83,9 @@ func (a *App) OnReady() {
 	if err := a.player.Initialize(); err != nil {
 		log.Fatalf("ui: player init: %v", err)
 	}
+	// Apply persisted volume/mute before the first loadfile.
+	a.player.SetVolume(float64(a.cfg.Volume))
+	a.player.SetMute(a.cfg.Mute)
 
 	if ins, err := mpris.Connect(a); err != nil {
 		log.Printf("ui: mpris unavailable: %v", err)
@@ -87,6 +97,9 @@ func (a *App) OnReady() {
 	a.anim.app = a
 
 	a.buildMenu()
+	if a.mpris != nil {
+		a.mpris.SetVolume(float64(a.cfg.Volume) / 100)
+	}
 	a.applyIcon()
 	a.startStation(a.current, true)
 }
@@ -122,6 +135,18 @@ func (a *App) buildMenu() {
 	systray.AddSeparator()
 	a.mPlay = systray.AddMenuItem("⏸ Pause", "Lecture / pause")
 	go a.onClick(a.mPlay.ClickedCh, a.togglePlay)
+
+	// Volume
+	a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
+	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
+	go a.onClick(a.mMute.ClickedCh, a.toggleMute)
+	a.volMI = map[int]*systray.MenuItem{}
+	for _, pct := range volumePresets {
+		it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
+		a.volMI[pct] = it
+		p := pct
+		go a.onClick(it.ClickedCh, func() { a.setVolume(p) })
+	}
 
 	// Radios
 	radios := systray.AddMenuItem("Radios", "Choisir une webradio")
@@ -413,6 +438,76 @@ func (a *App) toggleNotif() {
 		a.mNotif.Uncheck()
 	}
 	a.save()
+}
+
+// --- volume ---
+
+func volumeLabel(pct int) string {
+	return fmt.Sprintf("Volume (%d %%)", pct)
+}
+
+// applyVolumeUI syncs the volume submenu (title, preset checkmarks, mute)
+// with the current config.
+func (a *App) applyVolumeUI() {
+	a.mVolume.SetTitle(volumeLabel(a.cfg.Volume))
+	for pct, it := range a.volMI {
+		if pct == a.cfg.Volume {
+			it.Check()
+		} else {
+			it.Uncheck()
+		}
+	}
+	if a.cfg.Mute {
+		a.mMute.Check()
+	} else {
+		a.mMute.Uncheck()
+	}
+}
+
+// setVolume applies a menu-selected volume preset.
+func (a *App) setVolume(pct int) {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	if pct != a.cfg.Volume {
+		a.cfg.Volume = pct
+		a.save()
+		a.player.SetVolume(float64(pct))
+		if a.mpris != nil {
+			a.mpris.SetVolume(float64(pct) / 100)
+		}
+	}
+	a.applyVolumeUI()
+}
+
+func (a *App) toggleMute() {
+	a.cfg.Mute = !a.cfg.Mute
+	a.save()
+	a.player.SetMute(a.cfg.Mute)
+	a.applyVolumeUI()
+}
+
+// SetVolumeFrac implements mpris.Controller: an external client (playerctl,
+// GNOME) wrote the Volume property. Reflect it in player, config and menu.
+// The equal-value early return breaks any publish/callback echo loop.
+func (a *App) SetVolumeFrac(v float64) {
+	pct := int(math.Round(v * 100))
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	if pct == a.cfg.Volume {
+		return
+	}
+	a.cfg.Volume = pct
+	a.save()
+	a.player.SetVolume(float64(pct))
+	a.applyVolumeUI()
 }
 
 func (a *App) toggleHistFile() {
