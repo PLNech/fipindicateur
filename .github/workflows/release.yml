@@ -1,0 +1,174 @@
+name: Release
+
+# Builds the macOS .app/.dmg prototype and the Linux tarball, then attaches
+# both to the GitHub Release for the pushed tag.
+#
+# workflow_dispatch: build + upload artifacts only (for iterating on the build
+# without cutting a release). Push a v* tag to actually publish a Release.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install mpv (runtime dependency, Homebrew)
+        run: brew install mpv
+      - name: Build binary
+        run: go build -o fipindicateur ./cmd/fipindicateur
+      - name: Assemble FipIndicateur.app
+        run: |
+          set -euo pipefail
+          APP="FipIndicateur.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp fipindicateur "$APP/Contents/MacOS/fipindicateur"
+          chmod +x "$APP/Contents/MacOS/fipindicateur"
+          cp packaging/darwin/Info.plist "$APP/Contents/Info.plist"
+          # Generate the .icns from the repo's own broadcast glyph (44px source,
+          # upscaled). sips needs each name at its exact pixel size or iconutil
+          # rejects the set.
+          SRC="internal/icon/icon_dark_44.png"
+          ICONSET="fip.iconset"
+          rm -rf "$ICONSET"; mkdir "$ICONSET"
+          gen() { sips -z "$2" "$2" "$SRC" --out "$ICONSET/$1" >/dev/null; }
+          gen icon_16x16.png       16
+          gen icon_16x16@2x.png    32
+          gen icon_32x32.png       32
+          gen icon_32x32@2x.png    64
+          gen icon_128x128.png     128
+          gen icon_128x128@2x.png  256
+          gen icon_256x256.png     256
+          gen icon_256x256@2x.png  512
+          gen icon_512x512.png     512
+          gen icon_512x512@2x.png  1024
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/fipindicateur.icns"
+      - name: Build FipIndicateur.dmg
+        run: |
+          set -euo pipefail
+          STAGE="dmgroot"
+          rm -rf "$STAGE"; mkdir "$STAGE"
+          cp -R "FipIndicateur.app" "$STAGE/"
+          cp packaging/darwin/LISEZ-MOI.txt "$STAGE/LISEZ-MOI.txt"
+          # Drag-to-install convenience target.
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "FipIndicateur" -srcfolder "$STAGE" \
+            -ov -format UDZO "FipIndicateur.dmg"
+          hdiutil verify "FipIndicateur.dmg"
+      # TODO(v0.2): the binary links Homebrew libmpv at runtime (documented in
+      # LISEZ-MOI), so testers must 'brew install mpv'. Bundling/relocating the
+      # dylibs into the .app (dylibbundler + install_name_tool) is out of scope
+      # for this prototype.
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: FipIndicateur.dmg
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install libmpv
+        run: sudo apt-get update && sudo apt-get install -y libmpv-dev
+      - name: Build binary
+        run: go build -o fipindicateur ./cmd/fipindicateur
+      - name: Package tarball
+        run: tar czf fipindicateur-linux-amd64.tar.gz fipindicateur README.md LICENSE
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: fipindicateur-linux-amd64.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [macos, linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/FipIndicateur.dmg
+            dist/fipindicateur-linux-amd64.tar.gz
+          fail_on_unmatched_files: true
+          body: |
+            le fipindicateur v0.1.0 : les webradios FIP dans la barre des menus / menu bar.
+
+            (English below)
+
+            --- FRANCAIS ---
+
+            Premiere version publique. Un petit indicateur discret pour ecouter
+            les 13 webradios FIP (Radio France), avec le titre en cours et un
+            historique des morceaux.
+
+            LINUX (valide sur vrai materiel)
+            Lecture / pause, choix parmi les 13 radios, titre en cours, historique,
+            notifications de bureau, controles media (MPRIS / touches media),
+            qualite haute (AAC 192k) en option, lancement au demarrage.
+            Installez libmpv (ex. Debian/Ubuntu : sudo apt install libmpv2),
+            telechargez fipindicateur-linux-amd64.tar.gz, decompressez, lancez.
+
+            macOS (prototype COMPILE et EMPAQUETE, mais PAS ENCORE TESTE sur du
+            vrai materiel : a vos risques, retours bienvenus)
+            Fonctionne (attendu) : barre des menus, lecture / pause, les 13 radios,
+            titre en cours, historique.
+            PAS encore : notifications, touches media (MPRIS est Linux). Le
+            "lancement au demarrage" est masque sur macOS (specifique a Linux).
+            Deux precautions a l'installation :
+              1. App NON SIGNEE : au premier lancement, clic droit sur
+                 FipIndicateur.app puis "Ouvrir" (pas un double-clic).
+              2. Dependance : brew install mpv (sinon aucun son).
+            Compile pour Apple Silicon (arm64).
+
+            RETOURS : ouvrez un ticket
+            https://github.com/PLNech/fipindicateur/issues
+
+            --- ENGLISH ---
+
+            First public build. A tiny, quiet indicator to listen to the 13 FIP
+            (Radio France) webradios, with the current track and a history.
+
+            LINUX (validated on real hardware)
+            Play / pause, pick among the 13 radios, now-playing, history, desktop
+            notifications, media controls (MPRIS / media keys), optional high
+            quality (AAC 192k), launch at login. Install libmpv (e.g. Debian/Ubuntu:
+            sudo apt install libmpv2), grab fipindicateur-linux-amd64.tar.gz,
+            extract, run.
+
+            macOS (prototype BUILT and PACKAGED, but NOT YET TESTED on real
+            hardware: use at your own risk, feedback welcome)
+            Expected to work: menu bar, play / pause, all 13 radios, now-playing,
+            history.
+            Not yet: notifications, media keys (MPRIS is Linux-only). "Launch at
+            login" is hidden on macOS (Linux-specific). Two install caveats:
+              1. UNSIGNED app: on first launch, right-click FipIndicateur.app then
+                 "Open" (not a double-click).
+              2. Dependency: brew install mpv (no sound otherwise).
+            Built for Apple Silicon (arm64).
+
+            FEEDBACK: open an issue
+            https://github.com/PLNech/fipindicateur/issues

@@ -1,0 +1,66 @@
+le fipindicateur : radios FIP dans la barre des menus
+=======================================================
+
+(English below)
+
+--- FRANCAIS ---
+
+Merci de tester ce prototype ! C'est une version 0.1.0, non signee et non testee
+sur du vrai materiel macOS. Elle peut avoir des bugs. Vos retours sont precieux.
+
+INSTALLATION
+
+1. Faites glisser FipIndicateur.app dans le dossier Applications.
+
+2. Prototype NON SIGNE : au premier lancement, macOS bloquera l'app.
+   Faites un CLIC DROIT sur FipIndicateur.app, puis choisissez "Ouvrir".
+   Dans la fenetre d'avertissement, cliquez a nouveau sur "Ouvrir".
+   (Un double-clic classique ne proposera PAS cette option la premiere fois.)
+
+3. Dependance requise : le lecteur audio mpv.
+   Installez-le avec Homebrew (https://brew.sh) :
+
+       brew install mpv
+
+   Sans mpv, l'app se lance mais ne joue aucun son.
+
+UTILISATION
+
+L'icone apparait dans la barre des menus (en haut a droite), pas dans le Dock.
+Cliquez dessus pour lire/mettre en pause, changer de radio parmi les 13 webradios
+FIP, voir le titre en cours et l'historique.
+
+RETOURS
+
+Un bug, une idee, un plantage ? Ouvrez un ticket (issue) :
+https://github.com/PLNech/fipindicateur/issues
+
+--- ENGLISH ---
+
+Thanks for testing this prototype! This is a 0.1.0 build, unsigned and untested
+on real macOS hardware. Expect rough edges. Your feedback is gold.
+
+INSTALL
+
+1. Drag FipIndicateur.app into your Applications folder.
+
+2. UNSIGNED prototype: on first launch macOS will block the app.
+   RIGHT-CLICK FipIndicateur.app and choose "Open", then click "Open" again in
+   the warning dialog. (A plain double-click will NOT offer this the first time.)
+
+3. Required dependency: the mpv audio player.
+   Install it with Homebrew (https://brew.sh):
+
+       brew install mpv
+
+   Without mpv the app starts but plays no sound.
+
+USE
+
+The icon lives in the menu bar (top-right), not the Dock. Click it to play/pause,
+switch among the 13 FIP webradios, and see the current track and history.
+
+FEEDBACK
+
+Bug, idea, crash? Open an issue:
+https://github.com/PLNech/fipindicateur/issues
