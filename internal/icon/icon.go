@@ -34,8 +34,9 @@ func darkPanel() bool {
 
 // Active returns the icon bytes for the current scheme and play state.
 // On a dark panel we use the light (near-white) ink so the glyph is visible.
+// The scheme probe is cached (see bars.go): no process spawn per call.
 func Active(paused bool) []byte {
-	onDark := darkPanel()
+	onDark := panelIsDark()
 	switch {
 	case onDark && paused:
 		return lightDim
