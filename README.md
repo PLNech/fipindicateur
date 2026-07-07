@@ -30,7 +30,10 @@ are kept buildable and planned.
 - **Réglages**: high quality (AAC 192k), notifications, launch at login, local
   history log.
 - **MPRIS2**: controllable with `playerctl` and desktop media keys; shows
-  track and cover in your desktop's media widget.
+  track and cover in your desktop's media widget. The Volume property is
+  read/write, so `playerctl volume 0.5` works and the menu follows.
+- **Volume**: tray submenu with Muet and 10/25/50/75/100 % presets, persisted
+  and applied at startup.
 - **Desktop notifications** on track change, with cover art, crediting the
   album, year and label when known.
 - **Icône animée**: while playing, the tray glyph becomes a 4-bar VU meter
