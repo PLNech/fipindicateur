@@ -15,15 +15,19 @@ import (
 
 // NowPlaying describes the current track.
 type NowPlaying struct {
-	Artist   string
-	Title    string
-	Album    string
-	Label    string
-	Year     int
-	CoverURL string
-	Link     string
-	Start    time.Time
-	End      time.Time
+	Artist string // full credit string, for display (may list many names)
+	// PrimaryArtist is the cleaned single-artist name used for link
+	// resolution (Wikipedia lookup): livemeta's curated highlightedArtists[0]
+	// when present, else the credit string cut at the first separator.
+	PrimaryArtist string
+	Title         string
+	Album         string
+	Label         string
+	Year          int
+	CoverURL      string
+	Link          string
+	Start         time.Time
+	End           time.Time
 }
 
 // Empty reports whether there is no useful track information.

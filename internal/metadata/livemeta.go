@@ -49,16 +49,17 @@ type livemetaLevel struct {
 }
 
 type livemetaStep struct {
-	Title      string `json:"title"`
-	Authors    string `json:"authors"`
-	Performers string `json:"performers"`
-	TitreAlbum string `json:"titreAlbum"`
-	Year       int    `json:"anneeEditionMusique"`
-	Label      string `json:"label"`
-	Start      int64  `json:"start"`
-	End        int64  `json:"end"`
-	Visual     string `json:"visual"`
-	Path       string `json:"path"`
+	Title       string   `json:"title"`
+	Authors     string   `json:"authors"`
+	Performers  string   `json:"performers"`
+	Highlighted []string `json:"highlightedArtists"`
+	TitreAlbum  string   `json:"titreAlbum"`
+	Year        int      `json:"anneeEditionMusique"`
+	Label       string   `json:"label"`
+	Start       int64    `json:"start"`
+	End         int64    `json:"end"`
+	Visual      string   `json:"visual"`
+	Path        string   `json:"path"`
 }
 
 // parseLivemeta extracts the current NowPlaying from a raw livemeta payload.
@@ -86,13 +87,14 @@ func parseLivemeta(data []byte) (NowPlaying, error) {
 	}
 
 	np := NowPlaying{
-		Artist:   artist,
-		Title:    step.Title,
-		Album:    step.TitreAlbum,
-		Label:    step.Label,
-		Year:     step.Year,
-		CoverURL: step.Visual,
-		Link:     step.Path,
+		Artist:        artist,
+		PrimaryArtist: primaryArtist(step.Highlighted, artist),
+		Title:         step.Title,
+		Album:         step.TitreAlbum,
+		Label:         step.Label,
+		Year:          step.Year,
+		CoverURL:      step.Visual,
+		Link:          step.Path,
 	}
 	if step.Start > 0 {
 		np.Start = time.Unix(step.Start, 0)

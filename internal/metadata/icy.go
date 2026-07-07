@@ -46,9 +46,11 @@ func parseICY(raw string) NowPlaying {
 		return NowPlaying{}
 	}
 	if i := strings.Index(raw, " - "); i >= 0 {
+		artist := strings.TrimSpace(raw[:i])
 		return NowPlaying{
-			Artist: strings.TrimSpace(raw[:i]),
-			Title:  strings.TrimSpace(raw[i+3:]),
+			Artist:        artist,
+			PrimaryArtist: CleanArtist(artist),
+			Title:         strings.TrimSpace(raw[i+3:]),
 		}
 	}
 	return NowPlaying{Title: raw}

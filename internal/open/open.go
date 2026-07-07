@@ -19,13 +19,7 @@ func URL(u string) {
 }
 
 // Search builds a DuckDuckGo search URL for the given query terms.
+// (Wikipedia URL building lives in the wiki package, which owns resolution.)
 func Search(query string) string {
 	return "https://duckduckgo.com/?q=" + url.QueryEscape(query)
-}
-
-// WikipediaFr builds a French Wikipedia search URL. FIP is a French station,
-// so fr.wp is the right default; its coverage of the world/jazz catalogue is
-// solid too.
-func WikipediaFr(query string) string {
-	return "https://fr.wikipedia.org/w/index.php?search=" + url.QueryEscape(query)
 }
