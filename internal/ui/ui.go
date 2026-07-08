@@ -68,6 +68,7 @@ type App struct {
 	mAuto       *systray.MenuItem
 	mHistFile   *systray.MenuItem
 	mAnim       *systray.MenuItem
+	audioMI     map[string]*systray.MenuItem // audio-output items, keyed by device name ("auto" = automatic)
 	mStats      *systray.MenuItem
 	mStatsClear *systray.MenuItem
 	mVolume     *systray.MenuItem
@@ -108,6 +109,9 @@ func (a *App) OnReady() {
 	if err := a.player.Initialize(); err != nil {
 		log.Fatalf("ui: player init: %v", err)
 	}
+	// Restore the persisted audio sink. SetAudioDevice maps ""->"auto", so an
+	// unconditional call is harmless when no device was ever chosen.
+	a.player.SetAudioDevice(a.cfg.AudioDevice)
 
 	if ins, err := mpris.Connect(a); err != nil {
 		if errors.Is(err, mpris.ErrAlreadyRunning) {
@@ -220,6 +224,36 @@ func (a *App) buildMenu() {
 	a.on(a.mHistFile, "", a.toggleHistFile)
 	a.mAnim = settings.AddSubMenuItemCheckbox("Icône animée", "Barres qui suivent le niveau audio", a.cfg.AnimatedIcon)
 	a.on(a.mAnim, "", a.toggleAnim)
+
+	// Sortie audio: pick the output sink through mpv's audio-device property,
+	// so no pavucontrol (Linux) or macOS audio panel is needed. mpv enumerates
+	// the devices cross-platform; the list already carries an "auto" entry.
+	audio := settings.AddSubMenuItem("Sortie audio", "Choisir la sortie audio")
+	a.audioMI = map[string]*systray.MenuItem{}
+	cur := a.cfg.AudioDevice
+	if cur == "" {
+		cur = "auto" // empty config means mpv's automatic default
+	}
+	if devs, ok := a.player.AudioDeviceList(); ok && len(devs) > 0 {
+		for _, dev := range devs {
+			label := dev.Description
+			if dev.Name == "auto" {
+				label = "Automatique" // friendlier than mpv's "Autodetect device"
+			} else if label == "" {
+				label = dev.Name // fall back to the raw name when unlabeled
+			}
+			it := audio.AddSubMenuItemCheckbox(label, dev.Name, dev.Name == cur)
+			a.audioMI[dev.Name] = it
+			name := dev.Name
+			a.on(it, events.KindAudioDevice, func() { a.setAudioDevice(name) })
+		}
+	} else {
+		// Enumeration failed or is empty: keep a single Automatique entry so the
+		// submenu is never blank and the user can still reset to the default.
+		it := audio.AddSubMenuItemCheckbox("Automatique", "auto", cur == "auto")
+		a.audioMI["auto"] = it
+		a.on(it, events.KindAudioDevice, func() { a.setAudioDevice("auto") })
+	}
 
 	// Statistiques d'écoute: opt-in (default off), local-only. The toggle
 	// gates the recorder; the submenu lets you see, locate and delete the data.
@@ -675,6 +709,27 @@ func (a *App) toggleAutostart() {
 	}
 	a.rec.Record(events.Event{Kind: events.KindAutostart, Value: b2i(a.cfg.Autostart)})
 	a.save()
+}
+
+// setAudioDevice switches the mpv audio output device. The click event is
+// already recorded by a.on (KindAudioDevice), so we do not record again here.
+// mpv reinits the audio output live, so no stream reload. "auto" is stored as
+// an empty config value (mpv's default).
+func (a *App) setAudioDevice(name string) {
+	a.cfg.AudioDevice = name
+	if name == "auto" {
+		a.cfg.AudioDevice = "" // store auto as empty, matching the config default
+	}
+	a.save()
+	a.player.SetAudioDevice(name)
+	// Refresh checkmarks so only the chosen sink is ticked.
+	for n, it := range a.audioMI {
+		if n == name {
+			it.Check()
+		} else {
+			it.Uncheck()
+		}
+	}
 }
 
 // --- statistics (opt-in listening analytics) ---

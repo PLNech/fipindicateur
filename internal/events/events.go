@@ -33,6 +33,7 @@ const (
 	KindPlay          Kind = "play"
 	KindPause         Kind = "pause"
 	KindStationChange Kind = "station_change" // From, To set
+	KindAudioDevice   Kind = "audio_device"   // user picked an audio output device
 	KindVolume        Kind = "volume"         // Value = percent
 	KindMute          Kind = "mute"           // Value = 1 muted, 0 unmuted
 	KindHiFi          Kind = "hifi"           // Value = 1 on, 0 off

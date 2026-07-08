@@ -17,6 +17,9 @@ type Config struct {
 	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
 	Stats          bool   `json:"stats"`            // opt-in local listening analytics (events.jsonl)
 	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
+	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
+	// system default output). Persisted so a chosen sink survives restarts.
+	AudioDevice string `json:"audio_device"`
 	// Volume/Mute cache the last-known PulseAudio stream state for
 	// pre-playback DISPLAY only. PulseAudio (module-stream-restore) is the
 	// single source of truth: these values are never written onto the audio

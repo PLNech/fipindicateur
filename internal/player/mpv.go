@@ -36,6 +36,13 @@ const (
 	propAoMute     C.uint64_t = 4
 )
 
+// AudioDevice is one entry of mpv's audio-device-list: Name is the identifier
+// passed to the audio-device property, Description is the human-readable label.
+type AudioDevice struct {
+	Name        string
+	Description string
+}
+
 // MPV is a libmpv-backed player for a single live stream.
 type MPV struct {
 	handle *C.mpv_handle
@@ -193,6 +200,17 @@ func (m *MPV) setPropDouble(name string, v float64) bool {
 	return C.mpv_set_property(m.handle, cn, C.MPV_FORMAT_DOUBLE, unsafe.Pointer(&v)) >= 0
 }
 
+// setPropString synchronously sets a string property; false if unavailable.
+// MPV_FORMAT_STRING takes a pointer to a *char (a **char), mirroring how
+// setOptionString passes its value: the value arg is &cv, not cv.
+func (m *MPV) setPropString(name, value string) bool {
+	cn := C.CString(name)
+	defer C.free(unsafe.Pointer(cn))
+	cv := C.CString(value)
+	defer C.free(unsafe.Pointer(cv))
+	return C.mpv_set_property(m.handle, cn, C.MPV_FORMAT_STRING, unsafe.Pointer(&cv)) >= 0
+}
+
 // setPropFlag synchronously sets a boolean property; false if unavailable.
 func (m *MPV) setPropFlag(name string, v bool) bool {
 	cv := C.int(0)
@@ -265,6 +283,56 @@ func (m *MPV) RMSLevelDB() (float64, bool) {
 		return 0, false
 	}
 	return db, true
+}
+
+// AudioDeviceList enumerates the output devices mpv sees on this platform
+// (PulseAudio/ALSA on Linux, CoreAudio on macOS), so the user can pick a sink
+// without pavucontrol or the OS audio panel. The list is read as a JSON string
+// (same fetch/free/unmarshal shape as RMSLevelDB) and is available right after
+// mpv_initialize, before any audio output is open: enumeration needs no
+// playback. The first entry is normally {"name":"auto","description":
+// "Autodetect device"}. ok=false on any failure.
+func (m *MPV) AudioDeviceList() ([]AudioDevice, bool) {
+	m.mu.Lock()
+	handle := m.handle
+	running := m.running
+	m.mu.Unlock()
+	if handle == nil || !running {
+		return nil, false
+	}
+
+	cn := C.CString("audio-device-list")
+	defer C.free(unsafe.Pointer(cn))
+	cs := C.mpv_get_property_string(handle, cn)
+	if cs == nil {
+		return nil, false
+	}
+	defer C.mpv_free(unsafe.Pointer(cs))
+
+	var raw []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(C.GoString(cs)), &raw); err != nil {
+		return nil, false
+	}
+	devs := make([]AudioDevice, len(raw))
+	for i, d := range raw {
+		devs[i] = AudioDevice{Name: d.Name, Description: d.Description}
+	}
+	return devs, true
+}
+
+// SetAudioDevice switches the output sink via the audio-device property: the
+// SAME knob mpv and PulseAudio expose, so there is one selection, not two.
+// mpv reinits the audio output live when this changes, so no stream reload is
+// needed. An empty name means mpv's "auto" (system default). Returns whether
+// the set succeeded.
+func (m *MPV) SetAudioDevice(name string) bool {
+	if name == "" {
+		name = "auto"
+	}
+	return m.setPropString("audio-device", name)
 }
 
 // Close tears down libmpv cleanly.
