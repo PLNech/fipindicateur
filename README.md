@@ -55,6 +55,16 @@ are kept buildable and planned.
   `~/.local/share/fipindicateur/history.jsonl`, one JSON object per line
   (`{v, ts, station, artist, title, album, year, label}`). Greppable, easy to
   post-process, and the schema can grow (likes/dislikes are planned).
+- **Statistiques d'écoute (opt-in, off by default)**: a separate toggle logs
+  your *actions* (play, pause, station changes, volume) to
+  `~/.local/share/fipindicateur/events.jsonl`, and `fipindicateur stats` (or
+  *Réglages, Statistiques, Voir le rapport*) turns them into a self-contained
+  offline report: listening hours, session lengths, play/pause counts, an
+  **Achievements** wall, and a **Markov graph of your radio zapping** (is it
+  mostly jazz to groove, or groove to jazz?). 100% local, nothing leaves your
+  machine. See it, open the data folder, or erase it (two-click confirm) from
+  the same submenu; deleting only touches `events.jsonl`, never your track
+  history. The report is built from the JSONL, so it is trivial to script on.
 
 ## Install
 
@@ -98,6 +108,11 @@ it for the menu. Your last station and settings are remembered in
 
 **Launch at login:** toggle *Réglages, Lancer au démarrage* (writes
 `~/.config/autostart/fipindicateur.desktop`).
+
+**Statistiques:** enable *Réglages, Statistiques d'écoute (local)*, then
+`./fipindicateur stats` (or *Voir le rapport*) opens your listening report.
+`./fipindicateur stats --out report.html --no-open` just writes the file.
+`./fipindicateur version` prints the running build.
 
 **Media keys / playerctl:**
 
