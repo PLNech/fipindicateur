@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>le fipindicateur · Statistiques d'ecoute</title>
+<style>
+  :root {
+    --surface-0: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --surface-2: #efeee9;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #8a897f;
+    --border: #e2e0d8;
+    --accent: #d81b4a;        /* FIP red */
+    --accent-soft: #fbe4ea;
+    /* sequential blue ramp (validated reference), light->dark magnitude */
+    --seq-0: #eef4fc;
+    --seq-1: #cde2fb;
+    --seq-2: #9ec5f4;
+    --seq-3: #6da7ec;
+    --seq-4: #3987e5;
+    --seq-5: #256abf;
+    --seq-6: #184f95;
+    --good: #0ca30c;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.06);
+    color-scheme: light dark;
+  }
+  :root.dark {
+    --surface-0: #131312;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #86857c;
+    --border: #333330;
+    --accent: #ff5277;
+    --accent-soft: #3a1622;
+    --seq-0: #16233a;
+    --seq-1: #17304f;
+    --seq-2: #184f95;
+    --seq-3: #256abf;
+    --seq-4: #3987e5;
+    --seq-5: #6da7ec;
+    --seq-6: #9ec5f4;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.5);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 4px; }
+  h1 { font-size: 26px; font-weight: 750; letter-spacing: -.02em; margin: 0; }
+  h1 .dot { color: var(--accent); }
+  h2 { font-size: 15px; font-weight: 650; letter-spacing: .01em; text-transform: uppercase; color: var(--text-secondary); margin: 40px 0 14px; }
+  .sub { color: var(--text-muted); font-size: 13px; margin: 2px 0 0; }
+  .num { font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace; }
+  .toggle { border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  .toggle:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .tile .k { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .tile .v { font-size: 30px; font-weight: 720; letter-spacing: -.02em; margin-top: 4px; }
+  .tile .v small { font-size: 15px; font-weight: 600; color: var(--text-secondary); }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; padding: 20px; box-shadow: var(--shadow); }
+  .callout { margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
+  .callout b { color: var(--accent); font-weight: 650; }
+
+  /* Markov graph */
+  #markov { width: 100%; height: auto; display: block; }
+  .edge { fill: none; stroke: var(--accent); stroke-linecap: round; transition: opacity .12s; }
+  .edge:hover { opacity: 1 !important; }
+  .node circle { fill: var(--surface-2); stroke: var(--accent); stroke-width: 2; }
+  .node text { fill: var(--text-primary); font-size: 12px; font-weight: 620; text-anchor: middle; }
+  .node .cnt { fill: var(--text-muted); font-size: 10px; }
+
+  /* bar rows */
+  .bars { display: flex; flex-direction: column; gap: 9px; }
+  .bar-row { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 12px; font-size: 13px; }
+  .bar-row .lbl { color: var(--text-secondary); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track { background: var(--surface-2); border-radius: 6px; height: 22px; overflow: hidden; }
+  .fill { height: 100%; background: var(--accent); border-radius: 6px; min-width: 3px; }
+  .bar-row .val { color: var(--text-primary); font-weight: 600; }
+  .bar-row .val small { color: var(--text-muted); font-weight: 500; }
+
+  /* hourly columns */
+  .hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; align-items: end; height: 130px; }
+  .hcol { border-radius: 4px 4px 2px 2px; min-height: 3px; background: var(--seq-2); position: relative; }
+  .hlabels { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; margin-top: 6px; font-size: 9px; color: var(--text-muted); text-align: center; }
+  .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 8px; }
+  .wd { text-align: center; }
+  .wd .wtrack { background: var(--surface-2); border-radius: 6px; height: 60px; display: flex; align-items: flex-end; overflow: hidden; }
+  .wd .wfill { width: 100%; background: var(--seq-3); border-radius: 6px 6px 0 0; min-height: 2px; }
+  .wd .wlbl { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+
+  /* achievements */
+  .ach { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+  .badge { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 15px; display: flex; gap: 13px; align-items: flex-start; }
+  .badge.locked { opacity: .62; }
+  .badge.unlocked { border-color: var(--accent); background: var(--accent-soft); }
+  .badge .emo { font-size: 26px; line-height: 1; filter: grayscale(1); }
+  .badge.unlocked .emo { filter: none; }
+  .badge .name { font-weight: 680; font-size: 14px; }
+  .badge .desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+  .badge .prog { margin-top: 8px; height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+  .badge .prog i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .badge .pt { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .badge.unlocked .pt { color: var(--good); font-weight: 620; }
+
+  .empty { text-align: center; color: var(--text-muted); padding: 28px; font-size: 14px; }
+  footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+  footer b { color: var(--text-secondary); }
+  .tooltip { position: fixed; pointer-events: none; background: var(--text-primary); color: var(--surface-1); font-size: 12px; padding: 5px 9px; border-radius: 7px; opacity: 0; transition: opacity .1s; z-index: 10; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>le fipindicateur <span class="dot">·</span> Statistiques</h1>
+      <p class="sub" id="range"></p>
+    </div>
+    <button class="toggle" id="themeBtn">Theme</button>
+  </header>
+
+  <div id="calib" class="sub" style="margin-bottom:22px"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Zapping entre radios (chaine de Markov)</h2>
+  <div class="card">
+    <div id="markovWrap"></div>
+    <div class="callout" id="markovNote"></div>
+  </div>
+
+  <h2>Quand vous ecoutez</h2>
+  <div class="card">
+    <div class="hours" id="hours"></div>
+    <div class="hlabels" id="hlabels"></div>
+    <div class="weekdays" id="weekdays"></div>
+    <div class="callout" id="hoursNote"></div>
+  </div>
+
+  <h2>Vos radios</h2>
+  <div class="card"><div class="bars" id="stations"></div></div>
+
+  <h2>Sessions d'ecoute</h2>
+  <div class="tiles" id="sessionTiles"></div>
+
+  <h2>Succes</h2>
+  <div class="ach" id="ach"></div>
+
+  <footer>
+    <p><b>100% local, opt-in.</b> Ces statistiques sont calculees sur votre machine a partir de
+    <span class="num">~/.local/share/fipindicateur/events.jsonl</span>. Rien n'est envoye sur le reseau.
+    Vous pouvez tout effacer depuis le menu (Reglages, Statistiques, Effacer) ou en supprimant ce fichier.</p>
+  </footer>
+</div>
+<div class="tooltip" id="tip"></div>
+
+<script>
+const DATA = __FIP_DATA__;
+
+// ---- helpers ----
+const $ = (id) => document.getElementById(id);
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function fmtDur(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return h + " h " + String(m).padStart(2, "0");
+  if (m > 0) return m + " min";
+  return sec + " s";
+}
+function fmtDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+const tip = $("tip");
+function showTip(e, html) {
+  tip.innerHTML = html;
+  tip.style.opacity = 1;
+  tip.style.left = (e.clientX + 12) + "px";
+  tip.style.top = (e.clientY + 12) + "px";
+}
+function hideTip() { tip.style.opacity = 0; }
+
+// ---- header + calibration ----
+function renderHeader() {
+  const r = DATA.range || {};
+  if (r.first && DATA.calibration.events > 0) {
+    $("range").textContent = "Du " + fmtDate(r.first) + " au " + fmtDate(r.last);
+  } else {
+    $("range").textContent = "Aucune donnee pour l'instant";
+  }
+  const c = DATA.calibration;
+  let note = c.events + " evenements, " + c.sessions + " sessions, " + c.daysActive + " jours actifs.";
+  if (c.sessions > 0 && c.sessions < 12) {
+    note += " Echantillon reduit : chiffres indicatifs, pas encore significatifs.";
+  }
+  $("calib").textContent = note;
+}
+
+// ---- tiles ----
+function tile(k, v, unit) {
+  return '<div class="tile"><div class="k">' + k + '</div><div class="v"><span class="num">' + v +
+    '</span>' + (unit ? ' <small>' + unit + '</small>' : '') + '</div></div>';
+}
+function renderTiles() {
+  const t = DATA.totals;
+  const topStation = (DATA.stations && DATA.stations[0]) ? DATA.stations[0].display : "-";
+  $("tiles").innerHTML =
+    tile("Temps d'ecoute", fmtDur(t.listeningSec)) +
+    tile("Sessions", t.sessions) +
+    tile("Radio favorite", topStation) +
+    tile("Play / Pause", t.plays + " / " + t.pauses) +
+    tile("Changements de radio", t.zaps);
+  const s = DATA.sessions;
+  $("sessionTiles").innerHTML =
+    tile("Session mediane", fmtDur(s.medianSec)) +
+    tile("Session moyenne", fmtDur(s.meanSec)) +
+    tile("Plus longue", fmtDur(s.maxSec));
+}
+
+// ---- Markov transition graph ----
+function renderMarkov() {
+  const trans = DATA.transitions || [];
+  const wrap = $("markovWrap");
+  if (trans.length === 0) {
+    wrap.innerHTML = '<div class="empty">Changez de radio quelques fois pour voir apparaitre votre carte de zapping.</div>';
+    $("markovNote").textContent = "";
+    return;
+  }
+  // Collect nodes and per-node listening share (for sizing).
+  const shareByKey = {};
+  (DATA.stations || []).forEach(s => shareByKey[s.key] = s.share);
+  const keys = [];
+  const seen = {};
+  trans.forEach(t => { [t.from, t.to].forEach(k => { if (!seen[k]) { seen[k] = 1; keys.push(k); } }); });
+  const dispByKey = {};
+  trans.forEach(t => { dispByKey[t.from] = t.fromDisplay; dispByKey[t.to] = t.toDisplay; });
+
+  const W = 760, H = Math.max(360, 90 + keys.length * 22), cx = W / 2, cy = H / 2;
+  const R = Math.min(W, H) / 2 - 70;
+  const pos = {};
+  keys.forEach((k, i) => {
+    const a = (i / keys.length) * 2 * Math.PI - Math.PI / 2;
+    pos[k] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), a };
+  });
+
+  const maxCount = Math.max.apply(null, trans.map(t => t.count));
+  const svgns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgns, "svg");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("id", "markov");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Graphe des transitions entre radios");
+
+  // arrowhead marker
+  const defs = document.createElementNS(svgns, "defs");
+  defs.innerHTML = '<marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
+    '<path d="M0,0 L10,5 L0,10 z" fill="' + cssVar('--accent') + '"></path></marker>';
+  svg.appendChild(defs);
+
+  // edges (curved so A->B and B->A do not overlap)
+  trans.forEach(t => {
+    const a = pos[t.from], b = pos[t.to];
+    if (!a || !b) return;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const off = 26; // curve offset, perpendicular
+    const qx = mx + (-dy / len) * off, qy = my + (dx / len) * off;
+    // trim endpoints to node radius so arrows land on the rim, not the center
+    const nr = 20;
+    const p = document.createElementNS(svgns, "path");
+    const sx = a.x + (qx - a.x) / Math.hypot(qx - a.x, qy - a.y) * nr;
+    const sy = a.y + (qy - a.y) / Math.hypot(qx - a.x, qy - a.y) * nr;
+    const ex = b.x + (qx - b.x) / Math.hypot(qx - b.x, qy - b.y) * nr;
+    const ey = b.y + (qy - b.y) / Math.hypot(qx - b.x, qy - b.y) * nr;
+    p.setAttribute("d", "M" + sx + "," + sy + " Q" + qx + "," + qy + " " + ex + "," + ey);
+    p.setAttribute("class", "edge");
+    p.setAttribute("stroke-width", (1.5 + (t.count / maxCount) * 9).toFixed(1));
+    p.setAttribute("opacity", (0.3 + t.prob * 0.65).toFixed(2));
+    p.setAttribute("marker-end", "url(#arw)");
+    const times = t.count === 1 ? "1 fois" : t.count + " fois";
+    p.addEventListener("mousemove", (e) => showTip(e,
+      "<b>" + t.fromDisplay + " &rarr; " + t.toDisplay + "</b><br>" + times + " (" + Math.round(t.prob * 100) + "%)"));
+    p.addEventListener("mouseleave", hideTip);
+    svg.appendChild(p);
+  });
+
+  // nodes
+  keys.forEach(k => {
+    const pt = pos[k];
+    const g = document.createElementNS(svgns, "g");
+    g.setAttribute("class", "node");
+    g.setAttribute("transform", "translate(" + pt.x + "," + pt.y + ")");
+    const r = 14 + (shareByKey[k] || 0) * 22;
+    const c = document.createElementNS(svgns, "circle");
+    c.setAttribute("r", r.toFixed(1));
+    g.appendChild(c);
+    const lab = document.createElementNS(svgns, "text");
+    // push label outward from center
+    const ly = pt.y < cy ? -(r + 8) : (r + 16);
+    lab.setAttribute("y", ly);
+    lab.textContent = dispByKey[k] || k;
+    g.appendChild(lab);
+    svg.appendChild(g);
+  });
+
+  wrap.innerHTML = "";
+  wrap.appendChild(svg);
+
+  const top = trans[0];
+  const times = top.count === 1 ? "1 fois" : top.count + " fois";
+  $("markovNote").innerHTML = "Transition la plus frequente : <b>" + top.fromDisplay + " &rarr; " +
+    top.toDisplay + "</b> (" + times + "). L'epaisseur d'une fleche represente sa frequence.";
+}
+
+// ---- hourly + weekday ----
+function renderHours() {
+  const h = DATA.hourly || [];
+  const max = Math.max(1, Math.max.apply(null, h));
+  const ramp = ['--seq-0','--seq-1','--seq-2','--seq-3','--seq-4','--seq-5','--seq-6'].map(cssVar);
+  const cont = $("hours"); cont.innerHTML = "";
+  let peak = 0, peakVal = 0;
+  h.forEach((v, i) => {
+    const col = document.createElement("div");
+    col.className = "hcol";
+    col.style.height = Math.max(3, (v / max) * 100) + "%";
+    const step = v === 0 ? 0 : 1 + Math.round((v / max) * 5);
+    col.style.background = ramp[step];
+    col.addEventListener("mousemove", (e) => showTip(e, "<b>" + String(i).padStart(2, "0") + "h</b> " + fmtDur(v)));
+    col.addEventListener("mouseleave", hideTip);
+    cont.appendChild(col);
+    if (v > peakVal) { peakVal = v; peak = i; }
+  });
+  const lab = $("hlabels"); lab.innerHTML = "";
+  for (let i = 0; i < 24; i++) {
+    const d = document.createElement("div");
+    d.textContent = (i % 6 === 0) ? i + "h" : "";
+    lab.appendChild(d);
+  }
+  const days = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+  const wd = DATA.weekday || [];
+  const wmax = Math.max(1, Math.max.apply(null, wd));
+  const wc = $("weekdays"); wc.innerHTML = "";
+  wd.forEach((v, i) => {
+    const cell = document.createElement("div");
+    cell.className = "wd";
+    cell.innerHTML = '<div class="wtrack"><div class="wfill" style="height:' + Math.max(2, (v / wmax) * 100) + '%"></div></div>' +
+      '<div class="wlbl">' + days[i] + '</div>';
+    cell.querySelector(".wtrack").addEventListener("mousemove", (e) => showTip(e, "<b>" + days[i] + "</b> " + fmtDur(v)));
+    cell.querySelector(".wtrack").addEventListener("mouseleave", hideTip);
+    wc.appendChild(cell);
+  });
+  if (peakVal > 0) {
+    $("hoursNote").innerHTML = "Heure de pointe : <b>" + peak + "h</b>. Les jours (Dimanche a Samedi) sont a droite.";
+  } else {
+    $("hoursNote").textContent = "";
+  }
+}
+
+// ---- stations ----
+function renderStations() {
+  const st = DATA.stations || [];
+  const cont = $("stations");
+  if (st.length === 0) { cont.innerHTML = '<div class="empty">Pas encore d\'ecoute enregistree.</div>'; return; }
+  const max = Math.max.apply(null, st.map(s => s.listeningSec)) || 1;
+  cont.innerHTML = st.map(s => {
+    const pct = Math.round(s.share * 100);
+    return '<div class="bar-row"><div class="lbl">' + s.display + '</div>' +
+      '<div class="track"><div class="fill" style="width:' + Math.max(2, (s.listeningSec / max) * 100) + '%"></div></div>' +
+      '<div class="val num">' + fmtDur(s.listeningSec) + ' <small>' + pct + '%</small></div></div>';
+  }).join("");
+}
+
+// ---- achievements ----
+function renderAch() {
+  const cont = $("ach");
+  cont.innerHTML = (DATA.achievements || []).map(a => {
+    const pct = a.target > 0 ? Math.min(100, Math.round((a.current / a.target) * 100)) : 0;
+    const cur = Number.isInteger(a.current) ? a.current : a.current.toFixed(1);
+    const tgt = Number.isInteger(a.target) ? a.target : a.target.toFixed(1);
+    const ptxt = a.unlocked ? "Debloque" : (cur + " / " + tgt);
+    return '<div class="badge ' + (a.unlocked ? 'unlocked' : 'locked') + '">' +
+      '<div class="emo">' + a.emoji + '</div>' +
+      '<div style="flex:1"><div class="name">' + a.name + '</div>' +
+      '<div class="desc">' + a.desc + '</div>' +
+      (a.unlocked ? '' : '<div class="prog"><i style="width:' + pct + '%"></i></div>') +
+      '<div class="pt num">' + ptxt + '</div></div></div>';
+  }).join("");
+}
+
+// ---- theme ----
+function initTheme() {
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  if (prefersDark) document.documentElement.classList.add("dark");
+  $("themeBtn").addEventListener("click", () => {
+    document.documentElement.classList.toggle("dark");
+    renderAll(); // recompute chart colors from CSS vars
+  });
+}
+
+function renderAll() {
+  renderMarkov();
+  renderHours();
+}
+function main() {
+  initTheme();
+  renderHeader();
+  renderTiles();
+  renderStations();
+  renderAch();
+  renderAll();
+}
+main();
+</script>
+</body>
+</html>
