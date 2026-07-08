@@ -2,6 +2,12 @@ GO ?= go
 BIN := fipindicateur
 PKG := ./cmd/fipindicateur
 
+# Stamp the build with `git describe` so the tray menu (and stats report)
+# reflect the exact commit; each rebuild is visible on relaunch. Falls back to
+# a dev placeholder outside a git checkout.
+VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo v0.2.0-dev)
+LDFLAGS := -X github.com/PLNech/fipindicateur/internal/version.Version=$(VERSION)
+
 # User-level install layout (no sudo).
 PREFIX  ?= $(HOME)/.local
 BINDIR  := $(PREFIX)/bin
@@ -11,10 +17,10 @@ ICONDIR := $(PREFIX)/share/icons/hicolor
 .PHONY: build run test lint fix icons clean install uninstall
 
 build: ## Build the binary
-	$(GO) build -o $(BIN) $(PKG)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
 
 run: ## Build and run
-	$(GO) run $(PKG)
+	$(GO) run -ldflags "$(LDFLAGS)" $(PKG)
 
 test: ## Run tests
 	$(GO) test ./...
@@ -35,7 +41,7 @@ icons: ## Regenerate the tray icons
 
 install: ## Build and install for the current user (binary, launcher, icons)
 	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps
-	$(GO) build -o $(BINDIR)/$(BIN) $(PKG)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINDIR)/$(BIN) $(PKG)
 	sed "s|@BINDIR@|$(BINDIR)|" packaging/fipindicateur.desktop.in > $(APPDIR)/fipindicateur.desktop
 	install -m 644 internal/icon/icon_app_22.png  $(ICONDIR)/22x22/apps/fipindicateur.png
 	install -m 644 internal/icon/icon_app_44.png  $(ICONDIR)/44x44/apps/fipindicateur.png

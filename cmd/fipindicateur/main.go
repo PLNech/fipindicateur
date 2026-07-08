@@ -11,16 +11,25 @@ import (
 	"os/signal"
 	"syscall"
 
+	"fmt"
+
 	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/stats"
 	"github.com/PLNech/fipindicateur/internal/ui"
+	"github.com/PLNech/fipindicateur/internal/version"
 )
 
 func main() {
 	// Subcommands run and exit without touching the tray. `stats` builds the
 	// local listening report; no args launches the tray as usual.
-	if len(os.Args) > 1 && os.Args[1] == "stats" {
-		os.Exit(stats.RunCLI(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "stats":
+			os.Exit(stats.RunCLI(os.Args[2:]))
+		case "version", "--version", "-v":
+			fmt.Println("fipindicateur " + version.String())
+			os.Exit(0)
+		}
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)

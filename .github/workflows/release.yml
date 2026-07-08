@@ -26,7 +26,7 @@ jobs:
       - name: Install mpv (runtime dependency, Homebrew)
         run: brew install mpv
       - name: Build binary
-        run: go build -o fipindicateur ./cmd/fipindicateur
+        run: go build -ldflags "-X github.com/PLNech/fipindicateur/internal/version.Version=${GITHUB_REF_NAME}" -o fipindicateur ./cmd/fipindicateur
       - name: Assemble FipIndicateur.app
         run: |
           set -euo pipefail
@@ -87,7 +87,7 @@ jobs:
       - name: Install libmpv
         run: sudo apt-get update && sudo apt-get install -y libmpv-dev
       - name: Build binary
-        run: go build -o fipindicateur ./cmd/fipindicateur
+        run: go build -ldflags "-X github.com/PLNech/fipindicateur/internal/version.Version=${GITHUB_REF_NAME}" -o fipindicateur ./cmd/fipindicateur
       - name: Package tarball
         run: tar czf fipindicateur-linux-amd64.tar.gz fipindicateur README.md LICENSE
       - name: Upload tarball artifact
