@@ -149,8 +149,11 @@ func Build(evs []events.Event, now time.Time) Report {
 	for _, e := range sorted {
 		switch e.Kind {
 		case events.KindPlay:
-			plays++
+			// Count and open a session only on a genuine paused->playing edge.
+			// setPlayingUI (the UI chokepoint) may re-emit play on a station
+			// switch while already playing; those are idempotent here.
 			if !playing {
+				plays++
 				playing = true
 				if e.Station != "" {
 					station = e.Station
@@ -159,10 +162,10 @@ func Build(evs []events.Event, now time.Time) Report {
 				startSession(e.TS)
 			}
 		case events.KindPause, events.KindAppStop, events.KindQuit:
-			if e.Kind == events.KindPause {
-				pauses++
-			}
 			if playing {
+				if e.Kind == events.KindPause {
+					pauses++
+				}
 				closeSeg(e.TS)
 				endSession(e.TS)
 				playing = false
