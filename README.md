@@ -66,6 +66,15 @@ are kept buildable and planned.
   the same submenu; deleting only touches `events.jsonl`, never your track
   history. The report is built from the JSONL, so it is trivial to script on.
 
+![Rapport de statistiques (données fictives)](docs/stats-report.png)
+
+> The report above is rendered from **fixture data**. Top to bottom: headline
+> tiles, the **Markov graph** of station zapping (arrow thickness = frequency),
+> the hourly and weekday heatmaps, per-station listening, session lengths, and
+> the Achievements wall. It is theme-aware (light and dark):
+
+![Graphe de Markov, thème sombre](docs/stats-markov-dark.png)
+
 ## Install
 
 Runtime needs **libmpv** (the app links libmpv via cgo, and mpv plays the
