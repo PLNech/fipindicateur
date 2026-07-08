@@ -39,7 +39,8 @@ func TestActionKindsWired(t *testing.T) {
 		"KindStationChange", "KindAudioDevice", "KindVolume", "KindMute", "KindHiFi",
 		"KindNotif", "KindAnim", "KindAutostart", "KindOpenWiki",
 		"KindOpenLink", "KindOpenHistory", "KindOpenFip", "KindOpenAbout",
-		"KindStatsView", "KindStatsToggle", "KindQuit",
+		"KindStatsView", "KindStatsToggle", "KindRestart", "KindUpdateCheck",
+		"KindUpdateStartup", "KindQuit",
 	} {
 		if !strings.Contains(s, "events."+kind) {
 			t.Errorf("action kind %s is defined but not wired in ui.go", kind)

@@ -96,6 +96,7 @@ internal/events     opt-in event log + async Recorder
 internal/stats      pure derivation + embedded self-contained HTML report
 internal/config     persisted settings (~/.config/fipindicateur/config.json)
 internal/histlog    opt-in track-change log (separate from events)
+internal/update     GitHub-releases update check (read-only, no self-replace)
 internal/version    build version (ldflags-stamped)
 internal/{player,metadata,mpris,notify,stations,icon,wiki,vu,open}  the rest
 ```

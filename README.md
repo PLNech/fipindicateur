@@ -123,6 +123,13 @@ it for the menu. Your last station and settings are remembered in
 `./fipindicateur stats --out report.html --no-open` just writes the file.
 `./fipindicateur version` prints the running build.
 
+**Mises à jour:** *À propos, Mises à jour, Vérifier maintenant* compares your
+version to the latest GitHub release (picking the asset for your OS) and
+notifies you, opening the release page when a newer one exists. *Vérifier au
+démarrage* (off by default) opts into a quiet check at launch. *Relancer*
+restarts the app to load a freshly installed binary (dev builds are told to
+`git pull && make install`).
+
 **Media keys / playerctl:**
 
 ```sh

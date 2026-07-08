@@ -16,6 +16,7 @@ type Config struct {
 	Autostart      bool   `json:"autostart"`        // launch at login
 	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
 	Stats          bool   `json:"stats"`            // opt-in local listening analytics (events.jsonl)
+	UpdateStartup  bool   `json:"update_startup"`   // check GitHub for a newer release at launch (opt-in)
 	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
 	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
 	// system default output). Persisted so a chosen sink survives restarts.
@@ -38,6 +39,7 @@ func Default() Config {
 		Autostart:      false,
 		HistoryFile:    false,
 		Stats:          false,
+		UpdateStartup:  false,
 		AnimatedIcon:   true,
 		Volume:         100,
 		Mute:           false,

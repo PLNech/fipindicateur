@@ -9,7 +9,9 @@ import (
 	"log"
 	"math"
 	"os"
+	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 
 	"fyne.io/systray"
@@ -24,6 +26,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/player"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/stats"
+	"github.com/PLNech/fipindicateur/internal/update"
 	"github.com/PLNech/fipindicateur/internal/version"
 	"github.com/PLNech/fipindicateur/internal/wiki"
 )
@@ -57,23 +60,24 @@ type App struct {
 	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
 
 	// menu items
-	mNow        *systray.MenuItem
-	mVoirWiki   *systray.MenuItem
-	mVoirLink   *systray.MenuItem
-	mPlay       *systray.MenuItem
-	stationMI   map[string]*systray.MenuItem
-	histMI      []*systray.MenuItem
-	mHiFi       *systray.MenuItem
-	mNotif      *systray.MenuItem
-	mAuto       *systray.MenuItem
-	mHistFile   *systray.MenuItem
-	mAnim       *systray.MenuItem
-	audioMI     map[string]*systray.MenuItem // audio-output items, keyed by device name ("auto" = automatic)
-	mStats      *systray.MenuItem
-	mStatsClear *systray.MenuItem
-	mVolume     *systray.MenuItem
-	mMute       *systray.MenuItem
-	volMI       map[int]*systray.MenuItem
+	mNow           *systray.MenuItem
+	mVoirWiki      *systray.MenuItem
+	mVoirLink      *systray.MenuItem
+	mPlay          *systray.MenuItem
+	stationMI      map[string]*systray.MenuItem
+	histMI         []*systray.MenuItem
+	mHiFi          *systray.MenuItem
+	mNotif         *systray.MenuItem
+	mAuto          *systray.MenuItem
+	mHistFile      *systray.MenuItem
+	mAnim          *systray.MenuItem
+	audioMI        map[string]*systray.MenuItem // audio-output items, keyed by device name ("auto" = automatic)
+	mStats         *systray.MenuItem
+	mStatsClear    *systray.MenuItem
+	mUpdateStartup *systray.MenuItem
+	mVolume        *systray.MenuItem
+	mMute          *systray.MenuItem
+	volMI          map[int]*systray.MenuItem
 }
 
 // volumePresets are the quick-pick volume levels in the tray menu.
@@ -136,6 +140,11 @@ func (a *App) OnReady() {
 	a.applyIcon()
 	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.current.Key})
 	a.startStation(a.current, true)
+
+	// Opt-in: one quiet update check at launch. Off by default.
+	if a.cfg.UpdateStartup {
+		go a.runUpdateCheck(true)
+	}
 }
 
 // OnExit tears everything down.
@@ -272,6 +281,15 @@ func (a *App) buildMenu() {
 	a.on(about, events.KindOpenAbout, func() { open.URL(repoURL) })
 	ver := systray.AddMenuItem("le fipindicateur "+version.String(), "Version installée")
 	ver.Disable()
+	// Mises à jour: "Vérifier maintenant" is the on-demand check; the checkbox
+	// is the opt-in startup check. Both off + never clicking = never checks.
+	maj := systray.AddMenuItem("Mises à jour", "Vérifier les nouvelles versions")
+	checkNow := maj.AddSubMenuItem("Vérifier maintenant", "Comparer avec la dernière release sur GitHub")
+	a.on(checkNow, events.KindUpdateCheck, a.checkUpdates)
+	a.mUpdateStartup = maj.AddSubMenuItemCheckbox("Vérifier au démarrage", "Un contrôle discret au lancement (sinon jamais)", a.cfg.UpdateStartup)
+	a.on(a.mUpdateStartup, "", a.toggleUpdateStartup)
+	relancer := systray.AddMenuItem("Relancer", "Redémarrer le fipindicateur (recharge la dernière version installée)")
+	a.on(relancer, events.KindRestart, a.restart)
 	quit := systray.AddMenuItem("Quitter", "Fermer le fipindicateur")
 	a.on(quit, events.KindQuit, func() { systray.Quit() })
 
@@ -812,6 +830,83 @@ func (a *App) clearStatsConfirm() {
 	if a.notif != nil {
 		a.notif.Notify("Statistiques effacées", "Le journal events.jsonl a été supprimé.", "", a.cfg.NotifTimeoutMs)
 	}
+}
+
+// --- restart & updates ---
+
+// restart relaunches the app so a freshly installed binary takes over. It
+// starts a detached helper that waits for this instance to exit (freeing the
+// MPRIS single-instance name and mpv) then execs the current executable path,
+// picking up whatever `make install` last wrote there.
+func (a *App) restart() {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("ui: restart: cannot resolve executable: %v", err)
+		return
+	}
+	cmd := exec.Command("/bin/sh", "-c", fmt.Sprintf("sleep 1; exec %q", exe))
+	cmd.Env = os.Environ()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from the dying parent
+	if err := cmd.Start(); err != nil {
+		log.Printf("ui: restart: relaunch failed: %v", err)
+		return
+	}
+	systray.Quit() // clean teardown: records app_stop, closes mpv and D-Bus
+}
+
+// checkUpdates runs an on-demand update check off the UI goroutine.
+func (a *App) checkUpdates() { go a.runUpdateCheck(false) }
+
+// runUpdateCheck queries GitHub Releases and notifies the result. On an
+// explicit check it always reports (and opens the release page when newer); on
+// the startup check it stays quiet unless a newer release actually exists, and
+// never steals focus with a browser tab.
+func (a *App) runUpdateCheck(startup bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	res, err := update.Check(ctx, version.String())
+	if err != nil {
+		log.Printf("ui: update check: %v", err)
+		if !startup {
+			a.notifyUpdate("Vérification impossible", "Impossible de contacter GitHub pour le moment.")
+		}
+		return
+	}
+	switch {
+	case res.Newer:
+		a.notifyUpdate("Mise à jour disponible", fmt.Sprintf("%s est disponible (vous avez %s).", res.Latest, res.Current))
+		if !startup {
+			open.URL(res.URL)
+		}
+	case res.Dev:
+		if !startup {
+			a.notifyUpdate("Build de développement", fmt.Sprintf("Version %s. Dernière release : %s. Mettez à jour avec git pull puis make install.", res.Current, res.Latest))
+			open.URL(res.URL)
+		}
+	default:
+		if !startup {
+			a.notifyUpdate("À jour", fmt.Sprintf("Vous utilisez la dernière version (%s).", res.Current))
+		}
+	}
+}
+
+func (a *App) notifyUpdate(summary, body string) {
+	if a.notif != nil {
+		a.notif.Notify(summary, body, "", a.cfg.NotifTimeoutMs)
+		return
+	}
+	log.Printf("ui: update: %s - %s", summary, body)
+}
+
+func (a *App) toggleUpdateStartup() {
+	a.cfg.UpdateStartup = !a.cfg.UpdateStartup
+	if a.cfg.UpdateStartup {
+		a.mUpdateStartup.Check()
+	} else {
+		a.mUpdateStartup.Uncheck()
+	}
+	a.rec.Record(events.Event{Kind: events.KindUpdateStartup, Value: b2i(a.cfg.UpdateStartup)})
+	a.save()
 }
 
 func (a *App) openNow() {
