@@ -15,6 +15,7 @@ type Config struct {
 	NotifTimeoutMs int    `json:"notif_timeout_ms"` // notification expire hint (GNOME ignores it; dunst/KDE honor it)
 	Autostart      bool   `json:"autostart"`        // launch at login
 	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
+	Stats          bool   `json:"stats"`            // opt-in local listening analytics (events.jsonl)
 	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
 	// Volume/Mute cache the last-known PulseAudio stream state for
 	// pre-playback DISPLAY only. PulseAudio (module-stream-restore) is the
@@ -33,6 +34,7 @@ func Default() Config {
 		NotifTimeoutMs: 10000,
 		Autostart:      false,
 		HistoryFile:    false,
+		Stats:          false,
 		AnimatedIcon:   true,
 		Volume:         100,
 		Mute:           false,
