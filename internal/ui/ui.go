@@ -392,11 +392,18 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	}
 	if changed {
 		a.refreshHistoryMenu()
-		if a.cfg.Notifications {
-			a.notify(np)
-		}
-		if a.cfg.HistoryFile {
-			a.appendHistFile(np)
+		// A notification and a history-log line both mean "you heard this
+		// track". The metadata watcher keeps polling FIP while paused or
+		// stopped, so gate both on actual playback: when the stream is not
+		// playing you are not listening, so we stay silent and log nothing.
+		// The menu label still updates above, so resuming shows what is on air.
+		if a.player.IsPlaying() {
+			if a.cfg.Notifications {
+				a.notify(np)
+			}
+			if a.cfg.HistoryFile {
+				a.appendHistFile(np)
+			}
 		}
 	}
 }
