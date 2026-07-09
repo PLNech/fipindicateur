@@ -49,9 +49,17 @@ install: ## Build and install for the current user (binary, launcher, icons)
 	-update-desktop-database $(APPDIR) 2>/dev/null || true
 	-gtk-update-icon-cache -q $(ICONDIR) 2>/dev/null || true
 	touch $(ICONDIR)
+	install -m 755 packaging/fipindicateur-watchdog.sh $(BINDIR)/fipindicateur-watchdog
+	mkdir -p $(HOME)/.config/systemd/user
+	install -m 644 packaging/fipindicateur-watchdog.service $(HOME)/.config/systemd/user/fipindicateur-watchdog.service
+	-systemctl --user daemon-reload 2>/dev/null || true
+	-systemctl --user enable --now fipindicateur-watchdog.service 2>/dev/null || true
 	@echo "Installed. Launch from GNOME activities (FipIndicateur) or $(BINDIR)/$(BIN)."
 
 uninstall: ## Remove the user-level install (binary, launcher, icons, autostart)
+	-systemctl --user disable --now fipindicateur-watchdog.service 2>/dev/null || true
+	rm -f $(BINDIR)/fipindicateur-watchdog
+	rm -f $(HOME)/.config/systemd/user/fipindicateur-watchdog.service
 	rm -f $(BINDIR)/$(BIN)
 	rm -f $(APPDIR)/fipindicateur.desktop
 	rm -f $(ICONDIR)/22x22/apps/fipindicateur.png

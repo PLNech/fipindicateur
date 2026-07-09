@@ -1,0 +1,14 @@
+[Unit]
+Description=fipindicateur watchdog · kills the radio if it wedges gnome-shell
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/fipindicateur-watchdog
+Restart=on-failure
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=graphical-session.target
