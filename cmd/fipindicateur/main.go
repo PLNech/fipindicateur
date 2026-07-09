@@ -35,6 +35,15 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("fipindicateur: ")
 
+	// Single-instance guard, before any tray/D-Bus/mpv setup: a second launch
+	// (e.g. a double click in the GNOME app grid) must exit cleanly instead of
+	// registering a second StatusNotifierItem and fighting the first over the
+	// tray. Exit 0: this is expected, not an error.
+	if err := ui.AcquireInstanceLock(); err != nil {
+		log.Printf("le fipindicateur tourne déjà, sortie (%v)", err)
+		os.Exit(0)
+	}
+
 	app := ui.New()
 
 	// Translate termination signals into a clean systray shutdown, which in
