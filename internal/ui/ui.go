@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -57,6 +58,17 @@ type App struct {
 	wiki     *wiki.Resolver
 	rec      *events.Recorder
 
+	// iconMu guards lastIcon, the last bytes handed to systray.SetIcon. The
+	// static-icon path (setPlayingUI) and the animator goroutine both set the
+	// tray icon; the chokepoint serializes them and skips redundant identical
+	// pushes so the SNI is not churned needlessly.
+	iconMu   sync.Mutex
+	lastIcon []byte
+
+	// nowThrottle coalesces "now playing" label pushes to the tray so a burst
+	// of metadata updates cannot hammer the appindicator extension.
+	nowThrottle *throttle
+
 	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
 
 	// menu items
@@ -83,6 +95,12 @@ type App struct {
 // volumePresets are the quick-pick volume levels in the tray menu.
 var volumePresets = []int{10, 25, 50, 75, 100}
 
+// nowLabelMinInterval is the floor between two "now playing" label pushes to
+// the tray. livemeta polls are naturally minutes apart, but an ICY burst (or a
+// rapid station zap) can arrive faster; coalescing to ~1.5s keeps the SNI calm
+// without a human noticing a label lag.
+const nowLabelMinInterval = 1500 * time.Millisecond
+
 // New returns an App with loaded config.
 func New() *App {
 	cfg := config.Load()
@@ -99,6 +117,21 @@ func New() *App {
 // playing the last station.
 func (a *App) OnReady() {
 	a.current = stations.ByKey(a.cfg.Station)
+
+	// Set a valid icon as the very first thing, before building the menu: the
+	// StatusNotifierItem is registered by the systray runtime the instant it is
+	// ready, and GNOME reads the icon pixmap immediately. Handing it real bytes
+	// up front minimises the window where the SNI has a null/empty pixmap (the
+	// cogl "data != NULL" assertion). setIcon guarantees the bytes are non-empty.
+	a.applyIcon()
+
+	// The tray "now playing" label goes through a dedupe+debounce throttle so a
+	// metadata burst cannot churn the SNI. SetTitle and SetTooltip carry the
+	// same string, so one throttle drives both.
+	a.nowThrottle = newThrottle(nowLabelMinInterval, func(label string) {
+		a.mNow.SetTitle(label)
+		a.mNow.SetTooltip(label)
+	})
 
 	a.player = &player.MPV{
 		TitleChanged: a.meta.PushTitle,
@@ -137,7 +170,8 @@ func (a *App) OnReady() {
 	if a.mpris != nil {
 		a.mpris.SetVolume(float64(a.cfg.Volume) / 100)
 	}
-	a.applyIcon()
+	// (icon already set at the top of OnReady, before the menu, to shrink the
+	// null-pixmap window at SNI registration.)
 	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.current.Key})
 	a.startStation(a.current, true)
 
@@ -371,15 +405,23 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	}
 	a.mu.Unlock()
 
+	// Nothing tray-visible changes when the track is the same: the metadata
+	// watcher re-polls the SAME track many times over its (minutes-long) life,
+	// so pushing the label, the "Voir…" state and the MPRIS metadata on every
+	// poll churned the SNI for no reason. Gate every push on an actual change.
+	if !changed {
+		return
+	}
+
 	label := np.Title
 	if np.Artist != "" {
 		label = np.Artist + " · " + np.Title
 	}
-	if changed {
-		log.Printf("now playing [%s]: %s", a.current.Key, label)
-	}
-	a.mNow.SetTitle(label)
-	a.mNow.SetTooltip(label)
+	log.Printf("now playing [%s]: %s", a.current.Key, label)
+
+	// Dedupe + debounce the label push (SetTitle + SetTooltip) so a burst
+	// cannot hammer the appindicator extension.
+	a.nowThrottle.update(label)
 
 	if np.Link != "" {
 		a.mVoirLink.Enable()
@@ -390,20 +432,18 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	if a.mpris != nil {
 		a.mpris.UpdateMetadata(np)
 	}
-	if changed {
-		a.refreshHistoryMenu()
-		// A notification and a history-log line both mean "you heard this
-		// track". The metadata watcher keeps polling FIP while paused or
-		// stopped, so gate both on actual playback: when the stream is not
-		// playing you are not listening, so we stay silent and log nothing.
-		// The menu label still updates above, so resuming shows what is on air.
-		if a.player.IsPlaying() {
-			if a.cfg.Notifications {
-				a.notify(np)
-			}
-			if a.cfg.HistoryFile {
-				a.appendHistFile(np)
-			}
+	a.refreshHistoryMenu()
+	// A notification and a history-log line both mean "you heard this track".
+	// The metadata watcher keeps polling FIP while paused or stopped, so gate
+	// both on actual playback: when the stream is not playing you are not
+	// listening, so we stay silent and log nothing. The menu label still
+	// updates above, so resuming shows what is on air.
+	if a.player.IsPlaying() {
+		if a.cfg.Notifications {
+			a.notify(np)
+		}
+		if a.cfg.HistoryFile {
+			a.appendHistFile(np)
 		}
 	}
 }
@@ -965,8 +1005,31 @@ func (a *App) openNowLink() {
 	open.URL(link)
 }
 
-func (a *App) applyIcon()                 { systray.SetIcon(icon.Active(false)) }
-func (a *App) applyIconState(paused bool) { systray.SetIcon(icon.Active(paused)) }
+func (a *App) applyIcon()                 { a.setIcon(icon.Active(false)) }
+func (a *App) applyIconState(paused bool) { a.setIcon(icon.Active(paused)) }
+
+// setIcon is the single chokepoint for the tray icon. It (1) refuses empty
+// bytes, which would register a null pixmap on the StatusNotifierItem and trip
+// GNOME's cogl "data != NULL" assertion, and (2) skips a push when the bytes
+// are identical to the last set, so the static-icon path and the animator (two
+// goroutines) never churn the SNI with a redundant redraw. The icon library
+// never returns nil in practice; the guard is defence against a future
+// regression handing us an empty asset.
+func (a *App) setIcon(b []byte) {
+	if len(b) == 0 {
+		log.Printf("ui: refusing to set an empty tray icon (would register a null pixmap)")
+		return
+	}
+	a.iconMu.Lock()
+	if bytes.Equal(b, a.lastIcon) {
+		a.iconMu.Unlock()
+		return
+	}
+	// Copy so a caller reusing its buffer cannot mutate our dedupe baseline.
+	a.lastIcon = append(a.lastIcon[:0:0], b...)
+	a.iconMu.Unlock()
+	systray.SetIcon(b)
+}
 
 func (a *App) save() {
 	if err := a.cfg.Save(); err != nil {

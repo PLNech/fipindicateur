@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -45,5 +46,32 @@ func TestActionKindsWired(t *testing.T) {
 		if !strings.Contains(s, "events."+kind) {
 			t.Errorf("action kind %s is defined but not wired in ui.go", kind)
 		}
+	}
+}
+
+// TestSingleSetIconCallSite enforces that the tray icon is set through exactly
+// one chokepoint (App.setIcon). That chokepoint refuses empty bytes (which
+// register a null pixmap and trip GNOME's cogl "data != NULL" assertion) and
+// dedupes redundant pushes. If a raw systray.SetIcon( appears more than once
+// across the package, an icon path bypassed the guard: route it through
+// a.setIcon instead. (The one allowed occurrence lives inside setIcon.)
+func TestSingleSetIconCallSite(t *testing.T) {
+	matches, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, f := range matches {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += strings.Count(string(src), "systray.SetIcon(")
+	}
+	if total != 1 {
+		t.Fatalf("guarded-icon invariant: `systray.SetIcon(` must appear exactly once (inside App.setIcon); found %d. Route icon sets through a.setIcon.", total)
 	}
 }

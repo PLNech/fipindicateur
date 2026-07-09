@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/icon"
 	"github.com/PLNech/fipindicateur/internal/vu"
 )
@@ -91,7 +90,7 @@ func (an *animator) loop(stop chan struct{}) {
 				an.stopCh = nil
 				an.mu.Unlock()
 				log.Printf("ui: astats levels unavailable, animated icon disabled for this run")
-				systray.SetIcon(icon.Active(false))
+				an.app.setIcon(icon.Active(false))
 				return
 			}
 			continue
@@ -104,7 +103,7 @@ func (an *animator) loop(stop chan struct{}) {
 		prev = h
 
 		if h != last {
-			systray.SetIcon(icon.BarsIcon(h))
+			an.app.setIcon(icon.BarsIcon(h))
 			last = h
 		}
 	}
