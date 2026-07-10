@@ -375,6 +375,14 @@ func (a *App) startStation(s stations.Station, play bool) {
 	}
 	a.setPlayingUI(play)
 
+	// Crossfade the animated glyph's ink toward this station's legible brand
+	// color. Color only while music plays: paused/stopped falls back to the
+	// static neutral icon (Active) via setPlayingUI. The gsettings panel probe
+	// is cached (icon.PanelIsDark), never per frame.
+	if play {
+		a.anim.setTintTarget(icon.Legible(s.Color, icon.PanelIsDark()))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	a.watchCancel = cancel
 	updates := a.meta.Watch(ctx, s)

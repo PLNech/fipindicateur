@@ -32,6 +32,10 @@ var (
 type barsKey struct {
 	h    vu.Heights
 	dark bool
+	// tint is the station brand ink; the zero value means "use theme ink".
+	// color.NRGBA is comparable, so it keys the cache directly and the tint
+	// step joins (heights, dark) in the frame identity.
+	tint color.NRGBA
 }
 
 // panelIsDark caches the gsettings probe: it spawns a process, which must not
@@ -41,10 +45,26 @@ func panelIsDark() bool {
 	return panelDark
 }
 
+// PanelIsDark exposes the cached panel-darkness probe so callers (the UI)
+// resolve station colors against the same surface without a per-frame spawn.
+func PanelIsDark() bool { return panelIsDark() }
+
+// ThemeInk is the neutral bar ink for the current panel: the color used when
+// no tint is applied. Callers ease a first tint in from this so the intro is a
+// fade rather than a jump.
+func ThemeInk(dark bool) color.NRGBA {
+	if dark {
+		return color.NRGBA{0xF5, 0xF5, 0xF5, 0xFF} // light ink for dark panels
+	}
+	return color.NRGBA{0x2B, 0x2B, 0x2B, 0xFF} // dark ink for light panels
+}
+
 // BarsIcon returns the PNG for the given quantized bar heights, theme-aware.
-// Cached: rendering happens once per unique state.
-func BarsIcon(h vu.Heights) []byte {
-	key := barsKey{h: h, dark: panelIsDark()}
+// A non-zero tint recolors the bars (the active station's legible brand ink);
+// the zero value falls back to the theme ink. Cached: rendering happens once
+// per unique (heights, panel, tint) state.
+func BarsIcon(h vu.Heights, tint color.NRGBA) []byte {
+	key := barsKey{h: h, dark: panelIsDark(), tint: tint}
 
 	barsCacheMu.Lock()
 	if b, ok := barsCache[key]; ok {
@@ -53,7 +73,7 @@ func BarsIcon(h vu.Heights) []byte {
 	}
 	barsCacheMu.Unlock()
 
-	b := renderBars(h, key.dark)
+	b := renderBars(h, key.dark, tint)
 
 	barsCacheMu.Lock()
 	barsCache[key] = b
@@ -62,10 +82,10 @@ func BarsIcon(h vu.Heights) []byte {
 }
 
 // renderBars rasterizes 4 vertical bars, bottom-aligned, in the glyph palette.
-func renderBars(h vu.Heights, dark bool) []byte {
-	ink := color.NRGBA{0x2B, 0x2B, 0x2B, 0xFF} // dark ink for light panels
-	if dark {
-		ink = color.NRGBA{0xF5, 0xF5, 0xF5, 0xFF} // light ink for dark panels
+func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
+	ink := ThemeInk(dark)
+	if (tint != color.NRGBA{}) {
+		ink = tint // station brand ink while music plays
 	}
 
 	img := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"image/color"
 	"log"
+	"math"
 	"sync"
 	"time"
 
@@ -21,6 +23,11 @@ const (
 	// ~5s of consecutive astats failures while audio flows: assume the filter
 	// this libmpv and auto-disable for the rest of the run.
 	animMaxErrs = 5 * animFPS
+	// A station zap crossfades the bar ink over tintDur, quantized to tintSteps
+	// discrete values so the frame cache stays bounded and at most tintSteps
+	// extra SetIcon calls happen per change (when VU heights alone would dedup).
+	tintDur   = 10 * time.Second
+	tintSteps = 16
 )
 
 type animator struct {
@@ -29,6 +36,72 @@ type animator struct {
 	mu     sync.Mutex
 	stopCh chan struct{}
 	broken bool // astats unavailable; animation off for this run
+
+	// Tint crossfade state, guarded by mu. tintSet stays false until the first
+	// target is set, so the icon draws with theme ink (zero tint) until then.
+	tintFrom  color.NRGBA
+	tintTo    color.NRGBA
+	tintStart time.Time
+	tintSet   bool
+}
+
+// smoothstep eases 0..1 with a symmetric ease-in-out.
+func smoothstep(t float64) float64 {
+	if t <= 0 {
+		return 0
+	}
+	if t >= 1 {
+		return 1
+	}
+	return t * t * (3 - 2*t)
+}
+
+// setTintTarget starts a crossfade toward c. A zap mid-transition starts from
+// the currently displayed (interpolated) tint, not the old endpoint, so the
+// motion never snaps. The first-ever target eases in from the neutral theme
+// ink, turning app start into a fade rather than a jump.
+func (an *animator) setTintTarget(c color.NRGBA) {
+	an.mu.Lock()
+	defer an.mu.Unlock()
+	now := time.Now()
+	if an.tintSet {
+		an.tintFrom = an.currentTintLocked(now)
+	} else {
+		an.tintFrom = icon.ThemeInk(icon.PanelIsDark())
+	}
+	an.tintTo = c
+	an.tintStart = now
+	an.tintSet = true
+}
+
+// currentTintLocked is the un-quantized eased tint at now. Used only to seed a
+// new crossfade's starting point; the displayed frame uses the quantized value.
+func (an *animator) currentTintLocked(now time.Time) color.NRGBA {
+	t := float64(now.Sub(an.tintStart)) / float64(tintDur)
+	return icon.Lerp(an.tintFrom, an.tintTo, smoothstep(t))
+}
+
+// quantizedTint is the tint to draw this frame: zero (theme ink) before any
+// target, else the eased crossfade snapped to one of tintSteps discrete values
+// so the whole transition yields at most tintSteps distinct tints.
+func (an *animator) quantizedTint(now time.Time) color.NRGBA {
+	an.mu.Lock()
+	defer an.mu.Unlock()
+	if !an.tintSet {
+		return color.NRGBA{}
+	}
+	t := float64(now.Sub(an.tintStart)) / float64(tintDur)
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	// Snap the progress to tintSteps levels (0 .. tintSteps-1): tintSteps
+	// distinct positions, hence at most tintSteps distinct tints start to end.
+	step := math.Round(t * float64(tintSteps-1))
+	qt := step / float64(tintSteps-1)
+	return icon.Lerp(an.tintFrom, an.tintTo, smoothstep(qt))
 }
 
 // start launches the animation loop if enabled, not already running, and not
@@ -59,9 +132,15 @@ func (an *animator) loop(stop chan struct{}) {
 	ticker := time.NewTicker(animInterval)
 	defer ticker.Stop()
 
+	// The frame identity is the (heights, tint) tuple: a tint step advance
+	// redraws, an unchanged tuple never does. Both members are comparable.
+	type frameKey struct {
+		h    vu.Heights
+		tint color.NRGBA
+	}
 	var (
 		prev  vu.Heights
-		last  = vu.Heights{255} // sentinel: first real frame always draws
+		last  = frameKey{h: vu.Heights{255}} // sentinel: first real frame draws
 		frame int
 		errs  int
 	)
@@ -102,9 +181,10 @@ func (an *animator) loop(stop chan struct{}) {
 		h := vu.Envelope(prev, target)
 		prev = h
 
-		if h != last {
-			an.app.setIcon(icon.BarsIcon(h))
-			last = h
+		fk := frameKey{h: h, tint: an.quantizedTint(time.Now())}
+		if fk != last {
+			an.app.setIcon(icon.BarsIcon(fk.h, fk.tint))
+			last = fk
 		}
 	}
 }
