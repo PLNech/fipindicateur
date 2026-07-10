@@ -11,9 +11,7 @@ import (
 	"log"
 	"math"
 	"os"
-	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	"fyne.io/systray"
@@ -910,9 +908,8 @@ func (a *App) restart() {
 		log.Printf("ui: restart: cannot resolve executable: %v", err)
 		return
 	}
-	cmd := exec.Command("/bin/sh", "-c", fmt.Sprintf("sleep 1; exec %q", exe))
+	cmd := relaunchCmd(exe)
 	cmd.Env = os.Environ()
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from the dying parent
 	if err := cmd.Start(); err != nil {
 		log.Printf("ui: restart: relaunch failed: %v", err)
 		return
