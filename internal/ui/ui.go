@@ -557,9 +557,12 @@ func (a *App) setPlayingUI(playing bool) {
 		a.mPlay.SetTitle("▶ Play")
 	}
 	if playing {
-		// Static icon first (in case animation is off or breaks), then the
-		// animator takes over within one frame if enabled.
-		a.applyIconState(false)
+		// Only paint the static glyph when the animator will not run: when it
+		// will, repainting here flashed the neutral mark on every zap before
+		// the first tinted frame landed.
+		if !a.anim.willRun() {
+			a.applyIconState(false)
+		}
 		a.anim.start()
 	} else {
 		a.anim.stop()
@@ -1013,8 +1016,8 @@ func (a *App) openNowLink() {
 	open.URL(link)
 }
 
-func (a *App) applyIcon()                 { a.setIcon(icon.Active(false)) }
-func (a *App) applyIconState(paused bool) { a.setIcon(icon.Active(paused)) }
+func (a *App) applyIcon()                 { a.setIcon(icon.Rest(false)) }
+func (a *App) applyIconState(paused bool) { a.setIcon(icon.Rest(paused)) }
 
 // setIcon is the single chokepoint for the tray icon. It (1) refuses empty
 // bytes, which would register a null pixmap on the StatusNotifierItem and trip

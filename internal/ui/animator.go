@@ -104,6 +104,15 @@ func (an *animator) quantizedTint(now time.Time) color.NRGBA {
 	return icon.Lerp(an.tintFrom, an.tintTo, smoothstep(qt))
 }
 
+// willRun reports whether start() would actually animate: used by the static
+// icon path to avoid repainting a placeholder the very next frame replaces
+// (the repaint read as a flash of the neutral glyph on every zap).
+func (an *animator) willRun() bool {
+	an.mu.Lock()
+	defer an.mu.Unlock()
+	return !an.broken && an.app.cfg.AnimatedIcon
+}
+
 // start launches the animation loop if enabled, not already running, and not
 // auto-disabled. Idempotent.
 func (an *animator) start() {
@@ -152,16 +161,22 @@ func (an *animator) loop(stop chan struct{}) {
 		case <-ticker.C:
 		}
 
+		// No measurable audio (buffering, stream restart, astats hiccup) is
+		// rendered as silence: the bars decay gracefully to their stubs via
+		// the envelope instead of freezing mid-pose, and the tint crossfade
+		// keeps advancing underneath. Bounded: once decayed, the (heights,
+		// tint) dedup stops the redraws.
+		level := 0.0
 		db, ok := an.app.player.RMSLevelDB()
-		if !ok {
-			// While the core is idle (buffering, stream restart) there is no
-			// audio to measure: that is not an astats failure. Only count
-			// misses while audio actually flows, otherwise a slow stream
-			// start would falsely auto-disable the animation.
-			if an.app.player.CoreIdle() {
-				errs = 0
-				continue
-			}
+		if ok {
+			errs = 0
+			level = vu.LevelFromDB(db)
+		} else if an.app.player.CoreIdle() {
+			// Core idle is not an astats failure: only count misses while
+			// audio actually flows, otherwise a slow stream start would
+			// falsely auto-disable the animation.
+			errs = 0
+		} else {
 			errs++
 			if errs >= animMaxErrs {
 				an.mu.Lock()
@@ -169,14 +184,12 @@ func (an *animator) loop(stop chan struct{}) {
 				an.stopCh = nil
 				an.mu.Unlock()
 				log.Printf("ui: astats levels unavailable, animated icon disabled for this run")
-				an.app.setIcon(icon.Active(false))
+				an.app.setIcon(icon.Rest(false))
 				return
 			}
-			continue
 		}
-		errs = 0
 
-		target := vu.Targets(vu.LevelFromDB(db), frame)
+		target := vu.Targets(level, frame)
 		frame++
 		h := vu.Envelope(prev, target)
 		prev = h
