@@ -42,3 +42,42 @@ jobs:
       # Portability canary for the future macOS target. If this fails, fix the
       # //go:build linux gating (mpris/notify), do not remove this job.
       - run: go build ./...
+
+  build-windows:
+    # Cross-build on Linux (mingw-w64), the path 'make windows' actually
+    # supports. We do NOT use windows-latest: we validate the cross-compile we
+    # ship, not a native toolchain we never use. Runs in parallel with lint.
+    runs-on: ubuntu-latest
+    env:
+      # Pinned libmpv dev drop (reproducibility beats freshness). Bump this one
+      # line to move to a newer shinchiro build; the cache key follows the URL.
+      MPV_DEV_URL: https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install mingw-w64 cross toolchain and 7z
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 p7zip-full
+      - name: Cache libmpv dev drop
+        id: mpv-dev
+        uses: actions/cache@v4
+        with:
+          path: build/windows/mpv-dev
+          key: mpv-dev-${{ env.MPV_DEV_URL }}
+      - name: Fetch and unpack libmpv dev drop
+        if: steps.mpv-dev.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/windows/mpv-dev
+          curl -L -o mpv-dev.7z "$MPV_DEV_URL"
+          7z x mpv-dev.7z -obuild/windows/mpv-dev
+      - name: Cross-build Windows binary
+        run: make windows
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: fipindicateur-windows-x86_64
+          path: |
+            build/windows/fipindicateur.exe
+            build/windows/libmpv-2.dll
+          if-no-files-found: error

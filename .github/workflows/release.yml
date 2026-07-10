@@ -97,8 +97,46 @@ jobs:
           path: fipindicateur-linux-amd64.tar.gz
           if-no-files-found: error
 
+  windows:
+    # Cross-build on Linux (mingw-w64), the path 'make windows' actually
+    # supports; we ship the .exe next to the runtime libmpv-2.dll it links.
+    runs-on: ubuntu-latest
+    env:
+      # Pinned libmpv dev drop (reproducibility beats freshness). Bump this one
+      # line to move to a newer shinchiro build; the cache key follows the URL.
+      MPV_DEV_URL: https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install mingw-w64 cross toolchain and 7z
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 p7zip-full
+      - name: Cache libmpv dev drop
+        id: mpv-dev
+        uses: actions/cache@v4
+        with:
+          path: build/windows/mpv-dev
+          key: mpv-dev-${{ env.MPV_DEV_URL }}
+      - name: Fetch and unpack libmpv dev drop
+        if: steps.mpv-dev.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p build/windows/mpv-dev
+          curl -L -o mpv-dev.7z "$MPV_DEV_URL"
+          7z x mpv-dev.7z -obuild/windows/mpv-dev
+      - name: Cross-build Windows binary
+        run: make windows VERSION=${GITHUB_REF_NAME}
+      - name: Package zip
+        run: zip -j fipindicateur-windows-x86_64.zip build/windows/fipindicateur.exe build/windows/libmpv-2.dll
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: fipindicateur-windows-x86_64.zip
+          if-no-files-found: error
+
   release:
-    needs: [macos, linux]
+    needs: [macos, linux, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +151,7 @@ jobs:
           files: |
             dist/FipIndicateur.dmg
             dist/fipindicateur-linux-amd64.tar.gz
+            dist/fipindicateur-windows-x86_64.zip
           fail_on_unmatched_files: true
           body: |
             le fipindicateur v0.1.0 : les webradios FIP dans la barre des menus / menu bar.
