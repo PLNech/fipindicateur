@@ -153,6 +153,16 @@ func (f *Fader) Initialize() error {
 	return nil
 }
 
+// SetCrossfade updates the live-zap crossfade duration at runtime. Guarded by
+// mu because Play reads the Crossfade field under the same lock; the constructor
+// still sets the field directly before Initialize (no lock needed there, as no
+// other goroutine touches it yet).
+func (f *Fader) SetCrossfade(d time.Duration) {
+	f.mu.Lock()
+	f.Crossfade = d
+	f.mu.Unlock()
+}
+
 // Play loads url. Decision rule: if the current handle is playing AND url
 // differs from what it is playing AND a crossfade is configured, do a crossfade
 // switch; otherwise load plainly on the current handle (the exact old

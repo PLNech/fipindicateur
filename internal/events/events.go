@@ -37,6 +37,7 @@ const (
 	KindVolume        Kind = "volume"         // Value = percent
 	KindMute          Kind = "mute"           // Value = 1 muted, 0 unmuted
 	KindHiFi          Kind = "hifi"           // Value = 1 on, 0 off
+	KindCrossfade     Kind = "crossfade"      // Value = seconds, 0 = off
 	KindNotif         Kind = "notif_toggle"   // Value = 1 on, 0 off
 	KindAnim          Kind = "anim_toggle"    // Value = 1 on, 0 off
 	KindAutostart     Kind = "autostart"      // Value = 1 on, 0 off

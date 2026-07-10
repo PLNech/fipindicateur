@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +12,9 @@ import (
 	"log"
 	"math"
 	"os"
+	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -89,10 +93,21 @@ type App struct {
 	mVolume        *systray.MenuItem
 	mMute          *systray.MenuItem
 	volMI          map[int]*systray.MenuItem
+	mCrossfade     *systray.MenuItem
+	crossfadeMI    map[int]*systray.MenuItem // preset checkboxes; nil in zenity-slider mode
+
+	// dialogOpen guards against launching two zenity dialogs at once (the volume
+	// slider and the crossfade slider share it). A click while one is open is
+	// ignored. Guarded by a.mu.
+	dialogOpen bool
 }
 
 // volumePresets are the quick-pick volume levels in the tray menu.
 var volumePresets = []int{10, 25, 50, 75, 100}
+
+// crossfadePresets are the quick-pick crossfade durations (seconds) for the
+// fallback submenu shown when zenity is unavailable. 0 = hard cut.
+var crossfadePresets = []int{0, 2, 4, 6}
 
 // nowLabelMinInterval is the floor between two "now playing" label pushes to
 // the tray. livemeta polls are naturally minutes apart, but an ICY burst (or a
@@ -229,6 +244,14 @@ func (a *App) buildMenu() {
 		p := pct
 		a.on(it, "", func() { a.setVolume(p) }) // setVolume records the level
 	}
+	// A real slider, when zenity is present (Linux/GNOME). Absent on macOS/Windows
+	// and minimal installs, so the item is only added when the binary exists (no
+	// dead item). The resulting volume change is the measurable action, recorded
+	// once at source on OK inside runVolumeSlider, so this click carries no Kind.
+	if zenityAvailable() {
+		slider := a.mVolume.AddSubMenuItem("Régler au curseur…", "Curseur de volume (zenity)")
+		a.on(slider, "", a.openVolumeSlider)
+	}
 
 	// Radios
 	radios := systray.AddMenuItem("Radios", "Choisir une webradio")
@@ -256,6 +279,23 @@ func (a *App) buildMenu() {
 	settings := systray.AddMenuItem("Réglages", "Options")
 	a.mHiFi = settings.AddSubMenuItemCheckbox("Haute qualité (AAC 192k)", "", a.cfg.HiFi)
 	a.on(a.mHiFi, "", a.toggleHiFi)
+	// Fondu enchaîné (crossfade on a live station zap). With zenity a single item
+	// opens a 0..10s slider; without it, a preset-checkbox submenu is the fallback
+	// (macOS / minimal installs). Either way setCrossfade records KindCrossfade at
+	// source, so the a.on click carries no Kind.
+	if zenityAvailable() {
+		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, true), "Durée du fondu entre stations (curseur zenity)")
+		a.on(a.mCrossfade, "", a.openCrossfadeSlider)
+	} else {
+		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, false), "Durée du fondu entre stations")
+		a.crossfadeMI = map[int]*systray.MenuItem{}
+		for _, secs := range crossfadePresets {
+			it := a.mCrossfade.AddSubMenuItemCheckbox(crossfadePresetLabel(secs), "", secs == a.cfg.CrossfadeSecs)
+			a.crossfadeMI[secs] = it
+			s := secs
+			a.on(it, "", func() { a.setCrossfade(s) }) // setCrossfade records KindCrossfade at source
+		}
+	}
 	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
 	a.on(a.mNotif, "", a.toggleNotif)
 	// Launch at login is XDG-only (writes ~/.config/autostart/*.desktop); hide
@@ -767,6 +807,213 @@ func clampPct(pct int) int {
 		return 100
 	}
 	return pct
+}
+
+// --- zenity dialogs (volume slider, crossfade slider) ---
+
+// zenityAvailable reports whether the zenity binary is on PATH. GNOME/most Linux
+// desktops ship it; macOS, Windows and minimal installs do not, so the slider
+// items are only added when it exists (no dead menu entry).
+func zenityAvailable() bool {
+	_, err := exec.LookPath("zenity")
+	return err == nil
+}
+
+// acquireDialog claims the single zenity dialog slot, returning true on success.
+// A false result means a dialog is already open and the caller must do nothing.
+// Pair every true with a releaseDialog (deferred).
+func (a *App) acquireDialog() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.dialogOpen {
+		return false
+	}
+	a.dialogOpen = true
+	return true
+}
+
+func (a *App) releaseDialog() {
+	a.mu.Lock()
+	a.dialogOpen = false
+	a.mu.Unlock()
+}
+
+// openVolumeSlider launches the zenity volume slider off the tray goroutine.
+// A second click while one is open is ignored (single dialog at a time).
+func (a *App) openVolumeSlider() {
+	if !a.acquireDialog() {
+		log.Printf("ui: a zenity dialog is already open, ignoring volume slider")
+		return
+	}
+	start := a.cfg.Volume
+	go func() {
+		defer a.releaseDialog()
+		a.runVolumeSlider(start)
+	}()
+}
+
+// runVolumeSlider runs `zenity --scale --print-partial` and applies each live
+// drag value to the player immediately, WITHOUT recording an event or saving
+// config (no telemetry/disk spam while dragging). On OK (exit 0) it commits:
+// one KindVolume event at the final value plus one config save. On Cancel/Esc/
+// close (non-zero exit) it reverts to the volume that was current when the
+// dialog opened (apply + UI sync, no event, no save). External pavucontrol
+// changes during the drag flow through onExternalVolume; last writer wins.
+func (a *App) runVolumeSlider(start int) {
+	cmd := exec.Command("zenity", "--scale",
+		"--title", "FIP · Volume",
+		"--text", "Volume de lecture",
+		"--min-value", "0",
+		"--max-value", "100",
+		"--step", "1",
+		"--value", strconv.Itoa(start),
+		"--print-partial",
+	)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Printf("ui: volume slider: stdout pipe: %v", err)
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("ui: volume slider: start: %v", err)
+		return
+	}
+
+	last := start
+	sc := bufio.NewScanner(stdout)
+	for sc.Scan() {
+		v, perr := strconv.Atoi(strings.TrimSpace(sc.Text()))
+		if perr != nil {
+			continue
+		}
+		v = clampPct(v)
+		last = v
+		a.applyVolumeLive(v) // player + menu + MPRIS, no event, no save
+	}
+
+	if err := cmd.Wait(); err == nil {
+		// OK: state is already applied live; record exactly one event and persist.
+		a.cfg.Volume = clampPct(last)
+		a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: a.cfg.Volume})
+		a.save()
+		a.applyVolumeUI()
+	} else {
+		// Cancel/Esc/close: revert to the pre-dialog level, silently.
+		a.applyVolumeLive(start)
+	}
+}
+
+// applyVolumeLive applies a volume to the player, MPRIS and the menu WITHOUT
+// recording an event or saving config. It sets a.cfg.Volume BEFORE SetVolume so
+// the ao-volume observer echo is swallowed by onExternalVolume's equal-value
+// guard (the same trick setVolume uses). Used for slider drag ticks and revert.
+func (a *App) applyVolumeLive(pct int) {
+	pct = clampPct(pct)
+	a.cfg.Volume = pct
+	a.player.SetVolume(float64(pct))
+	if a.mpris != nil {
+		a.mpris.SetVolume(float64(pct) / 100)
+	}
+	a.applyVolumeUI()
+}
+
+// --- crossfade duration ---
+
+// crossfadeTitle is the label for the "Fondu enchaîné" menu item: it always
+// reflects the current value ("(désactivé)" at 0), and appends an ellipsis in
+// slider mode to hint that a click opens a dialog.
+func crossfadeTitle(secs int, slider bool) string {
+	var s string
+	if secs == 0 {
+		s = "Fondu enchaîné (désactivé)"
+	} else {
+		s = fmt.Sprintf("Fondu enchaîné (%d s)", secs)
+	}
+	if slider {
+		s += "…"
+	}
+	return s
+}
+
+// crossfadePresetLabel labels a preset checkbox in the zenity-less fallback.
+func crossfadePresetLabel(secs int) string {
+	if secs == 0 {
+		return "Désactivé"
+	}
+	return fmt.Sprintf("%d s", secs)
+}
+
+// applyCrossfadeUI syncs the crossfade item title (and the preset checkmarks in
+// fallback mode) with the current config.
+func (a *App) applyCrossfadeUI() {
+	if a.mCrossfade == nil {
+		return
+	}
+	a.mCrossfade.SetTitle(crossfadeTitle(a.cfg.CrossfadeSecs, a.crossfadeMI == nil))
+	for secs, it := range a.crossfadeMI {
+		if secs == a.cfg.CrossfadeSecs {
+			it.Check()
+		} else {
+			it.Uncheck()
+		}
+	}
+}
+
+// setCrossfade persists a crossfade duration, applies it LIVE to the player
+// (takes effect on the next zap), records one KindCrossfade event at source
+// (Value = seconds, 0 = off) and refreshes the menu. Clamped to [0,10] to match
+// config.Load.
+func (a *App) setCrossfade(secs int) {
+	if secs < 0 {
+		secs = 0
+	}
+	if secs > 10 {
+		secs = 10
+	}
+	a.cfg.CrossfadeSecs = secs
+	a.rec.Record(events.Event{Kind: events.KindCrossfade, Station: a.current.Key, Value: secs})
+	a.save()
+	a.player.SetCrossfade(time.Duration(secs) * time.Second)
+	a.applyCrossfadeUI()
+}
+
+// openCrossfadeSlider launches the zenity crossfade-duration slider off the tray
+// goroutine, sharing the single-dialog guard with the volume slider.
+func (a *App) openCrossfadeSlider() {
+	if !a.acquireDialog() {
+		log.Printf("ui: a zenity dialog is already open, ignoring crossfade slider")
+		return
+	}
+	start := a.cfg.CrossfadeSecs
+	go func() {
+		defer a.releaseDialog()
+		a.runCrossfadeSlider(start)
+	}()
+}
+
+// runCrossfadeSlider runs `zenity --scale` over 0..10s. On OK (exit 0) it commits
+// the chosen value via setCrossfade (which records the single KindCrossfade
+// event). On Cancel/Esc/close (non-zero exit) it does nothing. No live-apply:
+// crossfade only takes effect at the next zap, so a per-tick apply would be
+// pointless here.
+func (a *App) runCrossfadeSlider(start int) {
+	out, err := exec.Command("zenity", "--scale",
+		"--title", "FIP · Fondu enchaîné",
+		"--text", "Durée du fondu entre stations (secondes, 0 = coupure sèche)",
+		"--min-value", "0",
+		"--max-value", "10",
+		"--step", "1",
+		"--value", strconv.Itoa(start),
+	).Output()
+	if err != nil {
+		return // non-zero exit = Cancel/Esc/close: do nothing
+	}
+	v, perr := strconv.Atoi(strings.TrimSpace(string(out)))
+	if perr != nil {
+		log.Printf("ui: crossfade slider: unparsable value %q: %v", strings.TrimSpace(string(out)), perr)
+		return
+	}
+	a.setCrossfade(v)
 }
 
 func (a *App) toggleHistFile() {
