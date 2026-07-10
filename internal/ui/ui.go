@@ -42,7 +42,7 @@ const (
 // App holds the running application state.
 type App struct {
 	cfg     config.Config
-	player  *player.MPV
+	player  *player.Fader
 	meta    *metadata.Manager
 	mpris   *mpris.Instance
 	notif   *notify.Notifier
@@ -134,7 +134,9 @@ func (a *App) OnReady() {
 		a.mNow.SetTooltip(label)
 	})
 
-	a.player = &player.MPV{
+	a.player = &player.Fader{
+		// A live station zap crossfades over this duration (0 = hard cut).
+		Crossfade:    time.Duration(a.cfg.CrossfadeSecs) * time.Second,
 		TitleChanged: a.meta.PushTitle,
 		// ao-volume/ao-mute observers: external pavucontrol/GNOME changes
 		// flow back into the menu and MPRIS.
@@ -624,8 +626,13 @@ func (a *App) toggleHiFi() {
 	}
 	a.rec.Record(events.Event{Kind: events.KindHiFi, Value: b2i(a.cfg.HiFi)})
 	a.save()
-	// Reload the stream at the new quality if playing.
+	// Reload the stream at the new quality if playing. Stop first so this is a
+	// hard cut, not a crossfade: it is the same station at a different bitrate,
+	// and fading identical content against itself would phase/echo. Stopping
+	// also drops the current URL so the reload starts from a not-playing handle,
+	// which the Fader's "only a live zap crossfades" rule relies on.
 	if a.player.IsPlaying() {
+		a.player.Stop()
 		a.player.Play(a.current.StreamURL(a.quality()))
 	}
 }

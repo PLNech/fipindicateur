@@ -18,6 +18,10 @@ type Config struct {
 	Stats          bool   `json:"stats"`            // opt-in local listening analytics (events.jsonl)
 	UpdateStartup  bool   `json:"update_startup"`   // check GitHub for a newer release at launch (opt-in)
 	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
+	// CrossfadeSecs is the equal-power crossfade duration when zapping between
+	// stations while playing. 0 disables it (hard cut, the old behaviour);
+	// clamped to [0,10]. Absent in an older config means the 4s default.
+	CrossfadeSecs int `json:"crossfade_secs"`
 	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
 	// system default output). Persisted so a chosen sink survives restarts.
 	AudioDevice string `json:"audio_device"`
@@ -41,6 +45,7 @@ func Default() Config {
 		Stats:          false,
 		UpdateStartup:  false,
 		AnimatedIcon:   true,
+		CrossfadeSecs:  4,
 		Volume:         100,
 		Mute:           false,
 	}
@@ -87,6 +92,15 @@ func Load() Config {
 	}
 	if c.Volume < 0 || c.Volume > 100 {
 		c.Volume = Default().Volume
+	}
+	// Clamp crossfade to [0,10]. 0 is a valid "disabled" value, so we clamp
+	// out-of-range rather than resetting to the default (which would silently
+	// re-enable a user who set 0).
+	if c.CrossfadeSecs < 0 {
+		c.CrossfadeSecs = 0
+	}
+	if c.CrossfadeSecs > 10 {
+		c.CrossfadeSecs = 10
 	}
 	return c
 }

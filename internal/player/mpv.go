@@ -55,6 +55,13 @@ type MPV struct {
 
 	exit chan struct{}
 
+	// initialVolume is the mpv INTERNAL `volume` option applied at Initialize
+	// (distinct from ao-volume, the PulseAudio per-app knob). nil means the
+	// historical default of 100. The Fader creates an incoming crossfade handle
+	// with 0 here so it starts silent and can be ramped up with the equal-power
+	// curve while the outgoing handle ramps down.
+	initialVolume *int
+
 	// Callbacks, all best-effort and invoked from the event goroutine.
 	// Set them before Initialize.
 
@@ -91,7 +98,11 @@ func (m *MPV) Initialize() error {
 	}
 
 	m.setOptionFlag("resume-playback", false)
-	m.setOptionInt("volume", 100)
+	vol := 100
+	if m.initialVolume != nil {
+		vol = *m.initialVolume
+	}
+	m.setOptionInt("volume", vol)
 	m.setOptionInt("volume-max", 100)
 
 	// Audio only.
@@ -191,6 +202,16 @@ func (m *MPV) Mute() (bool, bool) {
 		return false, false
 	}
 	return v != 0, true
+}
+
+// setInternalVolume synchronously sets mpv's INTERNAL `volume` property (0..100),
+// the multiplier applied before the audio output. This is the ONLY knob the
+// crossfade touches: never ao-volume/ao-mute, which are the PulseAudio per-app
+// level synced with pavucontrol and persisted by stream-restore. The internal
+// volume scales inside whatever level PulseAudio restored for the stream.
+// Returns false when the property is unavailable.
+func (m *MPV) setInternalVolume(pct float64) bool {
+	return m.setPropDouble("volume", pct)
 }
 
 // setPropDouble synchronously sets a double property; false if unavailable.
