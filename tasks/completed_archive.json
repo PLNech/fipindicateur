@@ -1,0 +1,26 @@
+[
+  {
+    "id": "1",
+    "subject": "Reinstall fipindicateur and re-arm autostart entry",
+    "completedAt": "2026-07-10",
+    "learnings": "make install never touches autostart: the app writes it via SetAutostart. When editing the entry by hand, match the app's output byte-for-byte so they never fight."
+  },
+  {
+    "id": "2",
+    "subject": "Set up gnome-shell watchdog that auto-kills fipindicateur",
+    "completedAt": "2026-07-10",
+    "learnings": "A D-Bus property read on org.gnome.Shell dispatches on the shell's main loop, so it times out exactly when the session is wedged, even at low CPU. Also: a kill-by-name watchdog cannot be live-fire tested while the real app is running; test detection with no-kill thresholds instead."
+  },
+  {
+    "id": "3",
+    "subject": "Per-station colors for stats report bars",
+    "completedAt": "2026-07-10",
+    "learnings": "radiofrance.fr publishes official per-webradio colors as CSS tokens (--webradio-fix-fip-*), first-party and unconditional. Brand palettes are not chart palettes: clamp per theme to 3:1 contrast (mix toward black/white), and let direct labels carry identity (Hip-Hop and Metal officially share one purple)."
+  },
+  {
+    "id": "4",
+    "subject": "Tray icon tinted with active station color (10s gradient)",
+    "completedAt": "2026-07-10",
+    "learnings": "The tray icon was already an animated VU meter, so tinting rides existing frames with zero new SetIcon sites. Quantize any transition (16 steps) so the frame cache stays bounded and a zap costs a bounded number of icon updates: the 2026-07-09 freeze was unbounded churn, not animation per se."
+  }
+]
