@@ -3,11 +3,7 @@
 // the FIP logo (trademark). Regenerate with: go run internal/icon/gen/main.go
 package icon
 
-import (
-	_ "embed"
-	"os/exec"
-	"strings"
-)
+import _ "embed"
 
 //go:embed icon_light_44.png
 var light []byte
@@ -22,15 +18,10 @@ var lightDim []byte
 var darkDim []byte
 
 // darkPanel reports whether the tray/panel is likely dark (so we should draw a
-// light-ink glyph). Best-effort: GNOME's default top bar is dark, so we assume
-// dark unless the user explicitly prefers a light color scheme.
-func darkPanel() bool {
-	out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "color-scheme").Output()
-	if err != nil {
-		return true
-	}
-	return !strings.Contains(string(out), "prefer-light")
-}
+// light-ink glyph). It is best-effort and platform-specific: see panel_linux.go
+// (gsettings), panel_darwin.go (AppleInterfaceStyle), and panel_other.go (the
+// safe default). The result is cached once by panelIsDark (see bars.go), so no
+// process is spawned per frame.
 
 // Active returns the icon bytes for the current scheme and play state.
 // On a dark panel we use the light (near-white) ink so the glyph is visible.
