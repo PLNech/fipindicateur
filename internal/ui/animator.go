@@ -184,7 +184,7 @@ func (an *animator) loop(stop chan struct{}) {
 				an.stopCh = nil
 				an.mu.Unlock()
 				log.Printf("ui: astats levels unavailable, animated icon disabled for this run")
-				an.app.setIcon(icon.Rest(false))
+				an.app.applyIconState(false)
 				return
 			}
 		}

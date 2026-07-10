@@ -10,6 +10,10 @@
   10 s when zapping, riding the existing 6 fps frames (at most 16 extra
   icon updates per change). Paused stays neutral: color only while music
   plays (#4).
+- With the animated icon off, the frozen bars glyph now still wears the
+  active station's brand tint while playing, so the FIP colors persist
+  without the VU motion. Paused/stopped stays neutral, same as the
+  animator's fade-out (#5).
 
 ### Infra
 - Session watchdog (`fipindicateur-watchdog`, systemd user unit, installed

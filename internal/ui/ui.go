@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"log"
 	"math"
 	"os"
@@ -1016,8 +1017,19 @@ func (a *App) openNowLink() {
 	open.URL(link)
 }
 
-func (a *App) applyIcon()                 { a.setIcon(icon.Rest(false)) }
-func (a *App) applyIconState(paused bool) { a.setIcon(icon.Rest(paused)) }
+func (a *App) applyIcon() { a.setIcon(icon.Rest(false, color.NRGBA{})) }
+
+// applyIconState paints the frozen bars glyph. While playing it carries the
+// current station's legible brand tint, so the FIP colors stay on the tray
+// even when the animated icon is off; paused/stopped falls back to neutral
+// theme ink (color only while music plays, matching the animator's fade-out).
+func (a *App) applyIconState(paused bool) {
+	var tint color.NRGBA
+	if !paused {
+		tint = icon.Legible(a.current.Color, icon.PanelIsDark())
+	}
+	a.setIcon(icon.Rest(paused, tint))
+}
 
 // setIcon is the single chokepoint for the tray icon. It (1) refuses empty
 // bytes, which would register a null pixmap on the StatusNotifierItem and trip

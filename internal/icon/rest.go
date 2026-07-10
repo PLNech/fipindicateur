@@ -19,9 +19,16 @@ var restPose = vu.Heights{3, 7, 4, 9}
 // affordance the dim static variants used to provide.
 const restDimAlpha = 0x8C
 
-// Rest returns the static bars glyph in neutral theme ink, dimmed when
-// paused. It rides BarsIcon's cache: each variant renders once.
-func Rest(paused bool) []byte {
+// Rest returns the static bars glyph. A zero tint uses neutral theme ink,
+// dimmed when paused; a non-zero tint paints the station's brand ink at full
+// strength, so the FIP colors persist on the frozen glyph even with the
+// animated icon turned off (color only while music plays: callers pass the
+// zero tint when paused/stopped). It rides BarsIcon's cache: each variant
+// renders once.
+func Rest(paused bool, tint color.NRGBA) []byte {
+	if (tint != color.NRGBA{}) {
+		return BarsIcon(restPose, tint)
+	}
 	ink := ThemeInk(panelIsDark())
 	if paused {
 		ink = color.NRGBA{ink.R, ink.G, ink.B, restDimAlpha}
