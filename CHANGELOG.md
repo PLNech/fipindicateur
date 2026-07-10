@@ -1,6 +1,6 @@
 # Changelog
 
-## Sprint 1 — 2026-07-10 · La radio en couleurs
+## Sprint 1 · 2026-07-10 · La radio en couleurs
 
 ### Added
 - Report bars wear each webradio's official brand color, sourced from

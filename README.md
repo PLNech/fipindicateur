@@ -75,6 +75,22 @@ are kept buildable and planned.
 
 ![Graphe de Markov, thème sombre](docs/stats-markov-dark.png)
 
+## Les couleurs de FIP
+
+Every webradio wears its own official color, lifted straight from
+radiofrance.fr. The tray VU glyph is inked in whatever station you're on, and
+when you zap it crossfades to the next color over 10 seconds (6 fps, smoothstep
+easing, quantized to 16 steps so the icon cache stays tiny). Each hue is nudged
+just enough to stay legible on your panel (3:1 contrast, hue kept), and the same
+palette is reused verbatim by the local stats report's per-station bars, so one
+set of colors runs from tray to report.
+
+![Le glyphe passe de Rock à Jazz en fondu](docs/tint-transition.gif)
+
+The 13 stations, each in its panel-legible tint:
+
+![Les 13 webradios FIP, chacune dans sa couleur officielle](docs/station-colors.png)
+
 ## Install
 
 Runtime needs **libmpv** (the app links libmpv via cgo, and mpv plays the
