@@ -174,6 +174,41 @@ const DATA = __FIP_DATA__;
 const $ = (id) => document.getElementById(id);
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
+// ---- station colors ----
+// Stations carry their official radiofrance.fr brand color. Brand hues are not
+// a tuned chart palette: some melt into the card surface (gold on light, navy
+// on dark). legible() keeps the hue but mixes it toward black (light theme) or
+// white (dark theme) just until the fill reaches 3:1 non-text contrast against
+// its track. Computed, never eyeballed; identity stays on the text labels.
+function hexRgb(h) {
+  h = (h || "").replace("#", "");
+  if (h.length === 3) h = h.split("").map(c => c + c).join("");
+  const n = parseInt(h, 16);
+  return isNaN(n) ? [128, 128, 128] : [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function relLum(rgb) {
+  const [r, g, b] = rgb.map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrast(a, b) {
+  const la = relLum(a), lb = relLum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function mix(a, b, t) {
+  return a.map((v, i) => Math.round(v + (b[i] - v) * t));
+}
+function legible(hex) {
+  const dark = document.documentElement.classList.contains("dark");
+  const track = hexRgb(cssVar("--surface-2"));
+  const toward = dark ? [255, 255, 255] : [0, 0, 0];
+  let c = hexRgb(hex);
+  for (let i = 0; i < 12 && contrast(c, track) < 3; i++) c = mix(c, toward, 0.08);
+  return "rgb(" + c.join(",") + ")";
+}
+
 function fmtDur(sec) {
   if (!isFinite(sec) || sec < 0) sec = 0;
   sec = Math.round(sec);
@@ -381,8 +416,9 @@ function renderStations() {
   const max = Math.max.apply(null, st.map(s => s.listeningSec)) || 1;
   cont.innerHTML = st.map(s => {
     const pct = Math.round(s.share * 100);
+    const col = s.color ? legible(s.color) : cssVar("--accent");
     return '<div class="bar-row"><div class="lbl">' + s.display + '</div>' +
-      '<div class="track"><div class="fill" style="width:' + Math.max(2, (s.listeningSec / max) * 100) + '%"></div></div>' +
+      '<div class="track"><div class="fill" style="width:' + Math.max(2, (s.listeningSec / max) * 100) + '%;background:' + col + '"></div></div>' +
       '<div class="val num">' + fmtDur(s.listeningSec) + ' <small>' + pct + '%</small></div></div>';
   }).join("");
 }
@@ -415,6 +451,7 @@ function initTheme() {
 }
 
 function renderAll() {
+  renderStations(); // station colors adapt to the current theme surface
   renderMarkov();
   renderHours();
 }
@@ -422,7 +459,6 @@ function main() {
   initTheme();
   renderHeader();
   renderTiles();
-  renderStations();
   renderAch();
   renderAll();
 }

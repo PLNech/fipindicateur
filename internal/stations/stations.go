@@ -22,6 +22,7 @@ type Station struct {
 	Slug    string // icecast slug, e.g. "fiprock"
 	Display string // French display name with accents
 	MetaID  int    // livemeta pull id, 0 if unknown (ICY fallback only)
+	Color   string // official webradio brand color, hex
 }
 
 // StreamURL returns the icecast stream URL for the given quality.
@@ -34,20 +35,23 @@ func (s Station) StreamURL(q Quality) string {
 // nouveautes=70, reggae=71, electro=74, metal=77. The four with id 0
 // (hiphop, sacrefrancais, pop, cultes) have no known livemeta id and
 // rely on the ICY metadata fallback.
+// Color sources: radiofrance.fr per-webradio CSS design tokens
+// (--webradio-fix-fip-*, fetched 2026-07-10). Hip-Hop and Metal share the
+// same official color; Cultes is defined upstream as the CSS keyword "gold".
 var All = []Station{
-	{Key: "fip", Slug: "fip", Display: "FIP", MetaID: 7},
-	{Key: "rock", Slug: "fiprock", Display: "Rock", MetaID: 64},
-	{Key: "jazz", Slug: "fipjazz", Display: "Jazz", MetaID: 65},
-	{Key: "groove", Slug: "fipgroove", Display: "Groove", MetaID: 66},
-	{Key: "world", Slug: "fipworld", Display: "Monde", MetaID: 69},
-	{Key: "nouveautes", Slug: "fipnouveautes", Display: "Nouveautés", MetaID: 70},
-	{Key: "reggae", Slug: "fipreggae", Display: "Reggae", MetaID: 71},
-	{Key: "electro", Slug: "fipelectro", Display: "Electro", MetaID: 74},
-	{Key: "hiphop", Slug: "fiphiphop", Display: "Hip-Hop", MetaID: 0},
-	{Key: "metal", Slug: "fipmetal", Display: "Metal", MetaID: 77},
-	{Key: "sacrefrancais", Slug: "fipsacrefrancais", Display: "Sacré français !", MetaID: 0},
-	{Key: "pop", Slug: "fippop", Display: "Pop", MetaID: 0},
-	{Key: "cultes", Slug: "fipcultes", Display: "Cultes", MetaID: 0},
+	{Key: "fip", Slug: "fip", Display: "FIP", MetaID: 7, Color: "#e2007a"},
+	{Key: "rock", Slug: "fiprock", Display: "Rock", MetaID: 64, Color: "#f93446"},
+	{Key: "jazz", Slug: "fipjazz", Display: "Jazz", MetaID: 65, Color: "#13898d"},
+	{Key: "groove", Slug: "fipgroove", Display: "Groove", MetaID: 66, Color: "#8664ee"},
+	{Key: "world", Slug: "fipworld", Display: "Monde", MetaID: 69, Color: "#efa439"},
+	{Key: "nouveautes", Slug: "fipnouveautes", Display: "Nouveautés", MetaID: 70, Color: "#357ded"},
+	{Key: "reggae", Slug: "fipreggae", Display: "Reggae", MetaID: 71, Color: "#477442"},
+	{Key: "electro", Slug: "fipelectro", Display: "Electro", MetaID: 74, Color: "#00d3ff"},
+	{Key: "hiphop", Slug: "fiphiphop", Display: "Hip-Hop", MetaID: 0, Color: "#504274"},
+	{Key: "metal", Slug: "fipmetal", Display: "Metal", MetaID: 77, Color: "#504274"},
+	{Key: "sacrefrancais", Slug: "fipsacrefrancais", Display: "Sacré français !", MetaID: 0, Color: "#00008f"},
+	{Key: "pop", Slug: "fippop", Display: "Pop", MetaID: 0, Color: "#25d362"},
+	{Key: "cultes", Slug: "fipcultes", Display: "Cultes", MetaID: 0, Color: "#ffd700"},
 }
 
 // ByKey returns the station with the given key, or the default (fip) if not found.

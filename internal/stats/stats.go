@@ -49,6 +49,7 @@ type Totals struct {
 type StationStat struct {
 	Key          string  `json:"key"`
 	Display      string  `json:"display"`
+	Color        string  `json:"color"` // official webradio brand color, hex
 	ListeningSec int64   `json:"listeningSec"`
 	Share        float64 `json:"share"` // 0..1 of total listening time
 }
@@ -251,9 +252,11 @@ func buildStationStats(per map[string]time.Duration, total time.Duration) []Stat
 		if total > 0 {
 			share = d.Seconds() / total.Seconds()
 		}
+		st := stations.ByKey(key)
 		out = append(out, StationStat{
 			Key:          key,
-			Display:      stations.ByKey(key).Display,
+			Display:      st.Display,
+			Color:        st.Color,
 			ListeningSec: int64(d.Seconds()),
 			Share:        share,
 		})
