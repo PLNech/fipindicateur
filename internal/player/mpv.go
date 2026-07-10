@@ -1,12 +1,12 @@
 // Package player wraps libmpv via cgo to play FIP's icecast streams.
 //
 // Derived from the fip-player project (WTFPL):
-// https://github.com/DucNg/fip-player (player/mpv.go). Changes: pkg-config
-// linkage, live-radio pause semantics (stop instead of the pause property),
+// https://github.com/DucNg/fip-player (player/mpv.go). Changes: per-platform
+// cgo linkage (see cgo_pkgconfig.go / cgo_windows.go), live-radio pause
+// semantics (stop instead of the pause property),
 // and media-title observation for ICY metadata fallback.
 package player
 
-// #cgo pkg-config: mpv
 // #include <mpv/client.h>
 // #include <stdlib.h>
 //

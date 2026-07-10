@@ -14,10 +14,29 @@ BINDIR  := $(PREFIX)/bin
 APPDIR  := $(PREFIX)/share/applications
 ICONDIR := $(PREFIX)/share/icons/hicolor
 
-.PHONY: build run test lint fix icons clean install uninstall
+.PHONY: build run test lint fix icons clean install uninstall windows
 
 build: ## Build the binary
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
+
+# Windows cross-build. Prerequisite (one-time, network): drop a libmpv dev
+# archive into build/windows/mpv-dev so it contains include/mpv/client.h and
+# libmpv.dll.a. Get it from the shinchiro builds (a mpv-dev-x86_64-*.7z from
+# github.com/shinchiro/mpv-winbuild-cmake/releases) and extract:
+#   mkdir -p build/windows/mpv-dev
+#   7z x mpv-dev-x86_64-*.7z -obuild/windows/mpv-dev
+# internal/player/cgo_windows.go points cgo at that path via ${SRCDIR}. Needs
+# the mingw-w64 cross compiler (x86_64-w64-mingw32-gcc). Output and the runtime
+# libmpv-2.dll land in build/windows/ next to each other.
+WINDIR   := build/windows
+MPVDEV   := $(WINDIR)/mpv-dev
+WINEXE   := $(WINDIR)/fipindicateur.exe
+windows: ## Cross-build the Windows tray binary (needs build/windows/mpv-dev, see comment)
+	@test -f $(MPVDEV)/include/mpv/client.h || { echo "missing $(MPVDEV)/include/mpv/client.h; see the Makefile 'windows' comment for the libmpv dev drop"; exit 1; }
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc \
+		$(GO) build -ldflags "$(LDFLAGS) -H windowsgui" -o $(WINEXE) $(PKG)
+	cp $(MPVDEV)/libmpv-2.dll $(WINDIR)/libmpv-2.dll
+	@echo "Built $(WINEXE) (ship it alongside $(WINDIR)/libmpv-2.dll)."
 
 run: ## Build and run
 	$(GO) run -ldflags "$(LDFLAGS)" $(PKG)

@@ -50,11 +50,13 @@ func TestActionKindsWired(t *testing.T) {
 }
 
 // TestSingleSetIconCallSite enforces that the tray icon is set through exactly
-// one chokepoint (App.setIcon). That chokepoint refuses empty bytes (which
-// register a null pixmap and trip GNOME's cogl "data != NULL" assertion) and
-// dedupes redundant pushes. If a raw systray.SetIcon( appears more than once
-// across the package, an icon path bypassed the guard: route it through
-// a.setIcon instead. (The one allowed occurrence lives inside setIcon.)
+// one chokepoint (setTrayIcon). App.setIcon refuses empty bytes (which register
+// a null pixmap and trip GNOME's cogl "data != NULL" assertion) and dedupes
+// redundant pushes, then hands off to setTrayIcon, which is the ONLY place a
+// raw systray.SetIcon( is allowed (it adapts the byte format per platform via
+// encodeTrayIcon: passthrough on Unix, PNG-in-ICO on Windows). If systray.SetIcon(
+// appears more than once across the package, an icon path bypassed the guard:
+// route it through a.setIcon / setTrayIcon instead.
 func TestSingleSetIconCallSite(t *testing.T) {
 	matches, err := filepath.Glob("*.go")
 	if err != nil {
@@ -72,6 +74,6 @@ func TestSingleSetIconCallSite(t *testing.T) {
 		total += strings.Count(string(src), "systray.SetIcon(")
 	}
 	if total != 1 {
-		t.Fatalf("guarded-icon invariant: `systray.SetIcon(` must appear exactly once (inside App.setIcon); found %d. Route icon sets through a.setIcon.", total)
+		t.Fatalf("guarded-icon invariant: `systray.SetIcon(` must appear exactly once (inside setTrayIcon); found %d. Route icon sets through a.setIcon.", total)
 	}
 }

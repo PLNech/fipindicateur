@@ -2,3 +2,5 @@
 *.test
 *.out
 /.claude/
+# Windows cross-build artifacts and the vendored libmpv dev drop.
+/build/

@@ -1055,7 +1055,7 @@ func (a *App) setIcon(b []byte) {
 	// Copy so a caller reusing its buffer cannot mutate our dedupe baseline.
 	a.lastIcon = append(a.lastIcon[:0:0], b...)
 	a.iconMu.Unlock()
-	systray.SetIcon(b)
+	setTrayIcon(b)
 }
 
 func (a *App) save() {
