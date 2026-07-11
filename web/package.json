@@ -1,0 +1,20 @@
+{
+  "name": "fipindicateur-report",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build-time toolchain for the fipindicateur listening report (Fin d'emission design system). Produces one self-contained HTML file with inlined CSS, JS, and subsetted WOFF2 fonts.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "fonts": "node subset-fonts.mjs"
+  },
+  "devDependencies": {
+    "@fontsource/bricolage-grotesque": "5.2.10",
+    "@fontsource/literata": "5.2.8",
+    "d3-array": "3.2.4",
+    "d3-scale": "4.0.2",
+    "d3-shape": "3.2.0",
+    "esbuild": "0.25.10",
+    "subset-font": "2.4.0"
+  }
+}

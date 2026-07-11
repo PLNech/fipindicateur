@@ -23,7 +23,7 @@ jobs:
           fi
       - name: no em dashes
         run: |
-          if grep -rIn --exclude-dir=.git --exclude-dir=.venv "$(printf '\342\200\224')" .; then
+          if grep -rIn --exclude-dir=.git --exclude-dir=.venv --exclude-dir=node_modules "$(printf '\342\200\224')" .; then
             echo "em dash (U+2014) found, replace it (house style: middot, colon, parentheses)"; exit 1
           fi
       - run: go vet ./...

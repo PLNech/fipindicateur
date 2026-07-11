@@ -14,7 +14,16 @@ BINDIR  := $(PREFIX)/bin
 APPDIR  := $(PREFIX)/share/applications
 ICONDIR := $(PREFIX)/share/icons/hicolor
 
-.PHONY: build run test lint fix icons clean install uninstall windows
+.PHONY: build run test lint fix icons clean install uninstall windows web
+
+# Rebuild the stats report template from the web/ SPA toolchain (npm + esbuild
+# + D3, subsetted WOFF2 fonts inlined). The GENERATED internal/stats/
+# report.html.tmpl is committed, so `make build`/`go build` never need Node:
+# run this only when the report design or its data contract changes.
+WEBDIR := web
+web: ## Rebuild internal/stats/report.html.tmpl from web/ (needs Node)
+	cd $(WEBDIR) && npm install && npm run fonts && npm run build
+	@echo "Regenerated internal/stats/report.html.tmpl. Commit it (no Node at build time)."
 
 build: ## Build the binary
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
@@ -46,7 +55,7 @@ test: ## Run tests
 
 lint: ## Same checks CI runs: formatting, vet, tests, build, no em dashes
 	@test -z "$$(gofmt -l . | grep -v '/gen/')" || { echo "gofmt needed:"; gofmt -l . | grep -v '/gen/'; exit 1; }
-	@! grep -rIn --exclude-dir=.git --exclude-dir=.venv "$$(printf '\342\200\224')" . || { echo "em dash (U+2014) found, replace it (house style: middot, colon, parentheses)"; exit 1; }
+	@! grep -rIn --exclude-dir=.git --exclude-dir=.venv --exclude-dir=node_modules "$$(printf '\342\200\224')" . || { echo "em dash (U+2014) found, replace it (house style: middot, colon, parentheses)"; exit 1; }
 	$(GO) vet ./...
 	$(GO) test ./...
 	$(GO) build ./...
