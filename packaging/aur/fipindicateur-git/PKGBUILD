@@ -1,0 +1,55 @@
+# Maintainer: PLNech <aur@nech.pl>
+pkgname=fipindicateur-git
+_pkgname=fipindicateur
+pkgver=0.3.0.r0.g0000000
+pkgrel=1
+pkgdesc="Tiny system-tray client for the FIP (Radio France) webradios (VCS, builds main)"
+arch=('x86_64')
+url="https://github.com/PLNech/fipindicateur"
+license=('GPL-3.0-or-later')
+depends=('mpv' 'hicolor-icon-theme')
+makedepends=('go' 'pkgconf' 'git')
+optdepends=('zenity: volume and crossfade slider dialogs'
+            'libappindicator-gtk3: tray icon on GNOME (via the AppIndicator extension)')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+source=("$_pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_pkgname"
+  # Match `git describe --tags` output, massaged into a monotonic pacman ver:
+  # e.g. v0.3.0-22-g9d0b343 -> 0.3.0.r22.g9d0b343
+  git describe --long --tags --abbrev=7 2>/dev/null \
+    | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' \
+    || printf "0.0.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+  cd "$_pkgname"
+  export CGO_ENABLED=1
+  export CGO_CPPFLAGS="${CPPFLAGS}"
+  export CGO_CFLAGS="${CFLAGS}"
+  export CGO_LDFLAGS="${LDFLAGS}"
+  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
+  # Stamp the exact describe string so the tray/report show the built commit.
+  local _ver
+  _ver="$(git describe --tags --always)"
+  go build -o fipindicateur \
+    -ldflags "-linkmode=external -X github.com/PLNech/fipindicateur/internal/version.Version=${_ver}" \
+    ./cmd/fipindicateur
+}
+
+package() {
+  cd "$_pkgname"
+  install -Dm755 fipindicateur "$pkgdir/usr/bin/fipindicateur"
+
+  sed "s|@BINDIR@|/usr/bin|" packaging/fipindicateur.desktop.in > fipindicateur.desktop
+  install -Dm644 fipindicateur.desktop "$pkgdir/usr/share/applications/fipindicateur.desktop"
+
+  install -Dm644 internal/icon/icon_app_22.png  "$pkgdir/usr/share/icons/hicolor/22x22/apps/fipindicateur.png"
+  install -Dm644 internal/icon/icon_app_44.png  "$pkgdir/usr/share/icons/hicolor/44x44/apps/fipindicateur.png"
+  install -Dm644 internal/icon/icon_app_128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/fipindicateur.png"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
+}

@@ -1,0 +1,20 @@
+pkgbase = fipindicateur-git
+	pkgdesc = Tiny system-tray client for the FIP (Radio France) webradios (VCS, builds main)
+	pkgver = 0.3.0.r0.g0000000
+	pkgrel = 1
+	url = https://github.com/PLNech/fipindicateur
+	arch = x86_64
+	license = GPL-3.0-or-later
+	makedepends = go
+	makedepends = pkgconf
+	makedepends = git
+	depends = mpv
+	depends = hicolor-icon-theme
+	optdepends = zenity: volume and crossfade slider dialogs
+	optdepends = libappindicator-gtk3: tray icon on GNOME (via the AppIndicator extension)
+	provides = fipindicateur
+	conflicts = fipindicateur
+	source = fipindicateur::git+https://github.com/PLNech/fipindicateur.git
+	sha256sums = SKIP
+
+pkgname = fipindicateur-git
