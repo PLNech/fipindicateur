@@ -1,5 +1,29 @@
 # Changelog
 
+## Sprint 2 · 2026-07-11 · Le fondu et la fenêtre
+
+### Added
+- Zapping between stations while playing now crossfades (~4 s, equal-power
+  sin/cos on mpv's internal volume) instead of hard-cutting: the incoming
+  stream buffers on a second libmpv handle while the outgoing keeps playing,
+  then the two rivers meet. `crossfade_secs` in the config, 0 = old cut (#1).
+- Real sliders via zenity: volume with live apply while dragging (Esc reverts,
+  OK records exactly one event), and the crossfade duration (0-10 s) under
+  Réglages. Preset checkboxes remain as fallback when zenity is absent (#3).
+
+### Changed
+- The HiFi quality toggle stops before reloading: fading a station against
+  itself at another bitrate would phase/echo, so it stays a clean cut (#1).
+
+### Infra
+- Windows 80/20: every non-cgo package compiles for GOOS=windows;
+  `make windows` cross-builds fipindicateur.exe (mingw-w64 + pinned shinchiro
+  libmpv dev drop) with the tray icon wrapped PNG-in-ICO through the single
+  setTrayIcon chokepoint. Ship the exe next to libmpv-2.dll. Untested on real
+  Windows hardware yet (#2).
+- CI: `build-windows` job cross-builds and uploads exe+dll; releases attach
+  `fipindicateur-windows-x86_64.zip` (#2).
+
 ## Sprint 1 · 2026-07-10 · La radio en couleurs
 
 ### Added

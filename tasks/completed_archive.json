@@ -22,5 +22,23 @@
     "subject": "Tray icon tinted with active station color (10s gradient)",
     "completedAt": "2026-07-10",
     "learnings": "The tray icon was already an animated VU meter, so tinting rides existing frames with zero new SetIcon sites. Quantize any transition (16 steps) so the frame cache stays bounded and a zap costs a bounded number of icon updates: the 2026-07-09 freeze was unbounded churn, not animation per se."
+  },
+  {
+    "id": "s2-1",
+    "subject": "Crossfade entre stations (3-5s) au zap",
+    "completedAt": "2026-07-11",
+    "learnings": "mpv has no native crossfade; the trick is two libmpv handles with role swap, ramping mpv's INTERNAL volume only. Never ramp ao-volume: PulseAudio stream-restore would persist the fade level as the user's app volume. Same-station fades (quality toggle) phase/echo because two icecast connections never share a live edge: stop first."
+  },
+  {
+    "id": "s2-2",
+    "subject": "Windows 80/20: build tags + cross-compile .exe",
+    "completedAt": "2026-07-11",
+    "learnings": "The macOS _other.go build-tag discipline made GOOS=windows nearly free (only open/relaunch missing). The real 20%: cgo needs a windows-tagged file to carry explicit CFLAGS/LDFLAGS because a shared '#cgo pkg-config:' line applies to every platform; and fyne/systray wants ICO on Windows, satisfied by a 22-byte PNG-in-ICO wrapper (Vista+) at the single SetIcon chokepoint."
+  },
+  {
+    "id": "s2-3",
+    "subject": "Reglage crossfade au menu + slider volume zenity",
+    "completedAt": "2026-07-11",
+    "learnings": "SNI tray menus cannot host sliders; zenity --scale --print-partial gives a real live-drag slider with zero Go deps (stdlib exec, LookPath-gated). Apply per tick but record telemetry once on OK; set cfg before SetVolume so the ao-volume observer echo is swallowed by the equal-value guard."
   }
 ]
