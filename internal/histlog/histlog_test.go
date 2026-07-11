@@ -20,6 +20,8 @@ func TestAppendFormat(t *testing.T) {
 		Album:   "You've got it bad girl",
 		Year:    1973,
 		Label:   "A&M",
+		Link:    "https://music.apple.com/candy-man",
+		Cover:   "https://cover.example/candy-man.jpg",
 	}
 	e2 := Entry{
 		TS:      time.Date(2026, 7, 7, 13, 0, 0, 0, time.UTC),
@@ -74,9 +76,14 @@ func TestAppendFormat(t *testing.T) {
 	if got1.Label != "A&M" || got1.Album == "" {
 		t.Errorf("entry 1 optional fields mismatch: %+v", got1)
 	}
+	if got1.Link == "" || got1.Cover == "" {
+		t.Errorf("entry 1 link/cover should round-trip: %+v", got1)
+	}
 
 	// Optional fields absent when empty (schema stays lean).
-	if strings.Contains(lines[1], "album") || strings.Contains(lines[1], "label") || strings.Contains(lines[1], "year") {
+	if strings.Contains(lines[1], "album") || strings.Contains(lines[1], "label") ||
+		strings.Contains(lines[1], "year") || strings.Contains(lines[1], "link") ||
+		strings.Contains(lines[1], "cover") {
 		t.Errorf("empty optional fields should be omitted: %s", lines[1])
 	}
 
