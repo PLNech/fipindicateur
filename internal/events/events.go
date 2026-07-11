@@ -32,6 +32,8 @@ const (
 	KindAppStop       Kind = "app_stop"
 	KindPlay          Kind = "play"
 	KindPause         Kind = "pause"
+	KindLike          Kind = "like"           // explicit taste: liked the current track
+	KindDislike       Kind = "dislike"        // explicit taste: disliked the current track
 	KindStationChange Kind = "station_change" // From, To set
 	KindAudioDevice   Kind = "audio_device"   // user picked an audio output device
 	KindVolume        Kind = "volume"         // Value = percent
