@@ -25,6 +25,8 @@ type Entry struct {
 	Album   string    `json:"album,omitempty"`
 	Year    int       `json:"year,omitempty"`
 	Label   string    `json:"label,omitempty"`
+	Link    string    `json:"link,omitempty"`  // "listen elsewhere" link (often Apple Music), when Radio France provides one
+	Cover   string    `json:"cover,omitempty"` // cover-art URL, when present
 }
 
 // DefaultPath returns ~/.local/share/fipindicateur/history.jsonl (honoring
