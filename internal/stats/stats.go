@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/PLNech/fipindicateur/internal/events"
+	"github.com/PLNech/fipindicateur/internal/histlog"
+	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 )
 
@@ -27,6 +29,15 @@ type Report struct {
 	Transitions  []Transition  `json:"transitions"` // sorted desc by count
 	Achievements []Achievement `json:"achievements"`
 	Calibration  Calibration   `json:"calibration"`
+
+	// The following blocks are derived from the optional companion inputs
+	// (histlog track log, prefs verdict log, enriched.json artist metadata).
+	// Each is an omitempty pointer: when its input is absent the block
+	// collapses out of the JSON entirely, so a report built from events alone
+	// is byte-identical to before these fields existed.
+	Epochs   *Epochs        `json:"epochs,omitempty"`
+	Enriched *EnrichedStats `json:"enriched,omitempty"`
+	Tastes   *Tastes        `json:"tastes,omitempty"`
 }
 
 // Range is the observed time span of the log.
@@ -90,9 +101,26 @@ type session struct {
 	stations map[string]bool
 }
 
-// Build derives the full report from the event log. now stamps GeneratedAt and
-// anchors time-relative achievements (e.g. consecutive-day streaks).
-func Build(evs []events.Event, now time.Time) Report {
+// segment is one contiguous stretch of actual playback on a single station,
+// reconstructed from play/pause/station_change boundaries. These are the
+// honest "was audible" windows: track exposure is the intersection of a
+// track's histlog interval with the segments on its station (see enrich.go).
+type segment struct {
+	station string
+	start   time.Time
+	end     time.Time
+}
+
+// Build derives the full report. evs is the behaviour log (required); hist,
+// prf and enr are the optional companion inputs (histlog track log, prefs
+// verdict log, enriched.json artist metadata) and may each be nil/empty, in
+// which case their derived blocks are omitted and the report is identical to
+// the events-only version. now stamps GeneratedAt and anchors time-relative
+// achievements (e.g. consecutive-day streaks).
+//
+// Build is pure: same inputs, same output, no IO. Generate (report.go) does
+// the best-effort loading of every input before calling it.
+func Build(evs []events.Event, hist []histlog.Entry, prf []prefs.Entry, enr *Enriched, now time.Time) Report {
 	sorted := make([]events.Event, len(evs))
 	copy(sorted, evs)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].TS.Before(sorted[j].TS) })
@@ -110,6 +138,7 @@ func Build(evs []events.Event, now time.Time) Report {
 
 		sessions []session
 		cur      *session
+		segments []segment
 
 		plays, pauses, zaps int
 		total               time.Duration
@@ -127,6 +156,7 @@ func Build(evs []events.Event, now time.Time) Report {
 			total += d
 			addHourly(&hourly, &weekday, segStart, at)
 			markDays(activeDays, segStart, at)
+			segments = append(segments, segment{station: station, start: segStart, end: at})
 			if cur != nil {
 				cur.dur += d
 				cur.stations[station] = true
@@ -216,6 +246,15 @@ func Build(evs []events.Event, now time.Time) Report {
 	r.Transitions = buildTransitions(transCount)
 	r.Calibration = Calibration{Events: len(sorted), Sessions: len(sessions), DaysActive: len(activeDays), Zaps: zaps}
 	r.Achievements = evaluateAchievements(sessions, perStation, activeDays, hourly, zaps, total)
+
+	// Companion-input blocks. Each is nil (omitted) when its input is absent,
+	// so an events-only report is unchanged. Exposure per track is computed
+	// once (histlog intervals capped and intersected with playback segments)
+	// and shared by the epochs and enriched derivations.
+	tracks := trackExposure(hist, segments)
+	r.Epochs = buildEpochs(tracks)
+	r.Enriched = buildEnriched(tracks, enr)
+	r.Tastes = buildTastes(prf, sorted, tracks)
 	return r
 }
 
