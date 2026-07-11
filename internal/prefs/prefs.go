@@ -1,9 +1,13 @@
-// Package histlog appends track changes to a local JSONL file, one JSON
-// object per line. Opt-in (default off). JSONL over SQLite: zero new
-// dependencies, greppable, and the schema extends naturally when
-// likes/dislikes arrive later. Writes are best-effort: an error is returned
-// for logging but must never affect playback.
-package histlog
+// Package prefs appends explicit taste verdicts (like / dislike) on the
+// currently-playing track to a local JSONL file, one JSON object per line.
+// Opt-in, local-only, no network ever, mirroring internal/histlog and
+// internal/events: versioned JSONL, zero new dependencies, greppable, and
+// best-effort writes that must never affect playback.
+//
+// prefs is a separate consent and a separate file from histlog (track changes)
+// and events (behaviour): a like/dislike is an explicit, deliberate signal,
+// distinct from the passive track log and from anonymous behaviour counters.
+package prefs
 
 import (
 	"encoding/json"
@@ -15,20 +19,28 @@ import (
 // SchemaVersion is the current value of the "v" field.
 const SchemaVersion = 1
 
-// Entry is one history line. V versions the schema.
+// Verdict is the explicit taste signal on a track.
+type Verdict string
+
+const (
+	VerdictLike    Verdict = "like"
+	VerdictDislike Verdict = "dislike"
+)
+
+// Entry is one taste line. V versions the schema. Optional fields are omitted
+// when empty so the log stays lean and greppable.
 type Entry struct {
 	V       int       `json:"v"`
 	TS      time.Time `json:"ts"`
-	Station string    `json:"station"`
+	Station string    `json:"station,omitempty"`
 	Artist  string    `json:"artist"`
 	Title   string    `json:"title"`
-	Album   string    `json:"album,omitempty"`
-	Year    int       `json:"year,omitempty"`
-	Label   string    `json:"label,omitempty"`
+	Verdict Verdict   `json:"verdict"` // "like" | "dislike"
 }
 
-// DefaultPath returns ~/.local/share/fipindicateur/history.jsonl (honoring
-// XDG_DATA_HOME), creating the directory if needed.
+// DefaultPath returns ~/.local/share/fipindicateur/prefs.jsonl (honoring
+// XDG_DATA_HOME), creating the directory if needed. A separate file from
+// history.jsonl and events.jsonl: separate consent, separate purpose.
 func DefaultPath() (string, error) {
 	base := os.Getenv("XDG_DATA_HOME")
 	if base == "" {
@@ -42,7 +54,7 @@ func DefaultPath() (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "history.jsonl"), nil
+	return filepath.Join(dir, "prefs.jsonl"), nil
 }
 
 // Append writes one entry as a JSON line to the given file, creating it if
@@ -66,9 +78,8 @@ func Append(path string, e Entry) error {
 }
 
 // Load reads all entries from a JSONL file. A missing file is not an error (it
-// means "no history yet"): it returns a nil slice. Malformed lines are skipped
-// so a partially-written tail never fails the whole read. Mirrors events.Load
-// and prefs.Load: the stats derivation joins this log against the behaviour log.
+// means "no verdicts yet"): it returns a nil slice. Malformed lines are skipped
+// so a partially-written tail never fails the whole read.
 func Load(path string) ([]Entry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
