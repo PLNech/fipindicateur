@@ -1,5 +1,29 @@
 # Changelog
 
+## Distribution · 2026-07-12 · Les rayonnages
+
+### Added
+- Source-build packaging recipes, one per channel, all sidestepping the
+  cgo/libmpv crux by compiling on the user's own machine: AUR `PKGBUILD`s
+  (`fipindicateur` versioned plus a `fipindicateur-git` rolling variant, each
+  with a generated `.SRCINFO`), a Homebrew tap formula, and a repo-root
+  `flake.nix` (buildGoModule + an `apps` output + a `go`/libmpv/pkg-config
+  devShell).
+- `.deb` packaging via nfpm (`packaging/nfpm.yaml`), wired into the release
+  workflow downstream of the existing Linux build: nfpm only assembles the
+  already-built binary (`Depends: libmpv2`), never cross-compiles. The `.deb`
+  is attached to the GitHub Release alongside the tarball.
+
+### Docs
+- `docs/INSTALL.md`: a `go install` note (needs a local C toolchain, not
+  Windows) and a Package channels section with the exact command and honest
+  status per channel (available now: `.deb`, Nix; prepared: AUR pending
+  registration, Homebrew tap pending creation).
+
+Groundwork from the distribution research in #6. The AUR recipes and the
+Homebrew tap are authored and validated but deliberately unpublished (AUR
+registration disabled; no tap repo created).
+
 ## Sprint 3 · 2026-07-11 · La fin d'émission
 
 ### Added

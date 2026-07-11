@@ -39,6 +39,71 @@ go build -o fipindicateur ./cmd/fipindicateur
 ./fipindicateur
 ```
 
+### `go install`
+
+```sh
+go install github.com/PLNech/fipindicateur/cmd/fipindicateur@latest
+```
+
+This works **only with a local C toolchain**: the app links libmpv via cgo, so
+the installing machine needs a C compiler, `pkg-config`, and libmpv's headers
+(`mpv.pc`, `mpv/client.h`), the same build prerequisites as the table above
+(`libmpv-dev` / `mpv`). Without them the build fails with a pkg-config lookup
+error. There is **no `go install` path on Windows** (the Windows build needs a
+hand-managed libmpv dev drop; see below).
+
+## Package channels
+
+Every source-build channel (AUR, Homebrew, Nix, `go install`) compiles against
+your own libmpv, so no cross-compilation or bundling is involved.
+
+### Debian / Ubuntu (`.deb`)
+
+*Status: available on GitHub Releases from the next tag onward (the packaging
+job is wired into CI; the existing v0.1.0-v0.3.0 releases predate it).*
+
+```sh
+sudo apt install ./fipindicateur_<version>_amd64.deb   # apt resolves libmpv2
+```
+
+The `.deb` declares `Depends: libmpv2`, so `apt` pulls the runtime library from
+the standard repos. To build it yourself from a checkout, see
+[`packaging/nfpm.yaml`](../packaging/nfpm.yaml).
+
+### Arch (AUR)
+
+*Status: prepared, not yet published (AUR account registration is currently
+disabled).* Recipes live in [`packaging/aur/`](../packaging/aur/). Once
+published:
+
+```sh
+yay -S fipindicateur        # versioned, tracks releases
+yay -S fipindicateur-git    # rolling, builds main
+```
+
+### macOS / Linux (Homebrew tap)
+
+*Status: formula prepared; the tap repo is not yet created.* See
+[`packaging/homebrew/`](../packaging/homebrew/). Once the tap exists:
+
+```sh
+brew install PLNech/tap/fipindicateur
+```
+
+> macOS is CI-built against `brew install mpv` but has **never been run on real
+> macOS hardware**; treat the tray app as unverified there.
+
+### Nix (flake)
+
+*Status: available now (self-serve; needs the repo commit pushed for the
+`github:` form).*
+
+```sh
+nix run github:PLNech/fipindicateur     # run without installing
+nix profile install github:PLNech/fipindicateur
+nix develop github:PLNech/fipindicateur # go + libmpv + pkg-config dev shell
+```
+
 ## Usage
 
 Launch `fipindicateur`. A broadcast-waves glyph appears in your top bar; click
