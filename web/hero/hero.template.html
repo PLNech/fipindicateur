@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>fipindicateur · hero</title>
+<style>
+/* « Fin d'emission » tokens (dark · Antenne de nuit), see DESIGN.md. */
+@font-face{font-family:"Bricolage Grotesque";font-weight:400;font-style:normal;font-display:block;src:url(data:font/woff2;base64,__BRICOLAGE_400__) format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-weight:800;font-style:normal;font-display:block;src:url(data:font/woff2;base64,__BRICOLAGE_800__) format("woff2")}
+@font-face{font-family:"Literata";font-weight:400;font-style:italic;font-display:block;src:url(data:font/woff2;base64,__LITERATA_400I__) format("woff2")}
+:root{
+  --night-0:oklch(0.16 0.012 50);
+  --night-1:oklch(0.20 0.015 55);
+  --ink:oklch(0.94 0.025 85);
+  --ink-muted:oklch(0.74 0.02 80);
+  --hairline:oklch(0.36 0.02 60);
+  --fip:oklch(0.63 0.23 356);
+  --fip-ink:oklch(0.78 0.15 356);
+  --amber:oklch(0.80 0.12 75);
+  --amber-dim:oklch(0.55 0.08 70);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1280px;height:640px;overflow:hidden}
+body{
+  background:
+    radial-gradient(120% 90% at 88% 62%, oklch(0.20 0.02 40 / 0.9), transparent 60%),
+    var(--night-0);
+  color:var(--ink);
+  font-family:"Bricolage Grotesque",system-ui,sans-serif;
+  position:relative;
+}
+/* faint vignette so the corners settle into night */
+body::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(130% 120% at 30% 40%, transparent 55%, oklch(0.10 0.01 40 / 0.55));
+}
+svg{position:absolute;inset:0;width:1280px;height:640px}
+.copy{
+  position:absolute;left:96px;bottom:150px;z-index:2;max-width:640px;
+}
+.wordmark{
+  font-weight:800;font-size:104px;line-height:0.98;letter-spacing:-0.03em;
+  color:var(--ink);
+}
+.wordmark .fip{color:var(--fip-ink)}
+.tagline{
+  font-family:"Literata",Georgia,serif;font-style:italic;font-weight:400;
+  font-size:29px;line-height:1.35;color:var(--ink-muted);
+  margin-top:26px;max-width:560px;letter-spacing:0.01em;
+}
+/* dial timecode kicker, echoes the report's conducteur grammar */
+.kicker{
+  font-family:"Bricolage Grotesque";font-weight:400;font-size:16px;
+  letter-spacing:0.28em;text-transform:uppercase;color:var(--amber-dim);
+  margin-bottom:22px;display:flex;align-items:center;gap:14px;
+}
+.kicker .rule{width:52px;height:1px;background:var(--hairline)}
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1280 640" aria-hidden="true"><g id="dial"></g></svg>
+<div class="copy">
+  <div class="kicker">00:00 <span class="rule"></span> antenne de nuit</div>
+  <div class="wordmark"><span class="fip">fip</span>indicateur</div>
+  <div class="tagline">L'antenne de nuit, à portée de cadran.</div>
+</div>
+<script>
+// Tuner-dial motif: a fan of graduations (13 stations, one per major tick),
+// a swept arc, and a rose needle latched on FIP. Center sits off the lower
+// right so the arc bows up into the frame; the fan opens toward the wordmark.
+const NS = "http://www.w3.org/2000/svg";
+const g = document.getElementById("dial");
+const cx = 1250, cy = 720, R = 560;          // center off bottom-right
+const A0 = 208, A1 = 254;                     // degrees, standard math (y-down)
+const STATIONS = 13;
+const rad = d => d * Math.PI / 180;
+const pt = (ang, r) => [cx + r * Math.cos(rad(ang)), cy + r * Math.sin(rad(ang))];
+function line(x1,y1,x2,y2,stroke,w,opacity){
+  const l=document.createElementNS(NS,"line");
+  l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);
+  l.setAttribute("stroke",stroke);l.setAttribute("stroke-width",w);l.setAttribute("stroke-linecap","round");
+  if(opacity!=null)l.setAttribute("opacity",opacity);
+  g.appendChild(l);return l;
+}
+// the swept arc (dial rim)
+const p0=pt(A0,R), p1=pt(A1,R);
+const arc=document.createElementNS(NS,"path");
+arc.setAttribute("d",`M ${p0[0]} ${p0[1]} A ${R} ${R} 0 0 1 ${p1[0]} ${p1[1]}`);
+arc.setAttribute("fill","none");arc.setAttribute("stroke","var(--hairline)");
+arc.setAttribute("stroke-width","1.5");g.appendChild(arc);
+
+// minor graduations (dense), plus 13 major ticks for the stations
+const minorCount=61;
+for(let i=0;i<minorCount;i++){
+  const a=A0+(A1-A0)*i/(minorCount-1);
+  const [ox,oy]=pt(a,R-2);const [ix,iy]=pt(a,R-16);
+  line(ix,iy,ox,oy,"var(--hairline)",1,0.7);
+}
+const labels=["FIP","Jazz","Groove","Rock","Monde"]; // a few, direct-labelled
+const fipIdx=0;
+for(let i=0;i<STATIONS;i++){
+  const a=A0+(A1-A0)*i/(STATIONS-1);
+  const [ox,oy]=pt(a,R-2);const [ix,iy]=pt(a,R-34);
+  const isFip=(i===fipIdx);
+  line(ix,iy,ox,oy,isFip?"var(--fip)":"var(--amber)",isFip?3:2,isFip?1:0.85);
+  if(i<labels.length){
+    // horizontal, right-anchored labels fanning off the rim toward the wordmark;
+    // FIP is nudged clear of the needle line and inked rose.
+    const [lx,ly]=pt(a,R-46);
+    const t=document.createElementNS(NS,"text");
+    t.setAttribute("x",isFip?lx-14:lx);t.setAttribute("y",isFip?ly+30:ly+5);
+    t.setAttribute("fill",isFip?"var(--fip-ink)":"var(--amber-dim)");
+    t.setAttribute("font-family","Bricolage Grotesque");
+    t.setAttribute("font-size",isFip?"22":"15");
+    t.setAttribute("font-weight",isFip?"800":"400");
+    t.setAttribute("letter-spacing","0.16em");
+    t.setAttribute("text-anchor","end");
+    t.textContent=labels[i].toUpperCase();
+    g.appendChild(t);
+  }
+}
+// the needle: from hub toward the FIP tick
+const needleAngle=A0; // FIP is the first (topmost) major tick
+const [hx,hy]=pt(needleAngle,R-150);
+const [tx,ty]=pt(needleAngle,R-6);
+line(hx,hy,tx,ty,"var(--fip)",3.5,1);
+// hub
+const hub=document.createElementNS(NS,"circle");
+hub.setAttribute("cx",hx);hub.setAttribute("cy",hy);hub.setAttribute("r",6);
+hub.setAttribute("fill","var(--fip)");g.appendChild(hub);
+// needle tip glow
+const tip=document.createElementNS(NS,"circle");
+tip.setAttribute("cx",tx);tip.setAttribute("cy",ty);tip.setAttribute("r",5);
+tip.setAttribute("fill","var(--fip-ink)");g.appendChild(tip);
+</script>
+</body>
+</html>
