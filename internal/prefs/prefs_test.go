@@ -157,6 +157,29 @@ func TestLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestClear(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.jsonl")
+
+	// Clearing a missing file is not an error (nothing to delete).
+	if err := Clear(path); err != nil {
+		t.Fatalf("Clear missing: %v", err)
+	}
+
+	if err := Append(path, Entry{Verdict: Like, Artist: "A", Title: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("file should exist after append: %v", err)
+	}
+
+	if err := Clear(path); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("prefs.jsonl should be gone after Clear, stat err = %v", err)
+	}
+}
+
 func TestLoadSkipsMalformed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "prefs.jsonl")
 	// A good line, a torn/garbage line, an empty line, then a good line

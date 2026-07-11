@@ -75,6 +75,7 @@ type App struct {
 	nowThrottle *throttle
 
 	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
+	prefsClearArmed bool // two-click confirm state for "Effacer mes goûts"
 
 	// menu items
 	mNow           *systray.MenuItem
@@ -93,6 +94,7 @@ type App struct {
 	audioMI        map[string]*systray.MenuItem // audio-output items, keyed by device name ("auto" = automatic)
 	mStats         *systray.MenuItem
 	mStatsClear    *systray.MenuItem
+	mPrefsClear    *systray.MenuItem
 	mUpdateStartup *systray.MenuItem
 	mVolume        *systray.MenuItem
 	mMute          *systray.MenuItem
@@ -366,6 +368,11 @@ func (a *App) buildMenu() {
 	a.on(mStatsFolder, "", a.openDataDir)
 	a.mStatsClear = statsMenu.AddSubMenuItem("Effacer les statistiques…", "Supprimer events.jsonl (l'historique des titres n'est pas touché)")
 	a.on(a.mStatsClear, "", a.clearStatsConfirm)
+	// Taste verdicts (J'aime / Pas pour moi) persist to a separate file,
+	// prefs.jsonl, with its own consent. It gets its own delete affordance so
+	// the "see / edit / delete" promise covers every local log.
+	a.mPrefsClear = statsMenu.AddSubMenuItem("Effacer mes goûts…", "Supprimer prefs.jsonl (vos J'aime / Pas pour moi)")
+	a.on(a.mPrefsClear, "", a.clearPrefsConfirm)
 
 	systray.AddSeparator()
 	about := systray.AddMenuItem("À propos", "Ouvrir la page du projet")
@@ -1212,6 +1219,57 @@ func (a *App) clearStatsConfirm() {
 	}
 	if a.notif != nil {
 		a.notif.Notify("Statistiques effacées", "Le journal events.jsonl a été supprimé.", "", a.cfg.NotifTimeoutMs)
+	}
+}
+
+// clearPrefsConfirm deletes prefs.jsonl (the taste verdicts) with the same
+// two-click confirmation as clearStatsConfirm: first click arms and relabels, a
+// second click within a short window deletes. It removes only prefs.jsonl,
+// never events.jsonl or history.jsonl. The KindPrefsClear behaviour event is
+// recorded at source on the confirming click only (not on the arming click, so
+// a click the user backs out of logs nothing); it lands in events.jsonl, a
+// different file, so it never resurrects the taste log we just deleted.
+func (a *App) clearPrefsConfirm() {
+	a.mu.Lock()
+	armed := a.prefsClearArmed
+	a.prefsClearArmed = !armed // arm on first click, disarm on the confirming click
+	a.mu.Unlock()
+
+	if !armed {
+		a.mPrefsClear.SetTitle("Confirmer l'effacement ?")
+		go func() {
+			time.Sleep(5 * time.Second)
+			a.mu.Lock()
+			still := a.prefsClearArmed
+			a.prefsClearArmed = false
+			a.mu.Unlock()
+			if still {
+				a.mPrefsClear.SetTitle("Effacer mes goûts…")
+			}
+		}()
+		return
+	}
+
+	a.mPrefsClear.SetTitle("Effacer mes goûts…")
+
+	if a.prefsPath == "" {
+		p, err := prefs.DefaultPath()
+		if err != nil {
+			log.Printf("ui: prefs path: %v", err)
+			return
+		}
+		a.prefsPath = p
+	}
+	if err := prefs.Clear(a.prefsPath); err != nil {
+		log.Printf("ui: prefs clear: %v", err)
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindPrefsClear, Station: a.current.Key})
+	// The like/dislike menu items carry no cached verdict state (they only toggle
+	// enabled once a track is known), so there is nothing on them to reset after
+	// a delete. They stay enabled: you can still record a fresh verdict.
+	if a.cfg.Notifications && a.notif != nil {
+		a.notif.Notify("Goûts effacés", "Le journal prefs.jsonl a été supprimé.", "", a.cfg.NotifTimeoutMs)
 	}
 }
 

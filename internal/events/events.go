@@ -51,6 +51,7 @@ const (
 	KindStatsView     Kind = "stats_view"
 	KindStatsToggle   Kind = "stats_toggle" // Value = 1 on, 0 off
 	KindStatsClear    Kind = "stats_clear"
+	KindPrefsClear    Kind = "prefs_clear" // deleted prefs.jsonl (taste verdicts)
 	KindRestart       Kind = "restart"
 	KindUpdateCheck   Kind = "update_check"
 	KindUpdateStartup Kind = "update_startup_toggle" // Value = 1 on, 0 off

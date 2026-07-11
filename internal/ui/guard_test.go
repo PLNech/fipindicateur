@@ -42,7 +42,7 @@ func TestActionKindsWired(t *testing.T) {
 		"KindCrossfade",
 		"KindNotif", "KindAnim", "KindAutostart", "KindOpenWiki",
 		"KindOpenLink", "KindOpenHistory", "KindOpenFip", "KindOpenAbout",
-		"KindStatsView", "KindStatsToggle", "KindRestart", "KindUpdateCheck",
+		"KindStatsView", "KindStatsToggle", "KindPrefsClear", "KindRestart", "KindUpdateCheck",
 		"KindUpdateStartup", "KindQuit",
 	} {
 		if !strings.Contains(s, "events."+kind) {

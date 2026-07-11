@@ -85,6 +85,18 @@ func Append(path string, e Entry) error {
 	return err
 }
 
+// Clear deletes the taste log at path (the "Effacer mes goûts" data right). It
+// removes only prefs.jsonl, never events.jsonl or history.jsonl (separate
+// consents, separate files). A missing file is not an error: "nothing to
+// delete" and "deleted" are the same end state.
+func Clear(path string) error {
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
 // Load reads all entries from a JSONL file. A missing file is not an error (it
 // means "no verdicts yet"): it returns a nil slice. Malformed lines are skipped
 // so a partially-written tail never fails the whole read. Mirrors events.Load
