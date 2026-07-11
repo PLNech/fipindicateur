@@ -1,5 +1,30 @@
 # Changelog
 
+## Sprint 3 · 2026-07-11 · La fin d'émission
+
+### Added
+- Taste signals: explicit like/dislike on the current track, straight from the
+  tray. Opt-in and logged to its own `prefs.jsonl` (a separate consent, a
+  separate file from history), with the verdict persisted on the menu item.
+- « Fin d'émission » report: the listening page rebuilt as a late-night radio
+  rundown (a conducteur with timecodes), dark and light. Four new dataviz on
+  top of the existing grille/zapping/palmarès: Les époques (release-year bars),
+  La carte du ciel (a 2D artist constellation), L'économie du disque (indie vs
+  major labels), and À ton goût (explicit verdicts plus implicit hints).
+- Extended stats derivation: release-year epochs, artist-metadata enrichment
+  (genres, countries, labels, constellation coords), and taste stats that pair
+  explicit verdicts with implicit zap-out and early-pause signals. The report
+  states its own sample size and flags a small session count as indicative.
+
+### Infra
+- `tools/enrich` companion: resolves the artists you heard against Wikidata
+  (genre, country, label, description) and projects them to a 2D affinity map
+  via embeddings, cached locally, feeding the report's carte du ciel.
+- `web/` SPA toolchain: an esbuild bundle plus D3 and subsetted WOFF2 fonts,
+  compiled at dev time into a single self-contained `report.html.tmpl` (no Node
+  at build time). `make web` regenerates it; CI and the em-dash lint skip
+  `node_modules`.
+
 ## Sprint 2 · 2026-07-11 · Le fondu et la fenêtre
 
 ### Added
