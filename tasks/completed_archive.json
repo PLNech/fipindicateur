@@ -40,5 +40,47 @@
     "subject": "Reglage crossfade au menu + slider volume zenity",
     "completedAt": "2026-07-11",
     "learnings": "SNI tray menus cannot host sliders; zenity --scale --print-partial gives a real live-drag slider with zero Go deps (stdlib exec, LookPath-gated). Apply per tick but record telemetry once on OK; set cfg before SetVolume so the ao-volume observer echo is swallowed by the equal-value guard."
+  },
+  {
+    "id": "s3-1",
+    "subject": "Taste signals: explicit like/dislike (events + prefs.jsonl + tray UI)",
+    "completedAt": "2026-07-11",
+    "learnings": "a.on records the behaviour event BEFORE the handler runs, so state-gated items must stay Disabled until valid or you log ghost events with no prefs entry."
+  },
+  {
+    "id": "s3-2",
+    "subject": "tools/enrich companion: Wikidata + embeddings + 2D projection",
+    "completedAt": "2026-07-11",
+    "learnings": "model2vec static multilingual embeddings + sklearn t-SNE handle a ~280-point artist map with no torch; caching every raw API response made the rerun cost 3 requests instead of 473."
+  },
+  {
+    "id": "s3-3",
+    "subject": "Design direction + DESIGN.md (Fin d emission)",
+    "completedAt": "2026-07-11",
+    "learnings": "Editorial-typographic is itself a saturated AI lane; singularity came from a physical scene (tuner glow at 2am) plus ONE committed color (FIP rose) and a named kicker system (the conducteur) that earns its numbering."
+  },
+  {
+    "id": "s3-4",
+    "subject": "SPA build-time toolchain (esbuild + D3 + subsetted WOFF2)",
+    "completedAt": "2026-07-11",
+    "learnings": "Commit the generated .tmpl so go build stays node-free, and make the bundler assert its own invariants (__FIP_DATA__ count, em-dash ban) so drift fails at build not at lint."
+  },
+  {
+    "id": "s3-5",
+    "subject": "Extended stats derivation (epochs, enriched, tastes)",
+    "completedAt": "2026-07-11",
+    "learnings": "Parallel worktree agents branched pre-merge recreate shared packages (internal/prefs was born twice); state the exact base commit in briefs or sequence the merges."
+  },
+  {
+    "id": "s3-6",
+    "subject": "Fin d emission report page (9 segments, 4 new dataviz)",
+    "completedAt": "2026-07-11",
+    "learnings": "SVG marker arrowheads scale with stroke-width and markerUnits=userSpaceOnUse is unreliable in chromium; draw fixed-size heads from the curve end tangent instead."
+  },
+  {
+    "id": "s3-7",
+    "subject": "Final integration: merges, e2e verify on real data, CHANGELOG",
+    "completedAt": "2026-07-11",
+    "learnings": "Whole-tree lint greps break on untracked toolchain dirs (node_modules, .venv) left by worktree agents; exclude them in the gate itself and mirror the exclusion in CI."
   }
 ]

@@ -25,6 +25,15 @@
   at build time). `make web` regenerates it; CI and the em-dash lint skip
   `node_modules`.
 
+### Docs
+- README reworked as a 30-second human read (1574 to 410 words): hero image,
+  pitch, quick start, links. The detail moved intact to `docs/FEATURES.md`,
+  `docs/INSTALL.md` and `docs/DEVELOPMENT.md`.
+- `docs/social-preview.png`: a 1280x640 tuner-dial hero in the « Fin
+  d'émission » tokens (source under `web/hero/`), ready for GitHub's social
+  preview. Report screenshot regenerated from fictional fixture data; the
+  stale Markov capture removed.
+
 ## Sprint 2 · 2026-07-11 · Le fondu et la fenêtre
 
 ### Added
