@@ -281,6 +281,17 @@ header.hero { padding-top: clamp(2.5rem, 8vh, 5rem); }
 .sky .hidden-label { opacity: 0; transition: opacity .15s; }
 .sky .star:hover .hidden-label, .sky .star:focus-visible .hidden-label { opacity: 1; }
 
+/* ============================================================ regle des 48h */
+.repeats-list { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s4); }
+.repeat-row { display: grid; grid-template-columns: 1fr auto auto; gap: var(--s4); align-items: baseline; padding-block: 6px; border-bottom: 1px solid var(--hairline); font-size: 0.92rem; }
+.repeat-row .nm { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; }
+.repeat-row .nm .ti { color: var(--ink-muted); font-family: "Literata", serif; font-style: italic; font-weight: 400; font-size: 0.9em; }
+.repeat-row .st { color: var(--ink-muted); font-size: 0.85rem; }
+.repeat-row .gap { font-family: "Bricolage Grotesque", sans-serif; font-variant-numeric: tabular-nums; color: var(--fip-ink); }
+.pullquote { margin: var(--s4) 0 0; padding: 0 0 0 var(--s4); border-left: 2px solid var(--fip); max-width: var(--prose); }
+.pullquote p { font-family: "Literata", serif; font-style: italic; font-size: 1.12rem; line-height: 1.5; margin: 0; text-wrap: pretty; }
+.pullquote cite { display: block; margin-top: var(--s2); font-style: normal; font-size: 0.85rem; color: var(--ink-muted); font-family: "Bricolage Grotesque", sans-serif; }
+
 /* ============================================================ economie du disque */
 .split-bar { display: flex; height: 40px; border-radius: 6px; overflow: hidden; border: 1px solid var(--hairline); }
 .split-bar .indie { background: var(--fip); }

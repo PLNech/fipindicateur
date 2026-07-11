@@ -120,5 +120,19 @@
       { "artist": "A Loud Pop Remix", "title": "", "verdict": "dislike", "ts": "2026-03-15T19:20:00+01:00" }
     ],
     "implicit": { "zapOuts": 47, "earlyPauses": 23, "n": 70 }
+  },
+  "programme": {
+    "sameStation": true,
+    "rule48h": {
+      "strictRepeats": 2,
+      "nightRepeats": 5,
+      "tracksChecked": 3120,
+      "observedSec": 486300,
+      "caught": [
+        { "artist": "Khruangbin", "title": "Time (You and I)", "station": "fip", "stationName": "FIP", "gapSec": 133200 },
+        { "artist": "Air", "title": "La Femme d'Argent", "station": "jazz", "stationName": "Jazz", "gapSec": 165600 }
+      ]
+    },
+    "conducteurs": { "curatedSec": 321000, "nightSec": 165300, "blocksEstimate": 30 }
   }
 }
