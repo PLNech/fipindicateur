@@ -35,9 +35,10 @@ type Report struct {
 	// Each is an omitempty pointer: when its input is absent the block
 	// collapses out of the JSON entirely, so a report built from events alone
 	// is byte-identical to before these fields existed.
-	Epochs   *Epochs        `json:"epochs,omitempty"`
-	Enriched *EnrichedStats `json:"enriched,omitempty"`
-	Tastes   *Tastes        `json:"tastes,omitempty"`
+	Epochs    *Epochs        `json:"epochs,omitempty"`
+	Enriched  *EnrichedStats `json:"enriched,omitempty"`
+	Tastes    *Tastes        `json:"tastes,omitempty"`
+	Programme *Programme     `json:"programme,omitempty"`
 }
 
 // Range is the observed time span of the log.
@@ -255,6 +256,7 @@ func Build(evs []events.Event, hist []histlog.Entry, prf []prefs.Entry, enr *Enr
 	r.Epochs = buildEpochs(tracks)
 	r.Enriched = buildEnriched(tracks, enr)
 	r.Tastes = buildTastes(prf, sorted, tracks)
+	r.Programme = buildProgramme(hist, hourly, int64(total.Seconds()))
 	return r
 }
 
