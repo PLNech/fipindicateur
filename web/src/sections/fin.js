@@ -11,8 +11,10 @@ export function fin(data, mk) {
     `à partir de <span class="path">~/.local/share/fipindicateur/events.jsonl</span>. ` +
     `Rien n’est envoyé sur le réseau, jamais. ` +
     `Tu peux tout effacer depuis le menu (Réglages · Statistiques · Effacer), ` +
-    `ou simplement supprimer ce fichier. Les titres écoutés vivent dans un journal séparé ` +
-    `(<span class="path">history.jsonl</span>), sous un consentement distinct.`;
+    `ou simplement supprimer ce fichier. Les titres écoutés ` +
+    `(<span class="path">history.jsonl</span>) et tes verdicts de goût ` +
+    `(<span class="path">prefs.jsonl</span>) vivent dans des journaux séparés, ` +
+    `sous des consentements distincts.`;
   body.appendChild(p);
   body.appendChild(el("p", { class: "prose muted", style: { fontSize: "0.85rem", marginTop: "24px" }, html:
     `Bonne nuit. <span style="color:var(--fip-ink)">·</span> Rendez-vous à la prochaine antenne.` }));
