@@ -1,0 +1,124 @@
+{
+  "generatedAt": "2026-07-11T02:14:00+02:00",
+  "range": { "first": "2026-01-06T22:10:00+01:00", "last": "2026-07-10T01:52:00+02:00" },
+  "totals": { "listeningSec": 486300, "sessions": 74, "daysActive": 96, "plays": 118, "pauses": 91, "zaps": 143 },
+  "stations": [
+    { "key": "fip", "display": "FIP", "color": "#e2007a", "listeningSec": 173400, "share": 0.3566 },
+    { "key": "jazz", "display": "Jazz", "color": "#13898d", "listeningSec": 92600, "share": 0.1904 },
+    { "key": "groove", "display": "Groove", "color": "#8664ee", "listeningSec": 74100, "share": 0.1524 },
+    { "key": "rock", "display": "Rock", "color": "#f93446", "listeningSec": 51200, "share": 0.1053 },
+    { "key": "nouveautes", "display": "Nouveautés", "color": "#357ded", "listeningSec": 38900, "share": 0.08 },
+    { "key": "world", "display": "Monde", "color": "#efa439", "listeningSec": 27400, "share": 0.0563 },
+    { "key": "electro", "display": "Electro", "color": "#00d3ff", "listeningSec": 16300, "share": 0.0335 },
+    { "key": "reggae", "display": "Reggae", "color": "#477442", "listeningSec": 7600, "share": 0.0156 },
+    { "key": "sacrefrancais", "display": "Sacré français !", "color": "#00008f", "listeningSec": 4800, "share": 0.0099 }
+  ],
+  "hourly": [42100, 51200, 38400, 9600, 1800, 900, 600, 1200, 4800, 8400, 6200, 5400, 7200, 9600, 11200, 13400, 15600, 18200, 22400, 29600, 41200, 58300, 71400, 62100],
+  "weekday": [88200, 41200, 38600, 42100, 51300, 79400, 145500],
+  "sessions": { "count": 74, "medianSec": 4980, "maxSec": 24300, "meanSec": 6572 },
+  "transitions": [
+    { "from": "fip", "to": "jazz", "fromDisplay": "FIP", "toDisplay": "Jazz", "count": 24, "prob": 0.34 },
+    { "from": "jazz", "to": "fip", "fromDisplay": "Jazz", "toDisplay": "FIP", "count": 19, "prob": 0.42 },
+    { "from": "fip", "to": "groove", "fromDisplay": "FIP", "toDisplay": "Groove", "count": 17, "prob": 0.24 },
+    { "from": "groove", "to": "fip", "fromDisplay": "Groove", "toDisplay": "FIP", "count": 14, "prob": 0.38 },
+    { "from": "rock", "to": "fip", "fromDisplay": "Rock", "toDisplay": "FIP", "count": 12, "prob": 0.5 },
+    { "from": "fip", "to": "rock", "fromDisplay": "FIP", "toDisplay": "Rock", "count": 11, "prob": 0.15 },
+    { "from": "jazz", "to": "groove", "fromDisplay": "Jazz", "toDisplay": "Groove", "count": 9, "prob": 0.2 },
+    { "from": "nouveautes", "to": "fip", "fromDisplay": "Nouveautés", "toDisplay": "FIP", "count": 8, "prob": 0.47 },
+    { "from": "groove", "to": "electro", "fromDisplay": "Groove", "toDisplay": "Electro", "count": 6, "prob": 0.16 },
+    { "from": "world", "to": "jazz", "fromDisplay": "Monde", "toDisplay": "Jazz", "count": 6, "prob": 0.4 }
+  ],
+  "achievements": [
+    { "id": "night_owl", "name": "Oiseau de nuit", "desc": "Écouter entre 1h et 5h du matin", "emoji": "", "unlocked": true, "current": 138400, "target": 60 },
+    { "id": "early_bird", "name": "Lève-tôt", "desc": "Écouter avant 7h du matin", "emoji": "", "unlocked": true, "current": 1800, "target": 60 },
+    { "id": "globe", "name": "Tour du monde", "desc": "Écouter les 13 webradios FIP", "emoji": "", "unlocked": false, "current": 9, "target": 13 },
+    { "id": "explorer", "name": "Explorateur", "desc": "Écouter 5 radios différentes en une journée", "emoji": "", "unlocked": true, "current": 6, "target": 5 },
+    { "id": "zapper", "name": "Zappeur", "desc": "Changer de radio 10 fois dans une session", "emoji": "", "unlocked": true, "current": 13, "target": 10 },
+    { "id": "marathon", "name": "Marathon", "desc": "Une session d'écoute de 2h ou plus", "emoji": "", "unlocked": true, "current": 6.75, "target": 2 },
+    { "id": "faithful", "name": "Fidèle", "desc": "Écouter 7 jours consécutifs", "emoji": "", "unlocked": false, "current": 5, "target": 7 },
+    { "id": "purist", "name": "Puriste", "desc": "Passer 90% du temps sur une seule radio", "emoji": "", "unlocked": false, "current": 35.7, "target": 90 },
+    { "id": "melomane", "name": "Mélomane", "desc": "Cumuler 10h d'écoute", "emoji": "", "unlocked": true, "current": 135.08, "target": 10 }
+  ],
+  "calibration": { "events": 1284, "sessions": 74, "daysActive": 96, "zaps": 143 },
+  "epochs": {
+    "n": 612,
+    "byDecade": [
+      { "decade": 1960, "seconds": 18400 },
+      { "decade": 1970, "seconds": 41200 },
+      { "decade": 1980, "seconds": 33600 },
+      { "decade": 1990, "seconds": 52800 },
+      { "decade": 2000, "seconds": 61400 },
+      { "decade": 2010, "seconds": 98600 },
+      { "decade": 2020, "seconds": 142300 }
+    ],
+    "byYear": [
+      { "year": 1963, "seconds": 3200 }, { "year": 1967, "seconds": 5400 }, { "year": 1969, "seconds": 9800 },
+      { "year": 1971, "seconds": 8200 }, { "year": 1973, "seconds": 12400 }, { "year": 1975, "seconds": 9600 }, { "year": 1977, "seconds": 6800 }, { "year": 1979, "seconds": 4200 },
+      { "year": 1982, "seconds": 7400 }, { "year": 1984, "seconds": 9200 }, { "year": 1986, "seconds": 6600 }, { "year": 1988, "seconds": 10400 },
+      { "year": 1991, "seconds": 8800 }, { "year": 1993, "seconds": 12200 }, { "year": 1995, "seconds": 14600 }, { "year": 1997, "seconds": 9200 }, { "year": 1999, "seconds": 8000 },
+      { "year": 2001, "seconds": 11400 }, { "year": 2003, "seconds": 9800 }, { "year": 2005, "seconds": 13200 }, { "year": 2007, "seconds": 12600 }, { "year": 2009, "seconds": 14400 },
+      { "year": 2011, "seconds": 15200 }, { "year": 2013, "seconds": 18600 }, { "year": 2015, "seconds": 21400 }, { "year": 2017, "seconds": 19800 }, { "year": 2019, "seconds": 23600 },
+      { "year": 2020, "seconds": 26400 }, { "year": 2021, "seconds": 28800 }, { "year": 2022, "seconds": 31200 }, { "year": 2023, "seconds": 29600 }, { "year": 2024, "seconds": 26300 }
+    ]
+  },
+  "enriched": {
+    "matchRate": 0.78,
+    "nArtists": 214,
+    "genres": [
+      { "name": "Jazz", "seconds": 96400 }, { "name": "Soul", "seconds": 72300 }, { "name": "Électronique", "seconds": 58200 },
+      { "name": "Chanson", "seconds": 41600 }, { "name": "Hip-hop", "seconds": 33800 }, { "name": "Afrobeat", "seconds": 24100 }
+    ],
+    "countries": [
+      { "code": "FR", "name": "France", "seconds": 142600 }, { "code": "US", "name": "États-Unis", "seconds": 118400 },
+      { "code": "GB", "name": "Royaume-Uni", "seconds": 61200 }, { "code": "ML", "name": "Mali", "seconds": 18400 },
+      { "code": "BR", "name": "Brésil", "seconds": 14200 }, { "code": "JM", "name": "Jamaïque", "seconds": 9600 }
+    ],
+    "labels": [
+      { "name": "Blue Note", "seconds": 41200, "indie": false },
+      { "name": "Ninja Tune", "seconds": 38600, "indie": true },
+      { "name": "Because Music", "seconds": 29400, "indie": true },
+      { "name": "Warp", "seconds": 24800, "indie": true },
+      { "name": "Universal", "seconds": 22100, "indie": false },
+      { "name": "Ed Banger", "seconds": 18600, "indie": true },
+      { "name": "Nonesuch", "seconds": 14200, "indie": true },
+      { "name": "Sony Music", "seconds": 11800, "indie": false }
+    ],
+    "constellation": [
+      { "name": "Nala Sinephro", "x": 0.12, "y": 0.62, "plays": 41, "genres": ["Jazz", "Ambient"] },
+      { "name": "Anadol", "x": 0.34, "y": 0.81, "plays": 28, "genres": ["Électronique"] },
+      { "name": "Kokoroko", "x": 0.21, "y": 0.44, "plays": 33, "genres": ["Afrobeat", "Jazz"] },
+      { "name": "Yussef Dayes", "x": 0.08, "y": 0.51, "plays": 26, "genres": ["Jazz"] },
+      { "name": "Sault", "x": 0.55, "y": 0.35, "plays": 37, "genres": ["Soul"] },
+      { "name": "Rosalía", "x": 0.72, "y": 0.62, "plays": 22, "genres": ["Pop"] },
+      { "name": "Fatoumata Diawara", "x": 0.31, "y": 0.19, "plays": 19, "genres": ["Afrobeat"] },
+      { "name": "Khruangbin", "x": 0.63, "y": 0.48, "plays": 24, "genres": ["Funk"] },
+      { "name": "Melody Gardot", "x": 0.18, "y": 0.72, "plays": 17, "genres": ["Jazz"] },
+      { "name": "Little Simz", "x": 0.81, "y": 0.29, "plays": 20, "genres": ["Hip-hop"] },
+      { "name": "Nils Frahm", "x": 0.46, "y": 0.88, "plays": 15, "genres": ["Néoclassique"] },
+      { "name": "Cléa Vincent", "x": 0.88, "y": 0.71, "plays": 12, "genres": ["Chanson"] },
+      { "name": "Bonobo", "x": 0.58, "y": 0.77, "plays": 18, "genres": ["Électronique"] },
+      { "name": "Alfa Mist", "x": 0.14, "y": 0.38, "plays": 21, "genres": ["Jazz", "Hip-hop"] },
+      { "name": "Arlo Parks", "x": 0.69, "y": 0.21, "plays": 14, "genres": ["Soul"] },
+      { "name": "Mansur Brown", "x": 0.05, "y": 0.44, "plays": 11, "genres": ["Jazz"] },
+      { "name": "La Femme", "x": 0.92, "y": 0.55, "plays": 13, "genres": ["Rock"] },
+      { "name": "Tirzah", "x": 0.76, "y": 0.44, "plays": 9, "genres": ["Électronique"] },
+      { "name": "Moses Sumney", "x": 0.61, "y": 0.15, "plays": 10, "genres": ["Soul"] },
+      { "name": "Portico Quartet", "x": 0.27, "y": 0.58, "plays": 16, "genres": ["Jazz"] }
+    ]
+  },
+  "tastes": {
+    "likes": 12,
+    "dislikes": 4,
+    "items": [
+      { "artist": "Nala Sinephro", "title": "Space 1.8", "verdict": "like", "ts": "2026-06-28T23:41:00+02:00" },
+      { "artist": "Sault", "title": "Wildfires", "verdict": "like", "ts": "2026-06-14T01:12:00+02:00" },
+      { "artist": "Kokoroko", "title": "Abusey Junction", "verdict": "like", "ts": "2026-05-30T22:58:00+02:00" },
+      { "artist": "Anadol", "title": "GELECEK", "verdict": "like", "ts": "2026-05-11T00:34:00+02:00" },
+      { "artist": "Yussef Dayes", "title": "Raisins Under the Sun", "verdict": "like", "ts": "2026-04-22T23:19:00+02:00" },
+      { "artist": "Some Radio Jingle", "title": "", "verdict": "dislike", "ts": "2026-04-09T18:02:00+02:00" },
+      { "artist": "Khruangbin", "title": "Maria También", "verdict": "like", "ts": "2026-03-28T21:44:00+01:00" },
+      { "artist": "A Loud Pop Remix", "title": "", "verdict": "dislike", "ts": "2026-03-15T19:20:00+01:00" }
+    ],
+    "implicit": { "zapOuts": 47, "earlyPauses": 23, "n": 70 }
+  }
+}

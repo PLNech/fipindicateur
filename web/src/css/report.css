@@ -1,0 +1,378 @@
+/* Fin d'emission -- design tokens + components.
+   @font-face blocks (subsetted WOFF2 data URIs) are prepended by build.mjs. */
+
+/* ============================================================ tokens */
+:root {
+  /* Dark - "Antenne de nuit" (default) */
+  --night-0: oklch(0.16 0.012 50);
+  --night-1: oklch(0.20 0.015 55);
+  --night-2: oklch(0.24 0.016 55);
+  --bg: var(--night-0);
+  --surface: var(--night-1);
+  --surface-2: var(--night-2);
+  --ink: oklch(0.94 0.025 85);
+  --ink-muted: oklch(0.74 0.02 80);
+  --hairline: oklch(0.36 0.02 60);
+  --fip: oklch(0.63 0.23 356);
+  --fip-ink: oklch(0.78 0.15 356);
+  --amber: oklch(0.80 0.12 75);
+  --amber-dim: oklch(0.55 0.08 70);
+  --star: oklch(0.92 0.02 85);
+  --body-lh: 1.7;
+
+  /* space scale */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 20px; --s5: 32px; --s6: 52px; --s7: 84px;
+  --prose: 68ch;
+  --figure: 1100px;
+
+  color-scheme: dark;
+}
+:root.light {
+  /* Light - "Edition papier" */
+  --paper-0: oklch(0.965 0.004 356);
+  --paper-1: oklch(0.99 0.004 356);
+  --bg: var(--paper-0);
+  --surface: var(--paper-1);
+  --surface-2: oklch(0.94 0.006 356);
+  --ink: oklch(0.24 0.02 40);
+  --ink-muted: oklch(0.45 0.02 40);
+  --hairline: oklch(0.80 0.01 40);
+  --fip: oklch(0.55 0.24 356);
+  --fip-ink: oklch(0.50 0.22 356);
+  --amber: oklch(0.62 0.12 70);
+  --amber-dim: oklch(0.72 0.07 70);
+  --star: oklch(0.35 0.02 60);
+  --body-lh: 1.65;
+  color-scheme: light;
+}
+
+/* ============================================================ base */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Literata", Georgia, "Times New Roman", serif;
+  font-size: 1.0625rem;
+  line-height: var(--body-lh);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  transition: background-color .4s ease, color .4s ease;
+}
+::selection { background: var(--fip); color: var(--night-0); }
+
+h1, h2, h3, .num, .kicker, .stat-big, button {
+  font-family: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+}
+.num, .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+a { color: var(--fip-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* ============================================================ layout */
+.page { max-width: var(--figure); margin: 0 auto; padding: 0 var(--s4); }
+.section { padding-block: clamp(4rem, 10vh, 7rem) 0; }
+.section:last-of-type { padding-bottom: var(--s7); }
+.prose { max-width: var(--prose); }
+.prose p { text-wrap: pretty; margin: 0 0 var(--s4); }
+.lead { font-size: 1.2rem; color: var(--ink); }
+.muted { color: var(--ink-muted); }
+.caption {
+  font-style: italic;
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+  max-width: 60ch;
+  margin: var(--s3) 0 0;
+  text-wrap: pretty;
+}
+.caption .warn { font-style: normal; color: var(--amber); font-family: "Bricolage Grotesque", sans-serif; font-size: 0.8125rem; }
+
+/* ============================================================ conducteur */
+.rundown {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  color: var(--ink-muted);
+}
+.rundown .tc {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  color: var(--fip-ink);
+  flex: none;
+}
+.rundown .dot { color: var(--hairline); flex: none; }
+.rundown .rule { flex: 1 1 auto; height: 1px; background: var(--hairline); align-self: center; }
+.rundown h2 {
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+  text-wrap: balance;
+  flex: none;
+}
+
+/* finding-as-title above a figure */
+.finding {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: var(--s5) 0 var(--s3);
+  text-wrap: balance;
+  max-width: 34ch;
+}
+.finding .you { color: var(--fip-ink); }
+
+/* inline stat inside prose */
+.stat {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.stat.you { color: var(--fip-ink); }
+
+/* ============================================================ header / ouverture */
+header.hero { padding-top: clamp(2.5rem, 8vh, 5rem); }
+.hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s4); }
+.wordmark {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.wordmark .fip { color: var(--fip-ink); }
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(220px, 320px);
+  gap: var(--s6);
+  align-items: center;
+  margin-top: var(--s5);
+}
+@media (max-width: 720px) {
+  .hero-grid { grid-template-columns: 1fr; gap: var(--s5); }
+  .dial-wrap { order: -1; max-width: 260px; margin-inline: auto; }
+}
+.display {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: clamp(2.6rem, 7vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+.display .unit { font-size: 0.4em; font-weight: 700; color: var(--ink-muted); letter-spacing: 0; }
+.display .rose { color: var(--fip-ink); }
+.hero-range { margin-top: var(--s3); color: var(--ink-muted); font-style: italic; }
+.dial-wrap svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+/* ============================================================ figure surfaces */
+.figure {
+  margin-top: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  padding: clamp(var(--s4), 3vw, var(--s5));
+}
+.figure.plain { background: none; border: none; padding: 0; }
+.figure svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+/* stat line (inline, not tiles) */
+.statline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.statline li { display: flex; flex-direction: column; gap: 2px; }
+.statline .v {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-weight: 800;
+  font-size: 1.9rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.statline .v.you { color: var(--fip-ink); }
+.statline .k { font-size: 0.8rem; color: var(--ink-muted); font-style: italic; }
+
+/* ============================================================ grille (hours + weekday) */
+.grille { display: grid; grid-template-columns: 1.3fr 1fr; gap: var(--s6); align-items: center; }
+@media (max-width: 720px) { .grille { grid-template-columns: 1fr; gap: var(--s5); } }
+.dial-hours svg text, .zap svg text, .epochs svg text, .weekday svg text { fill: var(--ink); font-family: "Bricolage Grotesque", sans-serif; }
+.grad { stroke: var(--hairline); }
+.tick-label { fill: var(--ink-muted); font-size: 11px; }
+
+/* weekday bars */
+.weekday .row { display: grid; grid-template-columns: 3.5ch 1fr auto; align-items: center; gap: var(--s3); margin-bottom: var(--s2); font-size: 0.9rem; }
+.weekday .lbl { color: var(--ink-muted); font-family: "Bricolage Grotesque", sans-serif; }
+.weekday .track { height: 14px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.weekday .fill { height: 100%; background: var(--amber); border-radius: 3px; }
+.weekday .fill.peak { background: var(--fip); }
+.weekday .v { font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 0.85rem; }
+
+/* ============================================================ stations bars */
+.stations { display: flex; flex-direction: column; gap: var(--s3); }
+.st-row { display: grid; grid-template-columns: minmax(6ch, 12ch) 1fr auto; align-items: center; gap: var(--s3); font-size: 0.92rem; }
+.st-row .lbl { text-align: right; color: var(--ink); font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-row .track { height: 24px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.st-row .fill { height: 100%; border-radius: 4px; min-width: 3px; }
+.st-row .v { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+.st-row .v small { color: var(--ink-muted); font-weight: 400; }
+
+/* ============================================================ zapping graph */
+.zap svg { overflow: visible; }
+.zap .edge { fill: none; stroke: var(--fip); stroke-linecap: round; transition: opacity .15s; }
+.zap .edge:hover, .zap .edge.hot { opacity: 1 !important; }
+.zap .node-dot { stroke-width: 2; }
+.zap .node-label { font-weight: 700; font-size: 13px; }
+.zap .node-cnt { fill: var(--ink-muted); font-size: 10.5px; }
+
+/* ============================================================ epochs */
+.epochs .bar { fill: var(--amber); }
+.epochs .bar.peak { fill: var(--fip); }
+.epochs .decade-lbl { fill: var(--ink-muted); font-size: 11px; }
+
+/* ============================================================ carte du ciel (constellation) */
+.sky-section { padding-block: clamp(4rem, 10vh, 7rem) 0; }
+.sky {
+  position: relative;
+  width: 100vw;
+  left: 50%;
+  margin-left: -50vw;
+  background:
+    radial-gradient(120% 90% at 70% 15%, oklch(0.22 0.03 300 / 0.5), transparent 60%),
+    radial-gradient(100% 80% at 20% 80%, oklch(0.20 0.03 20 / 0.4), transparent 55%),
+    var(--night-0);
+  border-block: 1px solid var(--hairline);
+  overflow: hidden;
+}
+:root.light .sky {
+  background:
+    radial-gradient(120% 90% at 70% 15%, oklch(0.90 0.02 300 / 0.6), transparent 60%),
+    var(--paper-0);
+}
+.sky .page { padding-block: var(--s6); }
+.sky svg { width: 100%; height: auto; overflow: visible; }
+.sky .star { cursor: pointer; }
+.sky .star-core { fill: var(--star); }
+.sky .star.top .star-core { fill: var(--fip); }
+.sky .star-glow { fill: var(--star); opacity: 0.18; }
+.sky .star.top .star-glow { fill: var(--fip); opacity: 0.28; }
+.sky .star-label { fill: var(--ink); font-family: "Bricolage Grotesque", sans-serif; font-size: 12px; font-weight: 700; pointer-events: none; }
+.sky .star-sub { fill: var(--ink-muted); font-size: 10px; pointer-events: none; }
+.sky .star:focus-visible { outline: none; }
+.sky .star:focus-visible .star-focus,
+.sky .star:hover .star-focus { opacity: 1; }
+.sky .star-focus { fill: none; stroke: var(--fip); stroke-width: 1.5; opacity: 0; transition: opacity .12s; }
+.sky .hidden-label { opacity: 0; transition: opacity .15s; }
+.sky .star:hover .hidden-label, .sky .star:focus-visible .hidden-label { opacity: 1; }
+
+/* ============================================================ economie du disque */
+.split-bar { display: flex; height: 40px; border-radius: 6px; overflow: hidden; border: 1px solid var(--hairline); }
+.split-bar .indie { background: var(--fip); }
+.split-bar .major { background: var(--amber-dim); }
+.split-legend { display: flex; gap: var(--s5); margin-top: var(--s3); font-size: 0.9rem; }
+.split-legend b { font-family: "Bricolage Grotesque", sans-serif; }
+.labels-list { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s4); }
+.lbl-row { display: grid; grid-template-columns: 1fr auto; gap: var(--s3); align-items: baseline; padding-block: 6px; border-bottom: 1px solid var(--hairline); font-size: 0.92rem; }
+.lbl-row .nm { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; }
+.lbl-row .tag { font-size: 0.72rem; font-style: italic; color: var(--fip-ink); margin-left: var(--s2); }
+.lbl-row .v { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+
+/* ============================================================ a ton gout */
+.verdicts { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s4); }
+.verdict { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--s3); align-items: center; padding-block: 8px; border-bottom: 1px solid var(--hairline); }
+.verdict svg { width: 20px; height: 20px; overflow: visible; }
+.verdict .glyph-up { stroke: var(--fip); }
+.verdict .glyph-down { stroke: var(--amber-dim); }
+.verdict .nm { font-family: "Bricolage Grotesque", sans-serif; }
+.verdict .nm .ti { color: var(--ink-muted); font-family: "Literata", serif; font-style: italic; font-size: 0.9em; }
+.verdict .when { font-size: 0.8rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.hint-box { margin-top: var(--s4); padding: var(--s4); border: 1px dashed var(--hairline); border-radius: 12px; }
+.hint-box .tag { font-family: "Bricolage Grotesque", sans-serif; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--amber); }
+
+/* ============================================================ palmares (insignia) */
+.insignia { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: var(--s4); margin-top: var(--s4); }
+.insigne { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3); border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }
+.insigne.locked { opacity: 0.62; }
+.insigne.unlocked { border-color: var(--fip); }
+.insigne .medal { flex: none; width: 56px; height: 56px; }
+.insigne .medal svg { width: 100%; height: 100%; overflow: visible; }
+.insigne.unlocked .medal { color: var(--fip); }
+.insigne.locked .medal { color: var(--hairline); }
+.insigne .nm { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 0.98rem; }
+.insigne .ds { font-size: 0.82rem; color: var(--ink-muted); margin-top: 2px; line-height: 1.4; }
+.insigne .prog { margin-top: 8px; height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.insigne .prog i { display: block; height: 100%; background: var(--fip); }
+.insigne .pt { font-size: 0.75rem; color: var(--ink-muted); margin-top: 5px; font-variant-numeric: tabular-nums; font-family: "Bricolage Grotesque", sans-serif; }
+.insigne.unlocked .pt { color: var(--fip-ink); }
+
+/* ============================================================ footer / fin */
+.fin { margin-top: clamp(4rem, 10vh, 7rem); padding: var(--s5) 0 var(--s7); border-top: 1px solid var(--hairline); }
+.fin .prose { color: var(--ink-muted); font-size: 0.95rem; }
+.fin b { color: var(--ink); font-weight: 400; }
+.fin .path { font-family: "Bricolage Grotesque", sans-serif; font-variant-numeric: tabular-nums; color: var(--fip-ink); font-size: 0.9em; overflow-wrap: anywhere; }
+
+/* ============================================================ theme toggle */
+.theme-btn {
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--ink-muted);
+  border-radius: 999px;
+  padding: 7px 15px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  flex: none;
+  transition: color .2s, border-color .2s;
+}
+.theme-btn:hover { color: var(--ink); border-color: var(--ink-muted); }
+.theme-btn:focus-visible { outline: 2px solid var(--fip); outline-offset: 2px; }
+
+/* ============================================================ tooltip */
+.tip {
+  position: fixed; pointer-events: none; z-index: 20;
+  background: var(--ink); color: var(--bg);
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 0.78rem; font-variant-numeric: tabular-nums;
+  padding: 5px 9px; border-radius: 7px; opacity: 0;
+  transition: opacity .1s; max-width: 240px;
+}
+
+.empty { color: var(--ink-muted); font-style: italic; padding: var(--s4) 0; }
+
+/* keyboard focus on chart marks (the sky supplies its own ring) */
+.figure [tabindex]:focus-visible { outline: 2px solid var(--fip); outline-offset: 2px; }
+svg [tabindex]:focus { outline: none; }
+
+/* ============================================================ motion */
+.js .reveal { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .js .reveal { opacity: 0; transform: translateY(14px); transition: opacity .45s ease, transform .45s ease; }
+  .js .reveal.in { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky .star-glow { animation: twinkle var(--tw, 3s) ease-in-out var(--twd, 0s) infinite; }
+}
+@keyframes twinkle { 0%, 100% { opacity: 0.18; } 50% { opacity: 0.34; } }
+.sky .star.top .star-glow { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; }
+  body { transition: none; }
+}

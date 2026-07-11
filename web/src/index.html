@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Fin d'emission · mes ecoutes FIP</title>
+<script>
+/* Set theme + js class before first paint to avoid a flash. Dark is the
+   default (a night broadcast); we start on light only if the OS asks for it. */
+(function () {
+  var r = document.documentElement;
+  r.classList.add("js");
+  try { if (window.matchMedia("(prefers-color-scheme: light)").matches) r.classList.add("light"); } catch (e) {}
+})();
+</script>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<main id="report"></main>
+<script type="application/json" id="fip-data">__FIP_DATA__</script>
+<script>/*__JS__*/</script>
+</body>
+</html>
