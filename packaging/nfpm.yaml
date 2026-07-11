@@ -1,0 +1,52 @@
+# nfpm config: package an ALREADY-BUILT Linux binary into a .deb.
+#
+# nfpm (https://nfpm.goreleaser.com) is a build-time-only tool: it assembles a
+# package from files already on disk. It is NOT a runtime dependency of the app,
+# and it does NOT compile anything, which is exactly why it fits here: the cgo
+# build stays in the existing native Linux CI job, and nfpm runs downstream of
+# it to wrap the artifact. See .github/workflows/release.yml.
+#
+# Prerequisites before `nfpm pkg`:
+#   - a built ./fipindicateur binary (make build)
+#   - ./dist/fipindicateur.desktop staged from packaging/fipindicateur.desktop.in
+#     with @BINDIR@ substituted to /usr/bin (nfpm does no templating)
+#   - DEB_VERSION set to the tag without its leading "v" (Debian upstream
+#     versions must start with a digit), e.g. 0.3.0
+name: fipindicateur
+arch: amd64
+platform: linux
+version: ${DEB_VERSION}
+section: sound
+priority: optional
+maintainer: PLNech <aur@nech.pl>
+vendor: PLNech
+homepage: https://github.com/PLNech/fipindicateur
+license: GPL-3.0-or-later
+description: |
+  Tiny system-tray client for the FIP (Radio France) webradios.
+  Play/pause, pick among the 13 FIP webradios, see the current track and a
+  history, with desktop notifications and MPRIS media-key control. The binary
+  links libmpv (from the libmpv2 package) via cgo and mpv plays the streams.
+
+# libmpv.so.2 (the only non-libc shared library the binary links directly) is
+# provided by libmpv2 in Debian/Ubuntu; apt resolves it from the standard repos.
+depends:
+  - libmpv2
+recommends:
+  - zenity
+suggests:
+  - gnome-shell-extension-appindicator
+
+contents:
+  - src: ./fipindicateur
+    dst: /usr/bin/fipindicateur
+  - src: ./dist/fipindicateur.desktop
+    dst: /usr/share/applications/fipindicateur.desktop
+  - src: ./internal/icon/icon_app_22.png
+    dst: /usr/share/icons/hicolor/22x22/apps/fipindicateur.png
+  - src: ./internal/icon/icon_app_44.png
+    dst: /usr/share/icons/hicolor/44x44/apps/fipindicateur.png
+  - src: ./internal/icon/icon_app_128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/fipindicateur.png
+  - src: ./LICENSE
+    dst: /usr/share/doc/fipindicateur/copyright

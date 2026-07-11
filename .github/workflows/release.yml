@@ -96,6 +96,34 @@ jobs:
           name: linux-tarball
           path: fipindicateur-linux-amd64.tar.gz
           if-no-files-found: error
+      # Package the SAME already-built binary into a .deb. nfpm only assembles
+      # files (no compilation), so it sits downstream of the cgo build above and
+      # never touches cross-compilation. Config: packaging/nfpm.yaml.
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+      - name: Build .deb
+        run: |
+          set -euo pipefail
+          # Debian upstream versions must start with a digit: strip the tag's
+          # leading "v"; fall back to a sha-stamped 0.0.0 for dispatch builds.
+          DEB_VERSION="${GITHUB_REF_NAME#v}"
+          case "$DEB_VERSION" in
+            [0-9]*) ;;
+            *) DEB_VERSION="0.0.0+git${GITHUB_SHA::7}" ;;
+          esac
+          export DEB_VERSION
+          mkdir -p dist
+          sed 's|@BINDIR@|/usr/bin|' packaging/fipindicateur.desktop.in > dist/fipindicateur.desktop
+          nfpm pkg --config packaging/nfpm.yaml --packager deb \
+            --target "dist/fipindicateur_${DEB_VERSION}_amd64.deb"
+          echo "Built dist/fipindicateur_${DEB_VERSION}_amd64.deb"
+          dpkg -c "dist/fipindicateur_${DEB_VERSION}_amd64.deb"
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: dist/*.deb
+          if-no-files-found: error
 
   windows:
     # Cross-build on Linux (mingw-w64), the path 'make windows' actually
@@ -152,6 +180,7 @@ jobs:
             dist/FipIndicateur.dmg
             dist/fipindicateur-linux-amd64.tar.gz
             dist/fipindicateur-windows-x86_64.zip
+            dist/*.deb
           fail_on_unmatched_files: true
           body: |
             le fipindicateur v0.1.0 : les webradios FIP dans la barre des menus / menu bar.

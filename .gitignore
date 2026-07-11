@@ -1,6 +1,8 @@
 /fipindicateur
 *.test
 *.out
+# Packaging staging output (nfpm .deb, staged desktop file); built in CI.
+/dist/
 /.claude/
 # Windows cross-build artifacts and the vendored libmpv dev drop.
 /build/
