@@ -28,6 +28,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/notify"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/player"
+	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/stats"
 	"github.com/PLNech/fipindicateur/internal/update"
@@ -56,10 +57,11 @@ type App struct {
 
 	watchCancel context.CancelFunc
 
-	histPath string // resolved once; empty if unresolvable
-	anim     animator
-	wiki     *wiki.Resolver
-	rec      *events.Recorder
+	histPath  string // resolved once; empty if unresolvable
+	prefsPath string // resolved once; empty if unresolvable
+	anim      animator
+	wiki      *wiki.Resolver
+	rec       *events.Recorder
 
 	// iconMu guards lastIcon, the last bytes handed to systray.SetIcon. The
 	// static-icon path (setPlayingUI) and the animator goroutine both set the
@@ -78,6 +80,8 @@ type App struct {
 	mNow           *systray.MenuItem
 	mVoirWiki      *systray.MenuItem
 	mVoirLink      *systray.MenuItem
+	mLike          *systray.MenuItem
+	mDislike       *systray.MenuItem
 	mPlay          *systray.MenuItem
 	stationMI      map[string]*systray.MenuItem
 	histMI         []*systray.MenuItem
@@ -226,6 +230,18 @@ func (a *App) buildMenu() {
 	a.mVoirLink = voir.AddSubMenuItem("Écouter ailleurs (lien FIP)", "Lien musique fourni par Radio France")
 	a.mVoirLink.Disable()
 	a.on(a.mVoirLink, events.KindOpenLink, a.openNowLink)
+
+	// Taste signals: an explicit verdict on the current track. Unlike the events
+	// log, prefs has no opt-in gate: the click itself is the consent (see
+	// internal/prefs). The a.on chokepoint records the behaviour (KindLike/
+	// KindDislike, station only, no track identity); the handler snapshots the
+	// track into prefs.jsonl. Both are no-ops when nothing is playing.
+	a.mLike = systray.AddMenuItem("J'aime ce morceau", "Mémoriser que vous aimez ce titre (prefs.jsonl)")
+	a.mLike.Disable() // enabled once a track is known (see onNowPlaying)
+	a.on(a.mLike, events.KindLike, func() { a.recordTaste(prefs.Like) })
+	a.mDislike = systray.AddMenuItem("Pas pour moi", "Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)")
+	a.mDislike.Disable()
+	a.on(a.mDislike, events.KindDislike, func() { a.recordTaste(prefs.Dislike) })
 
 	systray.AddSeparator()
 	a.mPlay = systray.AddMenuItem("⏸ Pause", "Lecture / pause")
@@ -478,6 +494,11 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		a.mVoirLink.Disable()
 	}
 
+	// A track is now known: allow an explicit taste verdict on it. Once enabled
+	// they stay enabled, so you can always like/dislike whatever is on air.
+	a.mLike.Enable()
+	a.mDislike.Enable()
+
 	if a.mpris != nil {
 		a.mpris.UpdateMetadata(np)
 	}
@@ -515,9 +536,60 @@ func (a *App) appendHistFile(np metadata.NowPlaying) {
 		Album:   np.Album,
 		Year:    np.Year,
 		Label:   np.Label,
+		Link:    np.Link,
+		Cover:   np.CoverURL,
 	})
 	if err != nil {
 		log.Printf("ui: history file append: %v", err)
+	}
+}
+
+// recordTaste appends an explicit like/dislike verdict for the current track to
+// prefs.jsonl. It snapshots the now-playing metadata and current station, then
+// writes best-effort (a failed taste write never affects playback). A no-op
+// when no track is known (the menu items are disabled until one is, but we
+// guard anyway). A subtle notification confirms the verdict when notifications
+// are on. The behaviour event (KindLike/KindDislike, station only) is already
+// recorded by a.on; this adds the track identity the verdict is about.
+func (a *App) recordTaste(verdict string) {
+	a.mu.Lock()
+	np := a.now
+	a.mu.Unlock()
+	if np.Empty() {
+		return
+	}
+	if a.prefsPath == "" {
+		p, err := prefs.DefaultPath()
+		if err != nil {
+			log.Printf("ui: prefs path: %v", err)
+			return
+		}
+		a.prefsPath = p
+	}
+	err := prefs.Append(a.prefsPath, prefs.Entry{
+		Verdict: verdict,
+		Station: a.current.Key,
+		Artist:  np.Artist,
+		Title:   np.Title,
+		Album:   np.Album,
+		Year:    np.Year,
+		Label:   np.Label,
+		Link:    np.Link,
+	})
+	if err != nil {
+		log.Printf("ui: prefs append: %v", err)
+		return
+	}
+	if a.cfg.Notifications && a.notif != nil {
+		summary := "C'est noté"
+		if verdict == prefs.Dislike {
+			summary = "Noté : pas pour vous"
+		}
+		body := np.Title
+		if np.Artist != "" {
+			body = np.Artist + " · " + np.Title
+		}
+		a.notif.Notify(summary, body, "", a.cfg.NotifTimeoutMs)
 	}
 }
 

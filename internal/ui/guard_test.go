@@ -37,6 +37,7 @@ func TestActionKindsWired(t *testing.T) {
 	s := string(src)
 	for _, kind := range []string{
 		"KindAppStart", "KindAppStop", "KindPlay", "KindPause",
+		"KindLike", "KindDislike",
 		"KindStationChange", "KindAudioDevice", "KindVolume", "KindMute", "KindHiFi",
 		"KindCrossfade",
 		"KindNotif", "KindAnim", "KindAutostart", "KindOpenWiki",
