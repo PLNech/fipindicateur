@@ -7,12 +7,15 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/PLNech/fipindicateur/internal/events"
+	"github.com/PLNech/fipindicateur/internal/histlog"
 	"github.com/PLNech/fipindicateur/internal/open"
+	"github.com/PLNech/fipindicateur/internal/prefs"
 )
 
 //go:embed report.html.tmpl
@@ -32,9 +35,13 @@ func (r Report) Render() ([]byte, error) {
 	return []byte(html), nil
 }
 
-// Generate loads the default events log, derives the report, and renders it.
-// A missing log is not an error: it renders an empty (all-zero) report so the
-// user always sees a page, never a crash.
+// Generate loads the default events log plus the optional companion inputs
+// (histlog track log, prefs verdict log, enriched.json artist metadata),
+// derives the report, and renders it. A missing events log is not an error:
+// it renders an empty (all-zero) report so the user always sees a page, never
+// a crash. Each companion input is strictly best-effort: a missing or
+// malformed file yields a nil slice / nil pointer and simply omits its block,
+// never an error, so enrichment never gates the core report.
 func Generate(now time.Time) ([]byte, Report, error) {
 	path, err := events.DefaultPath()
 	if err != nil {
@@ -44,9 +51,45 @@ func Generate(now time.Time) ([]byte, Report, error) {
 	if err != nil {
 		return nil, Report{}, err
 	}
-	r := Build(evs, now)
+	r := Build(evs, loadHistory(), loadPrefs(), loadEnriched(), now)
 	html, err := r.Render()
 	return html, r, err
+}
+
+// loadHistory reads the histlog track log best-effort: any error (path or read)
+// degrades to nil so the report renders without the enrichment blocks.
+func loadHistory() []histlog.Entry {
+	path, err := histlog.DefaultPath()
+	if err != nil {
+		return nil
+	}
+	entries, err := histlog.Load(path)
+	if err != nil {
+		return nil
+	}
+	return entries
+}
+
+// loadPrefs reads the prefs verdict log best-effort (nil on any error).
+func loadPrefs() []prefs.Entry {
+	path, err := prefs.DefaultPath()
+	if err != nil {
+		return nil
+	}
+	entries, err := prefs.Load(path)
+	if err != nil {
+		return nil
+	}
+	return entries
+}
+
+// loadEnriched reads enriched.json best-effort (nil on missing/malformed).
+func loadEnriched() *Enriched {
+	dir, err := events.DataDir()
+	if err != nil {
+		return nil
+	}
+	return LoadEnriched(filepath.Join(dir, "enriched.json"))
 }
 
 // ServeAndOpen serves the HTML on an ephemeral 127.0.0.1 port and opens it in

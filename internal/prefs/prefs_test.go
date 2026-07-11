@@ -117,3 +117,65 @@ func TestDefaultPathHonorsXDG(t *testing.T) {
 		t.Errorf("DefaultPath = %q, want %q", got, want)
 	}
 }
+
+func TestLoadRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.jsonl")
+
+	// Missing file is not an error: it means "no verdicts yet".
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load missing: %v", err)
+	}
+	if got != nil {
+		t.Errorf("Load of missing file = %v, want nil", got)
+	}
+
+	e1 := Entry{Verdict: Like, Station: "fip", Artist: "[PII:name#1]", Title: "Bird gerhl", Year: 2004}
+	e2 := Entry{Verdict: Dislike, Station: "rock", Artist: "Some Band", Title: "A Song"}
+	if err := Append(path, e1); err != nil {
+		t.Fatal(err)
+	}
+	if err := Append(path, e2); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Load returned %d entries, want 2", len(got))
+	}
+	if got[0].Verdict != Like || got[0].Artist != "[PII:name#1]" || got[0].Title != "Bird gerhl" || got[0].Year != 2004 {
+		t.Errorf("entry 0 round-trip mismatch: %+v", got[0])
+	}
+	if got[1].Verdict != Dislike || got[1].Artist != "Some Band" {
+		t.Errorf("entry 1 round-trip mismatch: %+v", got[1])
+	}
+	if got[0].V != SchemaVersion {
+		t.Errorf("schema version not preserved: %d", got[0].V)
+	}
+}
+
+func TestLoadSkipsMalformed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.jsonl")
+	// A good line, a torn/garbage line, an empty line, then a good line
+	// without a trailing newline (torn final line contract).
+	content := `{"v":1,"ts":"2026-07-07T13:00:00Z","verdict":"like","artist":"A","title":"1"}
+not json at all
+
+{"v":1,"ts":"2026-07-07T14:00:00Z","verdict":"dislike","artist":"B","title":"2"}`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Load skipped malformed wrong: got %d entries, want 2", len(got))
+	}
+	if got[0].Artist != "A" || got[1].Artist != "B" {
+		t.Errorf("wrong entries survived: %+v", got)
+	}
+}

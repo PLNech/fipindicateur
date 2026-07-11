@@ -84,3 +84,41 @@ func Append(path string, e Entry) error {
 	_, err = f.Write(append(data, '\n'))
 	return err
 }
+
+// Load reads all entries from a JSONL file. A missing file is not an error (it
+// means "no verdicts yet"): it returns a nil slice. Malformed lines are skipped
+// so a partially-written tail never fails the whole read. Mirrors events.Load
+// and histlog.Load: the stats derivation joins these logs together.
+func Load(path string) ([]Entry, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []Entry
+	start := 0
+	for i, b := range data {
+		if b != '\n' {
+			continue
+		}
+		line := data[start:i]
+		start = i + 1
+		if len(line) == 0 {
+			continue
+		}
+		var e Entry
+		if json.Unmarshal(line, &e) != nil {
+			continue // tolerate a torn final line
+		}
+		out = append(out, e)
+	}
+	if start < len(data) {
+		var e Entry
+		if json.Unmarshal(data[start:], &e) == nil {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}

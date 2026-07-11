@@ -17,7 +17,7 @@ func TestSingleSessionDuration(t *testing.T) {
 		{Kind: events.KindPlay, Station: "fip", TS: at(0)},
 		{Kind: events.KindPause, TS: at(30)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if r.Totals.ListeningSec != 30*60 {
 		t.Errorf("listening: got %d want %d", r.Totals.ListeningSec, 30*60)
 	}
@@ -42,7 +42,7 @@ func TestZapWithinSessionSplitsTime(t *testing.T) {
 		{Kind: events.KindStationChange, From: "fip", To: "jazz", TS: at(10)},
 		{Kind: events.KindPause, TS: at(30)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if r.Totals.Sessions != 1 {
 		t.Fatalf("a zap must not split the session: got %d sessions", r.Totals.Sessions)
 	}
@@ -68,7 +68,7 @@ func TestPauseThenPlayIsTwoSessions(t *testing.T) {
 		{Kind: events.KindPlay, Station: "fip", TS: at(60)},
 		{Kind: events.KindPause, TS: at(75)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if r.Totals.Sessions != 2 {
 		t.Errorf("sessions: got %d want 2", r.Totals.Sessions)
 	}
@@ -86,7 +86,7 @@ func TestOpenSessionClosesAtLastEvent(t *testing.T) {
 		{Kind: events.KindPlay, Station: "fip", TS: at(0)},
 		{Kind: events.KindStationChange, From: "fip", To: "rock", TS: at(45)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if r.Totals.ListeningSec != 45*60 {
 		t.Errorf("open session should close at last event: got %d want %d", r.Totals.ListeningSec, 45*60)
 	}
@@ -102,7 +102,7 @@ func TestTransitionMatrixNormalises(t *testing.T) {
 		{Kind: events.KindStationChange, From: "fip", To: "jazz", TS: at(2)},
 		{Kind: events.KindStationChange, From: "fip", To: "rock", TS: at(3)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if len(r.Transitions) != 2 {
 		t.Fatalf("expected 2 distinct edges, got %d", len(r.Transitions))
 	}
@@ -132,7 +132,7 @@ func TestSelfTransitionIgnored(t *testing.T) {
 	evs := []events.Event{
 		{Kind: events.KindStationChange, From: "fip", To: "fip", TS: at(1)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if len(r.Transitions) != 0 {
 		t.Errorf("from==to must not create an edge: %+v", r.Transitions)
 	}
@@ -145,7 +145,7 @@ func TestHourlyHistogramCrossesBoundary(t *testing.T) {
 		{Kind: events.KindPlay, Station: "fip", TS: start},
 		{Kind: events.KindPause, TS: start.Add(time.Hour)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	if r.Hourly[14] != 30*60 || r.Hourly[15] != 30*60 {
 		t.Errorf("hourly split: h14=%d h15=%d want 1800/1800", r.Hourly[14], r.Hourly[15])
 	}
@@ -158,7 +158,7 @@ func TestAchievementNightOwlAndMarathon(t *testing.T) {
 		{Kind: events.KindPlay, Station: "fip", TS: start},
 		{Kind: events.KindPause, TS: start.Add(150 * time.Minute)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	got := map[string]bool{}
 	for _, a := range r.Achievements {
 		got[a.ID] = a.Unlocked
@@ -180,7 +180,7 @@ func TestAchievementGlobeProgress(t *testing.T) {
 		{Kind: events.KindStationChange, From: "fip", To: "jazz", TS: at(5)},
 		{Kind: events.KindPause, TS: at(10)},
 	}
-	r := Build(evs, base)
+	r := Build(evs, nil, nil, nil, base)
 	for _, a := range r.Achievements {
 		if a.ID == "globe" {
 			if a.Unlocked {
@@ -209,7 +209,7 @@ func TestLongestStreak(t *testing.T) {
 }
 
 func TestEmptyLogIsSafe(t *testing.T) {
-	r := Build(nil, base)
+	r := Build(nil, nil, nil, nil, base)
 	if r.Totals.Sessions != 0 || r.Totals.ListeningSec != 0 {
 		t.Errorf("empty log should be all-zero: %+v", r.Totals)
 	}
