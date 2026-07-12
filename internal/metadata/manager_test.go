@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,20 @@ func TestManagerShowOnlyEnrichesICY(t *testing.T) {
 		}
 		if np.Show.Title != "Fip Tape" {
 			t.Errorf("grafted show: got %q want Fip Tape", np.Show.Title)
+		}
+		// The calendar depends on UpcomingShows surviving the ICY takeover, too:
+		// without it the "Calendrier" submenu stays hidden during the show.
+		if len(np.UpcomingShows) == 0 {
+			t.Fatal("the ICY track should inherit livemeta's UpcomingShows (else the calendar hides)")
+		}
+		sawJazz := false
+		for _, s := range np.UpcomingShows {
+			if strings.Contains(s.Title, "Club Jazzafip") {
+				sawJazz = true
+			}
+		}
+		if !sawJazz {
+			t.Errorf("expected the queued Club Jazzafip nights in the grafted upcoming, got %d shows", len(np.UpcomingShows))
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for the enriched ICY update")
