@@ -28,53 +28,47 @@ type showFacts struct {
 	calendarDiscovered bool  // the calendar setting was toggled at least once
 }
 
-// showAchievementFacts derives the programme scalars from the exposed tracks
-// (histlog joined with playback) and the behaviour log. Only tracks actually
-// heard (exposure > 0) inside a programme contribute, so the grades reflect
-// listening, not mere presence in the schedule.
-func showAchievementFacts(tracks []exposedTrack, evs []events.Event) showFacts {
+// showAchievementFacts derives the programme scalars from the merged
+// per-(concept, day) listening derivation (see deriveShowListening: histlog
+// show tags and show_change boundary spans, each joined with playback) and the
+// behaviour log. Only time actually heard contributes, so the grades reflect
+// listening, not mere presence in the schedule. totalSec is all observed
+// listening (the segment total), the denominator for the share badges.
+func showAchievementFacts(sl showListening, evs []events.Event, totalSec int64) showFacts {
 	var sf showFacts
+	sf.totalSec = totalSec
+	sf.sundayEvening = sl.sundayEvening
+	sf.nightInShowSec = sl.nightSec
 
-	conceptDates := map[string]map[string]bool{} // concept -> set of dates heard
 	eveningConcepts := map[string]map[string]bool{}
 	eveningInShow := map[string]int64{}
-	for _, t := range tracks {
-		secs := int64(t.Exposure.Seconds())
-		if secs <= 0 {
+	for concept, days := range sl.secs {
+		dates := map[string]bool{}
+		for day, secs := range days {
+			if secs <= 0 {
+				continue
+			}
+			sf.inShowSec += secs
+			dates[day] = true
+			if eveningConcepts[day] == nil {
+				eveningConcepts[day] = map[string]bool{}
+			}
+			eveningConcepts[day][concept] = true
+			eveningInShow[day] += secs
+		}
+		if len(dates) == 0 {
 			continue
 		}
-		sf.totalSec += secs
-		if t.ShowConcept == "" {
-			continue
-		}
-		sf.inShowSec += secs
-		sf.inShowTracks++
-		day := t.Start.Format("2006-01-02")
-		if conceptDates[t.ShowConcept] == nil {
-			conceptDates[t.ShowConcept] = map[string]bool{}
-		}
-		conceptDates[t.ShowConcept][day] = true
-		if eveningConcepts[day] == nil {
-			eveningConcepts[day] = map[string]bool{}
-		}
-		eveningConcepts[day][t.ShowConcept] = true
-		eveningInShow[day] += secs
-		if h := t.Start.Hour(); h < 5 {
-			sf.nightInShowSec += secs
-		}
-		if t.Start.Weekday() == time.Sunday && t.Start.Hour() >= 18 {
-			sf.sundayEvening = true
-		}
-	}
-
-	sf.distinctConcepts = len(conceptDates)
-	for _, dates := range conceptDates {
+		sf.distinctConcepts++
 		if len(dates) > sf.maxEvenings {
 			sf.maxEvenings = len(dates)
 		}
 		if s := longestStreak(dates); s > sf.maxConceptStreak {
 			sf.maxConceptStreak = s
 		}
+	}
+	for _, n := range sl.trackCounts {
+		sf.inShowTracks += n
 	}
 	for _, concepts := range eveningConcepts {
 		if len(concepts) >= 2 {

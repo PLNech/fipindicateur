@@ -513,14 +513,28 @@ func showConcept(s *metadata.Show) string {
 
 // onNowPlaying handles a metadata update.
 func (a *App) onNowPlaying(np metadata.NowPlaying) {
-	if np.Empty() {
+	// A trackless update can still carry the programme on air: some émissions
+	// (continuous mixes like "Fip Tape") expose no per-song grain in livemeta,
+	// and the Radio France streams send no inline ICY titles either, so during
+	// such shows the programme IS the whole signal. Only an update with neither
+	// a track nor a show carries nothing.
+	hasTrack := !np.Empty()
+	if !hasTrack && np.Show == nil {
 		return
 	}
 	a.mu.Lock()
-	changed := np.Artist != a.now.Artist || np.Title != a.now.Title
-	prevConcept := showConcept(a.now.Show)
+	changed := hasTrack && (np.Artist != a.now.Artist || np.Title != a.now.Title)
+	// trackCleared: a show-only update replaced a known track (the programme
+	// took over the antenna), so the stale track must leave the label.
+	trackCleared := !hasTrack && !a.now.Empty()
 	newConcept := showConcept(np.Show)
-	showChanged := newConcept != prevConcept
+	showChanged := newConcept != showConcept(a.now.Show)
+	// pendingShow: the on-air concept differs from the last one witnessed
+	// while listening (lastShowConcept). Unlike showChanged, a single missed
+	// tick (a boundary crossed while paused, or racing playback at startup)
+	// stays pending and is caught on a later poll, so the show_change event,
+	// the notification and the show-start marker are never silently lost.
+	pendingShow := newConcept != a.lastShowConcept
 	a.now = np
 	a.upcoming = np.UpcomingShows
 	if changed {
@@ -529,10 +543,10 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	a.mu.Unlock()
 
 	// Nothing tray-visible changes when neither the track nor the show moved:
-	// the watcher re-polls the SAME track many times over its (minutes-long)
+	// the watcher re-polls the SAME state many times over its (minutes-long)
 	// life, so pushing the label, the "Voir…" state and the MPRIS metadata on
 	// every poll churned the SNI for no reason. Gate every push on a change.
-	if !changed && !showChanged {
+	if !changed && !showChanged && !trackCleared && !pendingShow {
 		return
 	}
 
@@ -562,6 +576,13 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 			a.mpris.UpdateMetadata(np)
 		}
 		a.refreshHistoryMenu()
+	} else if !hasTrack && np.Show != nil && (showChanged || trackCleared) {
+		// No track is known during this programme: the show title becomes the
+		// tray label, better than a stale track from before it started. Same
+		// throttle as the track label, so the anti-churn contract holds.
+		log.Printf("on air [%s]: %s (émission sans titrage)", a.current.Key, np.Show.Title)
+		a.nowThrottle.update(np.Show.Title)
+		a.mVoirLink.Disable() // no track, no track link
 	}
 
 	if showChanged {
@@ -578,20 +599,23 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		return
 	}
 
+	// The programme boundary is witnessed against lastShowConcept, the last
+	// concept seen while actually listening: a boundary that landed while
+	// paused, or that raced playback at startup, is caught here on a later
+	// poll instead of being lost with its single transition tick.
+	a.mu.Lock()
+	fresh := newConcept != a.lastShowConcept
+	prevWitnessed := a.lastShowConcept
+	a.lastShowConcept = newConcept
+	a.mu.Unlock()
+
 	// A programme starting takes precedence over the track banner for this tick:
 	// both share the one replace-in-place notification, so firing the track one
 	// too would instantly clobber the show announcement.
 	notifiedShow := false
-	if a.cfg.ShowNotifications {
-		a.mu.Lock()
-		cur := showConcept(np.Show)
-		fresh := np.Show != nil && cur != "" && cur != a.lastShowConcept
-		a.lastShowConcept = cur
-		a.mu.Unlock()
-		if fresh {
-			a.notifyShow(*np.Show)
-			notifiedShow = true
-		}
+	if fresh && newConcept != "" && np.Show != nil && a.cfg.ShowNotifications {
+		a.notifyShow(*np.Show)
+		notifiedShow = true
 	}
 	if changed && a.cfg.Notifications && !notifiedShow {
 		a.notify(np)
@@ -599,12 +623,21 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	if changed && a.cfg.HistoryFile {
 		a.appendHistFile(np)
 	}
+	// A trackless programme starting writes one show-start marker line to the
+	// histlog: a bare show/show_concept tag with no artist and no title. It
+	// carries the show's display name into the report (identity lives in the
+	// histlog, never in the events log); the listening time itself is derived
+	// from the show_change boundaries, so the marker is identity, not duration.
+	if fresh && !hasTrack && np.Show != nil && a.cfg.HistoryFile {
+		a.appendHistFile(np)
+	}
 	// The programme boundary, recorded like the station-change Markov edge but
 	// keyed on the stable conceptUuid. Ambient (FIP drives it, not the user), so
-	// it is recorded here at its source while listening, alongside the histlog
-	// show tag that carries the same identity for time-per-show aggregation.
-	if showChanged {
-		a.rec.Record(events.Event{Kind: events.KindShowChange, Station: a.current.Key, From: prevConcept, To: newConcept})
+	// it is recorded here at its source while listening; internal/stats crosses
+	// these boundaries with the playback segments to accumulate time per show,
+	// which is the only measure during émissions without a tracklist.
+	if fresh {
+		a.rec.Record(events.Event{Kind: events.KindShowChange, Station: a.current.Key, From: prevWitnessed, To: newConcept})
 	}
 }
 

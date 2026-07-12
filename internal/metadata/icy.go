@@ -10,6 +10,17 @@ import (
 // ICYProvider parses icecast stream titles (as observed by the player's
 // media-title property) into NowPlaying. It is the fallback for stations with
 // no livemeta id and whenever livemeta errors persist.
+//
+// Reality check (verified live, 2026-07-12): every Radio France stream
+// answers icy-metaint: 0 even when inline metadata is requested (checked on
+// fip hifi aac, fip midfi mp3 and fiphiphop midfi mp3), so the server never
+// interleaves a StreamTitle and this provider receives nothing beyond the
+// stream filename. Consequences: during émissions without a tracklist there
+// is NO source of song titles at all (the show is the whole signal, a
+// first-order state the UI renders as such), and the fallback for the
+// stations without a MetaID has likely never produced a title either.
+// TODO: find a real title source for the no-MetaID stations (an unlisted
+// livemeta id, or the fip web player's own API).
 type ICYProvider struct {
 	titles chan string
 }

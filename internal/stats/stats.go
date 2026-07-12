@@ -253,15 +253,17 @@ func Build(evs []events.Event, hist []histlog.Entry, prf []prefs.Entry, enr *Enr
 	// once (histlog intervals capped and intersected with playback segments)
 	// and shared by the epochs, enriched and émission derivations.
 	tracks := trackExposure(hist, segments)
-	// Achievements are graded after track exposure so the émission badges can
-	// read the show facts (histlog show tags joined with playback) alongside the
-	// behaviour log.
-	r.Achievements = evaluateAchievements(sessions, perStation, activeDays, hourly, zaps, total, showAchievementFacts(tracks, sorted))
+	// The émission derivation merges two grains per (concept, day): histlog show
+	// tags and the show_change boundary spans, each joined with playback (see
+	// deriveShowListening). The span grain is what measures émissions that
+	// broadcast no per-song metadata at all, where no tagged track can exist.
+	sl := deriveShowListening(tracks, showSpansFromEvents(sorted), segments)
+	r.Achievements = evaluateAchievements(sessions, perStation, activeDays, hourly, zaps, total, showAchievementFacts(sl, sorted, int64(total.Seconds())))
 	r.Epochs = buildEpochs(tracks)
 	r.Enriched = buildEnriched(tracks, enr)
 	r.Tastes = buildTastes(prf, sorted, tracks)
 	r.Programme = buildProgramme(hist, hourly, int64(total.Seconds()))
-	r.Shows = buildShows(tracks)
+	r.Shows = buildShows(sl, int64(total.Seconds()))
 	return r
 }
 
