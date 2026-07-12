@@ -10,12 +10,14 @@
 ## What it is
 
 Pick one of the 13 FIP stations from your tray, see who you're hearing, and
-play / pause from the menu, your media keys, or `playerctl`. Turn on the opt-in,
-**100% local** listening log and `fipindicateur stats` renders
-**« Fin d'émission »**, a self-contained offline report of your nights: hours, a
-night clock, session lengths, a Markov graph of your zapping, release-year
-epochs, and a 2D artist constellation. Like or dislike the current track
-straight from the tray. Nothing ever leaves your machine.
+play / pause from the menu, your media keys, or `playerctl`. On the main
+antenna the tray also knows the **émission** on air (Club Jazzafip, Transe Fip
+Express…) and what comes next. Turn on the opt-in, **100% local** listening log
+and `fipindicateur stats` renders **« Fin d'émission »**, a self-contained
+offline report of your nights: hours, a night clock, session lengths, a Markov
+graph of your zapping, release-year epochs, a 2D artist constellation, and the
+émissions you kept company with. Like or dislike the current track straight
+from the tray. Nothing ever leaves your machine.
 
 Unofficial client. Linux (Ubuntu 24.04, GNOME/X11) is the supported target;
 macOS and Arch are kept buildable.
@@ -41,6 +43,28 @@ fipindicateur stats                   # open your listening report (after opting
 > thickness = frequency). The full page continues with release-year epochs, the
 > artist constellation, label economics, taste verdicts, and an Achievements
 > wall. It is theme-aware (dark and light).
+
+## Les émissions
+
+FIP's main antenna carries named programmes between stretches of free rotation.
+The tray follows them: the émission on air shows in the menu, a **Calendrier**
+submenu lists the next ones (a single metadata poll carries two to three days of
+programming), and a desktop notification can announce a programme starting,
+once, at its start. Two settings in Réglages, both on by default: émission
+notifications and the calendar. The webradios have no programmes; everything
+simply stays hidden there.
+
+With the local history log on, tracks remember the émission they aired within,
+and the report gains **« Tes rendez-vous »**, your most-listened programmes
+counted across nights, plus a pass of 26 émission insignia: fidelity to a
+rendez-vous, consecutive evenings, time and titles heard in émission, the
+Sunday-evening listener…
+
+![Palmarès avec les insignes d'émissions (données fictives)](docs/achievements-emissions.png)
+
+> Also fictional fixture data: twelve simulated evenings, three programmes.
+> Locked insignia state their progress; nothing is ever teased that the data
+> cannot substantiate.
 
 **Privacy by design.** Analytics are opt-in and default off. Events are appended
 to `~/.local/share/fipindicateur/events.jsonl`; the report is a self-contained
