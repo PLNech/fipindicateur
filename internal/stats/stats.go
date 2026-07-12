@@ -247,13 +247,16 @@ func Build(evs []events.Event, hist []histlog.Entry, prf []prefs.Entry, enr *Enr
 	r.Sessions = buildSessionStats(sessions)
 	r.Transitions = buildTransitions(transCount)
 	r.Calibration = Calibration{Events: len(sorted), Sessions: len(sessions), DaysActive: len(activeDays), Zaps: zaps}
-	r.Achievements = evaluateAchievements(sessions, perStation, activeDays, hourly, zaps, total)
 
 	// Companion-input blocks. Each is nil (omitted) when its input is absent,
 	// so an events-only report is unchanged. Exposure per track is computed
 	// once (histlog intervals capped and intersected with playback segments)
-	// and shared by the epochs and enriched derivations.
+	// and shared by the epochs, enriched and émission derivations.
 	tracks := trackExposure(hist, segments)
+	// Achievements are graded after track exposure so the émission badges can
+	// read the show facts (histlog show tags joined with playback) alongside the
+	// behaviour log.
+	r.Achievements = evaluateAchievements(sessions, perStation, activeDays, hourly, zaps, total, showAchievementFacts(tracks, sorted))
 	r.Epochs = buildEpochs(tracks)
 	r.Enriched = buildEnriched(tracks, enr)
 	r.Tastes = buildTastes(prf, sorted, tracks)
