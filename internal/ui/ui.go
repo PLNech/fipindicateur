@@ -40,6 +40,9 @@ const (
 	repoURL      = "https://github.com/PLNech/fipindicateur"
 	fipURL       = "https://www.radiofrance.fr/fip"
 	historySlots = 10
+	// calendarSlots bounds how many upcoming programmes the tray lists. A single
+	// poll returns two to three days ahead, far more than a menu should show.
+	calendarSlots = 12
 )
 
 // App holds the running application state.
@@ -51,9 +54,15 @@ type App struct {
 	notif   *notify.Notifier
 	current stations.Station
 
-	mu      sync.Mutex
-	now     metadata.NowPlaying
-	history []metadata.NowPlaying
+	mu       sync.Mutex
+	now      metadata.NowPlaying
+	history  []metadata.NowPlaying
+	upcoming []metadata.Show // upcoming programmes, for the calendar submenu
+
+	// lastShowConcept is the conceptUuid of the programme we last notified for,
+	// so a show is announced once at its start and not re-announced for every
+	// track it plays. Guarded by a.mu.
+	lastShowConcept string
 
 	watchCancel context.CancelFunc
 
@@ -79,6 +88,7 @@ type App struct {
 
 	// menu items
 	mNow           *systray.MenuItem
+	mShow          *systray.MenuItem // current programme (émission) on air; hidden when none
 	mVoirWiki      *systray.MenuItem
 	mVoirLink      *systray.MenuItem
 	mLike          *systray.MenuItem
@@ -86,8 +96,12 @@ type App struct {
 	mPlay          *systray.MenuItem
 	stationMI      map[string]*systray.MenuItem
 	histMI         []*systray.MenuItem
+	mCalendar      *systray.MenuItem   // calendar submenu container; hidden when disabled
+	calMI          []*systray.MenuItem // pre-allocated calendar slots
 	mHiFi          *systray.MenuItem
 	mNotif         *systray.MenuItem
+	mShowNotif     *systray.MenuItem
+	mShowCalendar  *systray.MenuItem
 	mAuto          *systray.MenuItem
 	mHistFile      *systray.MenuItem
 	mAnim          *systray.MenuItem
@@ -226,6 +240,12 @@ func (a *App) buildMenu() {
 	a.mNow = systray.AddMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
 	a.on(a.mNow, events.KindOpenWiki, a.openNow)
 
+	// The programme (émission) currently on air. Display-only (disabled), hidden
+	// until a show is playing. Shows exist only on the main antenna.
+	a.mShow = systray.AddMenuItem("", "Émission en cours sur l'antenne")
+	a.mShow.Disable()
+	a.mShow.Hide()
+
 	voir := systray.AddMenuItem("Voir…", "Liens pour ce titre")
 	a.mVoirWiki = voir.AddSubMenuItem("Wikipédia (artiste)", "Chercher l'artiste sur fr.wikipedia.org")
 	a.on(a.mVoirWiki, events.KindOpenWiki, a.openNow)
@@ -293,6 +313,21 @@ func (a *App) buildMenu() {
 		a.on(it, events.KindOpenHistory, func() { a.openHistory(idx) })
 	}
 
+	// Calendrier: the upcoming programmes on the antenna (station 7 only). The
+	// slots are display-only (no click telemetry needed); the whole submenu is
+	// hidden when the calendar setting is off or nothing is scheduled.
+	a.mCalendar = systray.AddMenuItem("Calendrier", "Prochaines émissions sur l'antenne")
+	a.calMI = make([]*systray.MenuItem, calendarSlots)
+	for i := 0; i < calendarSlots; i++ {
+		it := a.mCalendar.AddSubMenuItem("", "")
+		it.Disable()
+		it.Hide()
+		a.calMI[i] = it
+	}
+	// Start hidden: refreshCalendarMenu reveals it once programmes are scheduled
+	// and the setting is on (so the webradios never show an empty submenu).
+	a.mCalendar.Hide()
+
 	// Réglages
 	settings := systray.AddMenuItem("Réglages", "Options")
 	a.mHiFi = settings.AddSubMenuItemCheckbox("Haute qualité (AAC 192k)", "", a.cfg.HiFi)
@@ -316,6 +351,10 @@ func (a *App) buildMenu() {
 	}
 	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
 	a.on(a.mNotif, "", a.toggleNotif)
+	a.mShowNotif = settings.AddSubMenuItemCheckbox("Notifications d'émission", "Prévenir au début d'une émission sur l'antenne", a.cfg.ShowNotifications)
+	a.on(a.mShowNotif, "", a.toggleShowNotif)
+	a.mShowCalendar = settings.AddSubMenuItemCheckbox("Afficher le calendrier", "Lister les prochaines émissions dans le menu", a.cfg.ShowCalendar)
+	a.on(a.mShowCalendar, "", a.toggleShowCalendar)
 	// Launch at login is XDG-only (writes ~/.config/autostart/*.desktop); hide
 	// it where config.SetAutostart is a no-op (macOS and other non-Linux).
 	if config.AutostartSupported {
@@ -464,6 +503,14 @@ func (a *App) quality() stations.Quality {
 	return stations.Midfi
 }
 
+// showConcept is the stable identity of a show, or "" for no show.
+func showConcept(s *metadata.Show) string {
+	if s == nil {
+		return ""
+	}
+	return s.ConceptUUID
+}
+
 // onNowPlaying handles a metadata update.
 func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	if np.Empty() {
@@ -471,56 +518,143 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	}
 	a.mu.Lock()
 	changed := np.Artist != a.now.Artist || np.Title != a.now.Title
+	showChanged := showConcept(np.Show) != showConcept(a.now.Show)
 	a.now = np
+	a.upcoming = np.UpcomingShows
 	if changed {
 		a.pushHistoryLocked(np)
 	}
 	a.mu.Unlock()
 
-	// Nothing tray-visible changes when the track is the same: the metadata
-	// watcher re-polls the SAME track many times over its (minutes-long) life,
-	// so pushing the label, the "Voir…" state and the MPRIS metadata on every
-	// poll churned the SNI for no reason. Gate every push on an actual change.
-	if !changed {
+	// Nothing tray-visible changes when neither the track nor the show moved:
+	// the watcher re-polls the SAME track many times over its (minutes-long)
+	// life, so pushing the label, the "Voir…" state and the MPRIS metadata on
+	// every poll churned the SNI for no reason. Gate every push on a change.
+	if !changed && !showChanged {
 		return
 	}
 
-	label := np.Title
-	if np.Artist != "" {
-		label = np.Artist + " · " + np.Title
-	}
-	log.Printf("now playing [%s]: %s", a.current.Key, label)
-
-	// Dedupe + debounce the label push (SetTitle + SetTooltip) so a burst
-	// cannot hammer the appindicator extension.
-	a.nowThrottle.update(label)
-
-	if np.Link != "" {
-		a.mVoirLink.Enable()
-	} else {
-		a.mVoirLink.Disable()
-	}
-
-	// A track is now known: allow an explicit taste verdict on it. Once enabled
-	// they stay enabled, so you can always like/dislike whatever is on air.
-	a.mLike.Enable()
-	a.mDislike.Enable()
-
-	if a.mpris != nil {
-		a.mpris.UpdateMetadata(np)
-	}
-	a.refreshHistoryMenu()
-	// A notification and a history-log line both mean "you heard this track".
-	// The metadata watcher keeps polling FIP while paused or stopped, so gate
-	// both on actual playback: when the stream is not playing you are not
-	// listening, so we stay silent and log nothing. The menu label still
-	// updates above, so resuming shows what is on air.
-	if a.player.IsPlaying() {
-		if a.cfg.Notifications {
-			a.notify(np)
+	if changed {
+		label := np.Title
+		if np.Artist != "" {
+			label = np.Artist + " · " + np.Title
 		}
-		if a.cfg.HistoryFile {
-			a.appendHistFile(np)
+		log.Printf("now playing [%s]: %s", a.current.Key, label)
+
+		// Dedupe + debounce the label push (SetTitle + SetTooltip) so a burst
+		// cannot hammer the appindicator extension.
+		a.nowThrottle.update(label)
+
+		if np.Link != "" {
+			a.mVoirLink.Enable()
+		} else {
+			a.mVoirLink.Disable()
+		}
+
+		// A track is now known: allow an explicit taste verdict on it. Once
+		// enabled they stay enabled, so you can always like/dislike what is on air.
+		a.mLike.Enable()
+		a.mDislike.Enable()
+
+		if a.mpris != nil {
+			a.mpris.UpdateMetadata(np)
+		}
+		a.refreshHistoryMenu()
+	}
+
+	if showChanged {
+		a.refreshShowMenu()
+		a.refreshCalendarMenu()
+	}
+
+	// A notification and a history-log line both mean "you heard this". The
+	// watcher keeps polling FIP while paused or stopped, so gate both on actual
+	// playback: when the stream is not playing you are not listening, so we stay
+	// silent and log nothing. The menu still updates above, so resuming shows
+	// what is on air.
+	if !a.player.IsPlaying() {
+		return
+	}
+
+	// A programme starting takes precedence over the track banner for this tick:
+	// both share the one replace-in-place notification, so firing the track one
+	// too would instantly clobber the show announcement.
+	notifiedShow := false
+	if a.cfg.ShowNotifications {
+		a.mu.Lock()
+		cur := showConcept(np.Show)
+		fresh := np.Show != nil && cur != "" && cur != a.lastShowConcept
+		a.lastShowConcept = cur
+		a.mu.Unlock()
+		if fresh {
+			a.notifyShow(*np.Show)
+			notifiedShow = true
+		}
+	}
+	if changed && a.cfg.Notifications && !notifiedShow {
+		a.notify(np)
+	}
+	if changed && a.cfg.HistoryFile {
+		a.appendHistFile(np)
+	}
+}
+
+// notifyShow announces a programme starting on the antenna. Best-effort, like
+// the track notification, and reusing the same replace-in-place channel.
+func (a *App) notifyShow(s metadata.Show) {
+	summary := s.Title
+	if summary == "" {
+		summary = "Nouvelle émission"
+	}
+	body := "En ce moment sur l'antenne"
+	if s.Description != "" {
+		body = s.Description
+	}
+	a.notif.Notify(summary, body, "", a.cfg.NotifTimeoutMs)
+}
+
+// refreshShowMenu updates the "émission en cours" item from the current show.
+func (a *App) refreshShowMenu() {
+	a.mu.Lock()
+	show := a.now.Show
+	a.mu.Unlock()
+	if show == nil || show.Title == "" {
+		a.mShow.Hide()
+		return
+	}
+	a.mShow.SetTitle("Émission : " + show.Title)
+	a.mShow.Show()
+}
+
+// refreshCalendarMenu fills the calendar slots from the upcoming programmes and
+// manages the container's visibility. A no-op when the calendar is disabled.
+// The whole submenu hides when nothing is scheduled (e.g. on the webradios), so
+// there is never an empty "Calendrier" entry.
+func (a *App) refreshCalendarMenu() {
+	if !a.cfg.ShowCalendar {
+		return
+	}
+	a.mu.Lock()
+	up := make([]metadata.Show, len(a.upcoming))
+	copy(up, a.upcoming)
+	a.mu.Unlock()
+
+	if len(up) == 0 {
+		a.mCalendar.Hide()
+		return
+	}
+	a.mCalendar.Show()
+	for i, it := range a.calMI {
+		if i < len(up) {
+			s := up[i]
+			label := s.Title
+			if !s.Start.IsZero() {
+				label = s.Start.Local().Format("15:04") + " · " + s.Title
+			}
+			it.SetTitle(label)
+			it.Show()
+		} else {
+			it.Hide()
 		}
 	}
 }
@@ -762,6 +896,31 @@ func (a *App) toggleNotif() {
 		a.mNotif.Uncheck()
 	}
 	a.rec.Record(events.Event{Kind: events.KindNotif, Value: b2i(a.cfg.Notifications)})
+	a.save()
+}
+
+func (a *App) toggleShowNotif() {
+	a.cfg.ShowNotifications = !a.cfg.ShowNotifications
+	if a.cfg.ShowNotifications {
+		a.mShowNotif.Check()
+	} else {
+		a.mShowNotif.Uncheck()
+	}
+	a.rec.Record(events.Event{Kind: events.KindShowNotif, Value: b2i(a.cfg.ShowNotifications)})
+	a.save()
+}
+
+func (a *App) toggleShowCalendar() {
+	a.cfg.ShowCalendar = !a.cfg.ShowCalendar
+	if a.cfg.ShowCalendar {
+		a.mShowCalendar.Check()
+		a.mCalendar.Show()
+		a.refreshCalendarMenu()
+	} else {
+		a.mShowCalendar.Uncheck()
+		a.mCalendar.Hide()
+	}
+	a.rec.Record(events.Event{Kind: events.KindShowCalendar, Value: b2i(a.cfg.ShowCalendar)})
 	a.save()
 }
 

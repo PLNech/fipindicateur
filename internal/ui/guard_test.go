@@ -40,7 +40,7 @@ func TestActionKindsWired(t *testing.T) {
 		"KindLike", "KindDislike",
 		"KindStationChange", "KindAudioDevice", "KindVolume", "KindMute", "KindHiFi",
 		"KindCrossfade",
-		"KindNotif", "KindAnim", "KindAutostart", "KindOpenWiki",
+		"KindNotif", "KindShowNotif", "KindShowCalendar", "KindAnim", "KindAutostart", "KindOpenWiki",
 		"KindOpenLink", "KindOpenHistory", "KindOpenFip", "KindOpenAbout",
 		"KindStatsView", "KindStatsToggle", "KindPrefsClear", "KindRestart", "KindUpdateCheck",
 		"KindUpdateStartup", "KindQuit",

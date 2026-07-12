@@ -11,13 +11,19 @@ import (
 type Config struct {
 	Station        string `json:"station"`          // station key
 	HiFi           bool   `json:"hifi"`             // true = AAC 192k
-	Notifications  bool   `json:"notifications"`    // desktop notifications
+	Notifications  bool   `json:"notifications"`    // desktop notifications on track change
 	NotifTimeoutMs int    `json:"notif_timeout_ms"` // notification expire hint (GNOME ignores it; dunst/KDE honor it)
-	Autostart      bool   `json:"autostart"`        // launch at login
-	HistoryFile    bool   `json:"history_file"`     // append track changes to a local jsonl log
-	Stats          bool   `json:"stats"`            // opt-in local listening analytics (events.jsonl)
-	UpdateStartup  bool   `json:"update_startup"`   // check GitHub for a newer release at launch (opt-in)
-	AnimatedIcon   bool   `json:"animated_icon"`    // audio-responsive VU tray icon
+	// ShowNotifications sends a desktop notification when a programme
+	// ("émission") begins on the main antenna. ShowCalendar shows the upcoming
+	// programmes in a tray submenu. Both default on and exist only for station 7
+	// content, but are harmless (never fire) on the webradios.
+	ShowNotifications bool `json:"show_notifications"`
+	ShowCalendar      bool `json:"show_calendar"`
+	Autostart         bool `json:"autostart"`      // launch at login
+	HistoryFile       bool `json:"history_file"`   // append track changes to a local jsonl log
+	Stats             bool `json:"stats"`          // opt-in local listening analytics (events.jsonl)
+	UpdateStartup     bool `json:"update_startup"` // check GitHub for a newer release at launch (opt-in)
+	AnimatedIcon      bool `json:"animated_icon"`  // audio-responsive VU tray icon
 	// CrossfadeSecs is the equal-power crossfade duration when zapping between
 	// stations while playing. 0 disables it (hard cut, the old behaviour);
 	// clamped to [0,10]. Absent in an older config means the 4s default.
@@ -36,18 +42,20 @@ type Config struct {
 // Default returns the initial config: FIP, midfi, notifications on.
 func Default() Config {
 	return Config{
-		Station:        "fip",
-		HiFi:           false,
-		Notifications:  true,
-		NotifTimeoutMs: 10000,
-		Autostart:      false,
-		HistoryFile:    false,
-		Stats:          false,
-		UpdateStartup:  false,
-		AnimatedIcon:   true,
-		CrossfadeSecs:  4,
-		Volume:         100,
-		Mute:           false,
+		Station:           "fip",
+		HiFi:              false,
+		Notifications:     true,
+		NotifTimeoutMs:    10000,
+		ShowNotifications: true,
+		ShowCalendar:      true,
+		Autostart:         false,
+		HistoryFile:       false,
+		Stats:             false,
+		UpdateStartup:     false,
+		AnimatedIcon:      true,
+		CrossfadeSecs:     4,
+		Volume:            100,
+		Mute:              false,
 	}
 }
 

@@ -32,17 +32,19 @@ const (
 	KindAppStop       Kind = "app_stop"
 	KindPlay          Kind = "play"
 	KindPause         Kind = "pause"
-	KindLike          Kind = "like"           // explicit taste: liked the current track
-	KindDislike       Kind = "dislike"        // explicit taste: disliked the current track
-	KindStationChange Kind = "station_change" // From, To set
-	KindAudioDevice   Kind = "audio_device"   // user picked an audio output device
-	KindVolume        Kind = "volume"         // Value = percent
-	KindMute          Kind = "mute"           // Value = 1 muted, 0 unmuted
-	KindHiFi          Kind = "hifi"           // Value = 1 on, 0 off
-	KindCrossfade     Kind = "crossfade"      // Value = seconds, 0 = off
-	KindNotif         Kind = "notif_toggle"   // Value = 1 on, 0 off
-	KindAnim          Kind = "anim_toggle"    // Value = 1 on, 0 off
-	KindAutostart     Kind = "autostart"      // Value = 1 on, 0 off
+	KindLike          Kind = "like"                 // explicit taste: liked the current track
+	KindDislike       Kind = "dislike"              // explicit taste: disliked the current track
+	KindStationChange Kind = "station_change"       // From, To set
+	KindAudioDevice   Kind = "audio_device"         // user picked an audio output device
+	KindVolume        Kind = "volume"               // Value = percent
+	KindMute          Kind = "mute"                 // Value = 1 muted, 0 unmuted
+	KindHiFi          Kind = "hifi"                 // Value = 1 on, 0 off
+	KindCrossfade     Kind = "crossfade"            // Value = seconds, 0 = off
+	KindNotif         Kind = "notif_toggle"         // Value = 1 on, 0 off
+	KindShowNotif     Kind = "show_notif_toggle"    // Value = 1 on, 0 off (émission notifications)
+	KindShowCalendar  Kind = "show_calendar_toggle" // Value = 1 on, 0 off (émission calendar)
+	KindAnim          Kind = "anim_toggle"          // Value = 1 on, 0 off
+	KindAutostart     Kind = "autostart"            // Value = 1 on, 0 off
 	KindOpenWiki      Kind = "open_wiki"
 	KindOpenLink      Kind = "open_link"
 	KindOpenHistory   Kind = "open_history"
