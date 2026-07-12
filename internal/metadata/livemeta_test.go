@@ -62,6 +62,61 @@ func TestParseLivemetaFixture(t *testing.T) {
 	t.Logf("parsed: %q by %q; show %q (%s), %d upcoming", np.Title, np.Artist, np.Show.Title, np.Show.ConceptUUID, len(np.UpcomingShows))
 }
 
+func TestParseLivemetaFipTapeOneLevel(t *testing.T) {
+	// Real station-7 payload captured during "Fip Tape": a single level whose
+	// current item is the expression itself (a continuous mix with no song
+	// grain). The show must surface, with no phantom track presented in its place.
+	data, err := os.ReadFile("testdata/livemeta_fiptape_one_level.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	np, err := parseLivemeta(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	// No phantom track: the expression is not dressed up as a song.
+	if np.Title != "" || np.Artist != "" {
+		t.Errorf("expected no track, got title %q artist %q", np.Title, np.Artist)
+	}
+	if !np.Empty() {
+		t.Error("a show-only poll carries no track, so it must report Empty()")
+	}
+	// The current show is surfaced with its stable identity.
+	if np.Show == nil {
+		t.Fatal("expected the current show (Fip Tape) to be surfaced")
+	}
+	if np.Show.ConceptUUID == "" {
+		t.Error("expected a stable conceptUuid on the current show")
+	}
+	if np.Show.Title != "Fip Tape" {
+		t.Errorf("show title: got %q want %q (titleConcept absent, raw title used)", np.Show.Title, "Fip Tape")
+	}
+	if np.Show.Start.IsZero() || !np.Show.End.After(np.Show.Start) {
+		t.Errorf("show should carry a valid time window: %v .. %v", np.Show.Start, np.Show.End)
+	}
+	// Upcoming programming is still extracted (the Club Jazzafip nights queued
+	// after Fip Tape), chronologically ordered and each with a display title.
+	if len(np.UpcomingShows) == 0 {
+		t.Fatal("expected upcoming shows queued after Fip Tape")
+	}
+	sawJazz := false
+	for i, s := range np.UpcomingShows {
+		if s.Title == "" {
+			t.Error("an upcoming show has no display title")
+		}
+		if strings.Contains(s.Title, "Club Jazzafip") {
+			sawJazz = true
+		}
+		if i > 0 && s.Start.Before(np.UpcomingShows[i-1].Start) {
+			t.Error("upcoming shows should be sorted by start time")
+		}
+	}
+	if !sawJazz {
+		t.Error("expected the queued Club Jazzafip nights among upcoming shows")
+	}
+	t.Logf("show %q (%s), %d upcoming", np.Show.Title, np.Show.ConceptUUID, len(np.UpcomingShows))
+}
+
 func TestParseLivemetaSongMetadata(t *testing.T) {
 	// A fully-credited track (single level of songs, webradio-shaped) round-trips
 	// album, year, label and cover.

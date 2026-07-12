@@ -126,6 +126,28 @@ func parseLivemeta(data []byte) (NowPlaying, error) {
 		return NowPlaying{}, fmt.Errorf("livemeta: step %q not found", key)
 	}
 
+	// Some programmes (a continuous DJ mixtape like "Fip Tape") expose no song
+	// grain at all: even the deepest level's current item is the expression
+	// itself. Presenting it as a track would show a phantom song (the show name,
+	// with an empty artist), so instead we surface it as the current Show and
+	// leave the track empty. The real track title then comes from the ICY
+	// fallback, which the manager keeps arbitrated against this show-only
+	// livemeta so the programme stays on air in the menu (see manager.go).
+	if step.isExpression() {
+		sh := stepToShow(step)
+		np := NowPlaying{
+			Show:          &sh,
+			UpcomingShows: upcomingShows(resp),
+		}
+		if step.Start > 0 {
+			np.Start = time.Unix(step.Start, 0)
+		}
+		if step.End > 0 {
+			np.End = time.Unix(step.End, 0)
+		}
+		return np, nil
+	}
+
 	artist := step.Authors
 	if artist == "" {
 		artist = step.Performers

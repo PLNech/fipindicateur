@@ -42,6 +42,9 @@ func (m *Manager) Watch(ctx context.Context, station stations.Station) <-chan No
 		// grace window; if livemeta is genuinely dead for livemetaStaleAfter,
 		// ICY takes over. For no-id stations ICY always emits.
 		lastLivemeta := time.Now()
+		// lastLM is the most recent livemeta result, kept so the ICY fallback
+		// can inherit its programme context during show-only broadcasts.
+		var lastLM NowPlaying
 		for {
 			select {
 			case <-ctx.Done():
@@ -52,14 +55,24 @@ func (m *Manager) Watch(ctx context.Context, station stations.Station) <-chan No
 					continue
 				}
 				lastLivemeta = time.Now()
+				lastLM = np
 				emit(ctx, out, np)
 			case np, ok := <-ic:
 				if !ok {
 					ic = nil
 					continue
 				}
-				// Use ICY only when there's no livemeta id, or livemeta is stale.
-				if station.MetaID == 0 || time.Since(lastLivemeta) > livemetaStaleAfter {
+				// A show with no song grain (e.g. "Fip Tape"): livemeta keeps
+				// emitting fresh, so it never goes stale, yet it carries no
+				// track. Let ICY supply the title and graft livemeta's Show onto
+				// it, so the programme stays on air while the real track shows.
+				showOnly := lastLM.Show != nil && lastLM.Empty()
+				stale := station.MetaID == 0 || time.Since(lastLivemeta) > livemetaStaleAfter
+				if showOnly {
+					np.Show = lastLM.Show
+					np.UpcomingShows = lastLM.UpcomingShows
+				}
+				if stale || showOnly {
 					emit(ctx, out, np)
 				}
 			}
