@@ -518,7 +518,9 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	}
 	a.mu.Lock()
 	changed := np.Artist != a.now.Artist || np.Title != a.now.Title
-	showChanged := showConcept(np.Show) != showConcept(a.now.Show)
+	prevConcept := showConcept(a.now.Show)
+	newConcept := showConcept(np.Show)
+	showChanged := newConcept != prevConcept
 	a.now = np
 	a.upcoming = np.UpcomingShows
 	if changed {
@@ -597,6 +599,13 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	if changed && a.cfg.HistoryFile {
 		a.appendHistFile(np)
 	}
+	// The programme boundary, recorded like the station-change Markov edge but
+	// keyed on the stable conceptUuid. Ambient (FIP drives it, not the user), so
+	// it is recorded here at its source while listening, alongside the histlog
+	// show tag that carries the same identity for time-per-show aggregation.
+	if showChanged {
+		a.rec.Record(events.Event{Kind: events.KindShowChange, Station: a.current.Key, From: prevConcept, To: newConcept})
+	}
 }
 
 // notifyShow announces a programme starting on the antenna. Best-effort, like
@@ -670,7 +679,7 @@ func (a *App) appendHistFile(np metadata.NowPlaying) {
 		}
 		a.histPath = p
 	}
-	err := histlog.Append(a.histPath, histlog.Entry{
+	entry := histlog.Entry{
 		Station: a.current.Key,
 		Artist:  np.Artist,
 		Title:   np.Title,
@@ -679,7 +688,12 @@ func (a *App) appendHistFile(np metadata.NowPlaying) {
 		Label:   np.Label,
 		Link:    np.Link,
 		Cover:   np.CoverURL,
-	})
+	}
+	if np.Show != nil {
+		entry.Show = np.Show.Title
+		entry.ShowConcept = np.Show.ConceptUUID
+	}
+	err := histlog.Append(a.histPath, entry)
 	if err != nil {
 		log.Printf("ui: history file append: %v", err)
 	}

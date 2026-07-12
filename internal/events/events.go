@@ -35,6 +35,7 @@ const (
 	KindLike          Kind = "like"                 // explicit taste: liked the current track
 	KindDislike       Kind = "dislike"              // explicit taste: disliked the current track
 	KindStationChange Kind = "station_change"       // From, To set
+	KindShowChange    Kind = "show_change"          // From, To = programme conceptUuid (ambient, on the antenna)
 	KindAudioDevice   Kind = "audio_device"         // user picked an audio output device
 	KindVolume        Kind = "volume"               // Value = percent
 	KindMute          Kind = "mute"                 // Value = 1 muted, 0 unmuted

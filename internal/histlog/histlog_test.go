@@ -98,6 +98,49 @@ func TestAppendFormat(t *testing.T) {
 	}
 }
 
+func TestShowFieldsRoundTripAndBackCompat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+
+	// An old-format line, written before show tags existed, must load cleanly
+	// with empty Show/ShowConcept (full backward compatibility).
+	old := `{"v":1,"ts":"2026-07-07T13:00:00Z","station":"fip","artist":"A","title":"T"}`
+	if err := os.WriteFile(path, []byte(old+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A new line carrying the programme it aired within.
+	if err := Append(path, Entry{
+		Station: "fip", Artist: "B", Title: "U",
+		Show: "Club Jazzafip", ShowConcept: "concept-123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].Show != "" || entries[0].ShowConcept != "" {
+		t.Errorf("old line should read with empty show fields: %+v", entries[0])
+	}
+	if entries[1].Show != "Club Jazzafip" || entries[1].ShowConcept != "concept-123" {
+		t.Errorf("new line show fields mismatch: %+v", entries[1])
+	}
+
+	// The show fields serialize under their documented keys, and are omitted
+	// when empty so a rotation-free log stays lean and greppable.
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if strings.Contains(lines[0], "show") {
+		t.Errorf("old/empty line must not gain show keys: %s", lines[0])
+	}
+	if !strings.Contains(lines[1], `"show":"Club Jazzafip"`) || !strings.Contains(lines[1], `"show_concept":"concept-123"`) {
+		t.Errorf("new line should carry show/show_concept keys: %s", lines[1])
+	}
+}
+
 func TestAppendBadPath(t *testing.T) {
 	err := Append(filepath.Join(t.TempDir(), "no", "such", "dir", "h.jsonl"), Entry{Title: "x"})
 	if err == nil {

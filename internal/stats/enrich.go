@@ -22,14 +22,16 @@ const trackCap = 8 * time.Minute
 // intersected with the reconstructed playback segments on that station. A track
 // logged while paused, or on a station you were not hearing, contributes zero.
 type exposedTrack struct {
-	Station  string
-	Artist   string
-	Title    string
-	Year     int
-	Label    string
-	Start    time.Time
-	End      time.Time // capped interval end (for the temporal-join hints)
-	Exposure time.Duration
+	Station     string
+	Artist      string
+	Title       string
+	Year        int
+	Label       string
+	Show        string // programme display name, "" outside a show
+	ShowConcept string // programme conceptUuid (stable aggregation key), "" outside a show
+	Start       time.Time
+	End         time.Time // capped interval end (for the temporal-join hints)
+	Exposure    time.Duration
 }
 
 // Epochs buckets exposure seconds by the release year of the tracks heard. n is
@@ -200,14 +202,16 @@ func trackExposure(hist []histlog.Entry, segments []segment) []exposedTrack {
 			exp += overlap(start, end, s.start, s.end)
 		}
 		out = append(out, exposedTrack{
-			Station:  e.Station,
-			Artist:   e.Artist,
-			Title:    e.Title,
-			Year:     e.Year,
-			Label:    e.Label,
-			Start:    start,
-			End:      end,
-			Exposure: exp,
+			Station:     e.Station,
+			Artist:      e.Artist,
+			Title:       e.Title,
+			Year:        e.Year,
+			Label:       e.Label,
+			Show:        e.Show,
+			ShowConcept: e.ShowConcept,
+			Start:       start,
+			End:         end,
+			Exposure:    exp,
 		})
 	}
 	return out

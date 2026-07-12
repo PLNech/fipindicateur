@@ -27,6 +27,14 @@ type Entry struct {
 	Label   string    `json:"label,omitempty"`
 	Link    string    `json:"link,omitempty"`  // "listen elsewhere" link (often Apple Music), when Radio France provides one
 	Cover   string    `json:"cover,omitempty"` // cover-art URL, when present
+	// Show and ShowConcept name the programme ("émission") this track played
+	// within, on the main antenna. Show is the display name (date-free);
+	// ShowConcept is the stable conceptUuid used to aggregate airings of the
+	// same recurring show across nights. Both omitempty and absent from a track
+	// outside any show or on a webradio: older logs without them read back with
+	// empty strings, so the schema grows without breaking existing files.
+	Show        string `json:"show,omitempty"`
+	ShowConcept string `json:"show_concept,omitempty"`
 }
 
 // DefaultPath returns ~/.local/share/fipindicateur/history.jsonl (honoring

@@ -39,6 +39,7 @@ type Report struct {
 	Enriched  *EnrichedStats `json:"enriched,omitempty"`
 	Tastes    *Tastes        `json:"tastes,omitempty"`
 	Programme *Programme     `json:"programme,omitempty"`
+	Shows     *Shows         `json:"shows,omitempty"`
 }
 
 // Range is the observed time span of the log.
@@ -257,6 +258,7 @@ func Build(evs []events.Event, hist []histlog.Entry, prf []prefs.Entry, enr *Enr
 	r.Enriched = buildEnriched(tracks, enr)
 	r.Tastes = buildTastes(prf, sorted, tracks)
 	r.Programme = buildProgramme(hist, hourly, int64(total.Seconds()))
+	r.Shows = buildShows(tracks)
 	return r
 }
 

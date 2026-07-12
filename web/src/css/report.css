@@ -304,6 +304,17 @@ header.hero { padding-top: clamp(2.5rem, 8vh, 5rem); }
 .lbl-row .tag { font-size: 0.72rem; font-style: italic; color: var(--fip-ink); margin-left: var(--s2); }
 .lbl-row .v { font-variant-numeric: tabular-nums; color: var(--ink-muted); }
 
+/* ============================================================ tes rendez-vous */
+.shows-list { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s4); }
+.show-row { display: flex; flex-direction: column; gap: 4px; }
+.show-row .hd { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); }
+.show-row .nm { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; }
+.show-row .v { font-variant-numeric: tabular-nums; color: var(--ink-muted); font-size: 0.9rem; white-space: nowrap; }
+.show-row .bar { height: 8px; background: var(--night-1); border: 1px solid var(--hairline); border-radius: 4px; overflow: hidden; }
+:root.light .show-row .bar { background: var(--paper-1); }
+.show-row .bar i { display: block; height: 100%; background: var(--fip); border-radius: 4px 0 0 4px; }
+.show-row .meta { font-size: 0.82rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
 /* ============================================================ a ton gout */
 .verdicts { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s4); }
 .verdict { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--s3); align-items: center; padding-block: 8px; border-bottom: 1px solid var(--hairline); }
