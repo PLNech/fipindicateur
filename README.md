@@ -29,6 +29,7 @@ sudo apt install libmpv2 libmpv-dev   # Ubuntu/Debian runtime + build deps
 make install                          # user-level install (binary, launcher, icons)
 fipindicateur                         # or launch from GNOME activities (Super, "fip")
 fipindicateur stats                   # open your listening report (after opting in)
+fip status                            # drive the running app from a terminal (fip pause, fip station jazz)
 ```
 
 ## The report

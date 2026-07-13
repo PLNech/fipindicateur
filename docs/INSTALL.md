@@ -111,7 +111,9 @@ it for the menu. Your last station and settings are remembered in
 `~/.config/fipindicateur/config.json`.
 
 - **Launch at login:** toggle *Réglages, Lancer au démarrage* (writes
-  `~/.config/autostart/fipindicateur.desktop`).
+  `~/.config/autostart/fipindicateur.desktop`). Autostart is not autoplay: by
+  default launch just tunes and indicates the antenna, paused. Toggle
+  *Réglages, Lecture au démarrage* to have it start playing on launch instead.
 - **Statistiques:** enable *Réglages, Statistiques d'écoute (local)*, then
   `fipindicateur stats` (or *Voir le rapport*) opens your listening report.
   `fipindicateur stats --out report.html --no-open` just writes the file.
@@ -127,6 +129,27 @@ it for the menu. Your last station and settings are remembered in
   playerctl -p fipindicateur play-pause
   playerctl -p fipindicateur metadata
   ```
+
+### The `fip` command line
+
+`make install` also drops a `fip` symlink next to the binary, so you can drive
+the running tray from a terminal (or a script) over a local Unix socket at
+`$XDG_RUNTIME_DIR/fipindicateur.sock`. It never starts the app; it talks to the
+instance already running, so your controls survive even if the tray icon dies.
+
+```sh
+fip status              # one-line JSON: station, playing, artist, title, show, volume, mute, version
+fip play                # resume
+fip pause               # pause (full stop for live radio)
+fip toggle              # flip play/pause
+fip stations            # list the station ids, one per line
+fip station jazz        # switch station (explicit id; `fip jazz` is not a shortcut)
+```
+
+Actions route through the same path as the media keys and MPRIS, so they are
+recorded in your stats the same way. When no instance is running, `fip` prints
+`fipindicateur n'est pas lancé` and exits 1. Unix only (Linux, macOS); on
+Windows the subcommands report that they are not supported.
 
 ### Notifications on GNOME
 

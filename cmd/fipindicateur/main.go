@@ -29,6 +29,10 @@ func main() {
 		case "version", "--version", "-v":
 			fmt.Println("fipindicateur " + version.String())
 			os.Exit(0)
+		case "status", "play", "pause", "toggle", "stations", "station":
+			// Control-socket client: talk to the running instance and exit.
+			// Also reached as `fip <cmd>` via the installed symlink.
+			os.Exit(ui.RunControlClient(os.Args[1:]))
 		}
 	}
 

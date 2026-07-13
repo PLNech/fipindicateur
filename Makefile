@@ -70,6 +70,7 @@ icons: ## Regenerate the tray icons
 install: ## Build and install for the current user (binary, launcher, icons)
 	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINDIR)/$(BIN) $(PKG)
+	ln -sf $(BIN) $(BINDIR)/fip
 	sed "s|@BINDIR@|$(BINDIR)|" packaging/fipindicateur.desktop.in > $(APPDIR)/fipindicateur.desktop
 	install -m 644 internal/icon/icon_app_22.png  $(ICONDIR)/22x22/apps/fipindicateur.png
 	install -m 644 internal/icon/icon_app_44.png  $(ICONDIR)/44x44/apps/fipindicateur.png
@@ -89,6 +90,7 @@ uninstall: ## Remove the user-level install (binary, launcher, icons, autostart)
 	rm -f $(BINDIR)/fipindicateur-watchdog
 	rm -f $(HOME)/.config/systemd/user/fipindicateur-watchdog.service
 	rm -f $(BINDIR)/$(BIN)
+	rm -f $(BINDIR)/fip
 	rm -f $(APPDIR)/fipindicateur.desktop
 	rm -f $(ICONDIR)/22x22/apps/fipindicateur.png
 	rm -f $(ICONDIR)/44x44/apps/fipindicateur.png

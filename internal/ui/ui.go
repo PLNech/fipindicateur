@@ -217,6 +217,11 @@ func (a *App) OnReady() {
 	// stream-driven), so a first press of play resumes promptly.
 	a.startStation(a.current, a.cfg.PlayOnStart)
 
+	// Control socket: lets `fip status`/`play`/`pause`/`station …` drive the
+	// running app (and survive the tray dying). Best-effort; the app runs on if
+	// it cannot bind. Unix-only (Windows is a no-op).
+	a.startControlServer()
+
 	// Opt-in: one quiet update check at launch. Off by default.
 	if a.cfg.UpdateStartup {
 		go a.runUpdateCheck(true)
@@ -227,6 +232,7 @@ func (a *App) OnReady() {
 func (a *App) OnExit() {
 	a.rec.Record(events.Event{Kind: events.KindAppStop, Station: a.current.Key})
 	a.rec.Close() // flushes the queued app_stop before we return
+	a.stopControlServer()
 	a.anim.stop()
 	if a.watchCancel != nil {
 		a.watchCancel()

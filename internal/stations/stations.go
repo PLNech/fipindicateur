@@ -63,3 +63,24 @@ func ByKey(key string) Station {
 	}
 	return All[0]
 }
+
+// Exists reports whether a station with the given key is known. Unlike ByKey
+// (which falls back to fip), this distinguishes a valid key from an unknown one,
+// so callers can reject an invalid selection instead of silently tuning fip.
+func Exists(key string) bool {
+	for _, s := range All {
+		if s.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// Keys returns the station keys in display order.
+func Keys() []string {
+	keys := make([]string, len(All))
+	for i, s := range All {
+		keys[i] = s.Key
+	}
+	return keys
+}
