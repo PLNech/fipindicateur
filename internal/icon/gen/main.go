@@ -156,19 +156,20 @@ func render(size int, ink color.NRGBA) *image.NRGBA {
 	return img
 }
 
-// addHalo bakes a thin semi-transparent white ring around the glyph edges so a
-// dark-ink glyph clears a near-black panel, while the ~30% white ring stays
-// near-invisible on a light panel and melts into a light-ink glyph on a dark
-// one. It mirrors drawHalo in internal/icon/bars.go so the static glyph family
-// and the runtime bars glyph share one outline. Only fully transparent pixels
-// are painted (the ink and its antialiased fringe are left intact), and writes
-// are deferred so a freshly-painted halo pixel never seeds a wider ring.
+// addHalo bakes a semi-transparent white ring around the glyph edges so the
+// glyph clears a near-black panel with a visible rim, while the white ring stays
+// near-invisible on a light panel. It mirrors drawHalo in internal/icon/bars.go
+// so the static glyph family and the runtime bars glyph share one outline. Only
+// fully transparent pixels are painted (the ink and its antialiased fringe are
+// left intact), and writes are deferred so a freshly-painted halo pixel never
+// seeds a wider ring. Alpha/width match bars.go: tuned for the ~22px display
+// scale so the rim survives GNOME's downscale (a nominal 0.30 washed out).
 func addHalo(img *image.NRGBA, size int) {
-	const haloAlpha = 0.30
+	const haloAlpha = 0.55
 	const haloInner = 1.0
 	// Ring grows slower than the canvas, so it is relatively thinner at larger
-	// sizes: ~1.7px at 22, ~2.3px at 44.
-	width := 1.0 + float64(size)*0.03
+	// sizes: ~2.1px at 22, ~3.2px at 44.
+	width := 1.0 + float64(size)*0.05
 	r := int(math.Ceil(width))
 	solid := func(x, y int) bool {
 		return x >= 0 && y >= 0 && x < size && y < size && img.NRGBAAt(x, y).A > 0

@@ -134,20 +134,27 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 }
 
 // Phantom-outline tuning, shared with the gen generator (internal/icon/gen).
-// A thin semi-transparent white ring is baked around every glyph edge so a
-// dark-ink glyph clears a near-black panel (GNOME's default top bar), while a
-// ~30% white ring stays near-invisible on a light panel and vanishes into a
-// light-ink glyph on a dark one. It rides under the ink, so it is a rescue for
-// the low-contrast case and a no-op everywhere else.
+// A semi-transparent white ring is baked around every glyph edge so the glyph
+// clears a near-black panel (GNOME's default top bar) with a visible rim, while
+// the white ring stays near-invisible on a light panel (white on near-white).
+// It rides under the ink at full strength (never dimmed with the paused glyph),
+// so the outline survives every state.
+//
+// Tuned for the real display scale. The tray hands 44px bytes to systray and
+// GNOME downscales to ~22px, which halves both the ring width and its coverage:
+// a nominal 0.55 alpha lands near 0.42 effective on #1a1a1a at 22px (a clear
+// rim), while on #f5f5f5 the same ring stays under ~2% channel lift (invisible).
+// The pre-fix 0.30 alpha washed out to ~0.18 effective: the rim was there in the
+// 44px render but sub-perceptual once the panel shrank it.
 const (
-	haloAlpha = 0.30 // ring opacity: legible on black, subtle on white
+	haloAlpha = 0.55 // ring opacity: clear rim on black, invisible on white
 	haloInner = 1.0  // px at full strength before the feather begins
 )
 
 // haloWidth is the outer ring radius in pixels. It grows slower than the canvas
 // (a fixed offset plus a small fraction), so the ring is relatively thinner at
-// larger sizes: ~1px look at 22px display, ~2.3px on the 44px bars canvas.
-func haloWidth(size int) float64 { return 1.0 + float64(size)*0.03 }
+// larger sizes: ~1.6px look at 22px display, ~3.2px on the 44px bars canvas.
+func haloWidth(size int) float64 { return 1.0 + float64(size)*0.05 }
 
 // drawHalo paints the phantom outline into img for the glyph described by mask
 // (true == glyph pixel). Each transparent pixel within haloWidth of a glyph
