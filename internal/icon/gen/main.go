@@ -152,7 +152,64 @@ func render(size int, ink color.NRGBA) *image.NRGBA {
 			}
 		}
 	}
+	addHalo(img, size)
 	return img
+}
+
+// addHalo bakes a thin semi-transparent white ring around the glyph edges so a
+// dark-ink glyph clears a near-black panel, while the ~30% white ring stays
+// near-invisible on a light panel and melts into a light-ink glyph on a dark
+// one. It mirrors drawHalo in internal/icon/bars.go so the static glyph family
+// and the runtime bars glyph share one outline. Only fully transparent pixels
+// are painted (the ink and its antialiased fringe are left intact), and writes
+// are deferred so a freshly-painted halo pixel never seeds a wider ring.
+func addHalo(img *image.NRGBA, size int) {
+	const haloAlpha = 0.30
+	const haloInner = 1.0
+	// Ring grows slower than the canvas, so it is relatively thinner at larger
+	// sizes: ~1.7px at 22, ~2.3px at 44.
+	width := 1.0 + float64(size)*0.03
+	r := int(math.Ceil(width))
+	solid := func(x, y int) bool {
+		return x >= 0 && y >= 0 && x < size && y < size && img.NRGBAAt(x, y).A > 0
+	}
+	type write struct {
+		x, y int
+		a    uint8
+	}
+	var writes []write
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if img.NRGBAAt(x, y).A > 0 {
+				continue // glyph body or antialiased fringe
+			}
+			best := math.MaxFloat64
+			for dy := -r; dy <= r; dy++ {
+				for dx := -r; dx <= r; dx++ {
+					if solid(x+dx, y+dy) {
+						if d := math.Hypot(float64(dx), float64(dy)); d < best {
+							best = d
+						}
+					}
+				}
+			}
+			if best > width {
+				continue
+			}
+			f := 1.0
+			if best > haloInner {
+				f = 1.0 - (best-haloInner)/(width-haloInner)
+			}
+			a := haloAlpha * clamp01(f)
+			if a <= 0 {
+				continue
+			}
+			writes = append(writes, write{x, y, uint8(a * 255)})
+		}
+	}
+	for _, w := range writes {
+		img.SetNRGBA(w.x, w.y, color.NRGBA{0xFF, 0xFF, 0xFF, w.a})
+	}
 }
 
 // coverage returns antialiased coverage in [0,1] for a signed distance `d`

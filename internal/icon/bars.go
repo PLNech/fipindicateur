@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"sync"
 
 	"github.com/PLNech/fipindicateur/internal/vu"
@@ -100,11 +101,24 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 	// 4*6 + 3*4 = 36 px of bars, centered in 44.
 	x0 := (barsSize - (vu.Bars*barW + (vu.Bars-1)*gap)) / 2
 
+	// mask marks every glyph (bar) pixel; the phantom halo is derived from it.
+	var mask [barsSize * barsSize]bool
 	for i := 0; i < vu.Bars; i++ {
 		barH := stub + int(h[i])*unit // 3..36 px
 		xs := x0 + i*(barW+gap)
 		for y := bottom - barH; y < bottom; y++ {
 			for x := xs; x < xs+barW; x++ {
+				mask[y*barsSize+x] = true
+			}
+		}
+	}
+
+	// Phantom outline first (under the ink), then the bars on top so the glyph
+	// body stays crisp and only the surrounding ring carries the halo.
+	drawHalo(img, mask[:], barsSize)
+	for y := 0; y < barsSize; y++ {
+		for x := 0; x < barsSize; x++ {
+			if mask[y*barsSize+x] {
 				img.SetNRGBA(x, y, ink)
 			}
 		}
@@ -117,4 +131,73 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 		return Active(false)
 	}
 	return buf.Bytes()
+}
+
+// Phantom-outline tuning, shared with the gen generator (internal/icon/gen).
+// A thin semi-transparent white ring is baked around every glyph edge so a
+// dark-ink glyph clears a near-black panel (GNOME's default top bar), while a
+// ~30% white ring stays near-invisible on a light panel and vanishes into a
+// light-ink glyph on a dark one. It rides under the ink, so it is a rescue for
+// the low-contrast case and a no-op everywhere else.
+const (
+	haloAlpha = 0.30 // ring opacity: legible on black, subtle on white
+	haloInner = 1.0  // px at full strength before the feather begins
+)
+
+// haloWidth is the outer ring radius in pixels. It grows slower than the canvas
+// (a fixed offset plus a small fraction), so the ring is relatively thinner at
+// larger sizes: ~1px look at 22px display, ~2.3px on the 44px bars canvas.
+func haloWidth(size int) float64 { return 1.0 + float64(size)*0.03 }
+
+// drawHalo paints the phantom outline into img for the glyph described by mask
+// (true == glyph pixel). Each transparent pixel within haloWidth of a glyph
+// pixel gets white at haloAlpha, feathered to zero at the ring's outer edge.
+// Mask pixels are left untouched: the caller paints the ink over them.
+func drawHalo(img *image.NRGBA, mask []bool, size int) {
+	width := haloWidth(size)
+	r := int(math.Ceil(width))
+	at := func(x, y int) bool {
+		return x >= 0 && y >= 0 && x < size && y < size && mask[y*size+x]
+	}
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if at(x, y) {
+				continue // glyph body; ink is painted here later
+			}
+			best := math.MaxFloat64
+			for dy := -r; dy <= r; dy++ {
+				for dx := -r; dx <= r; dx++ {
+					if at(x+dx, y+dy) {
+						if d := math.Hypot(float64(dx), float64(dy)); d < best {
+							best = d
+						}
+					}
+				}
+			}
+			if best > width {
+				continue
+			}
+			f := 1.0
+			if best > haloInner {
+				f = 1.0 - (best-haloInner)/(width-haloInner)
+			}
+			a := haloAlpha * clamp01Halo(f)
+			if a <= 0 {
+				continue
+			}
+			img.SetNRGBA(x, y, color.NRGBA{0xFF, 0xFF, 0xFF, uint8(a * 255)})
+		}
+	}
+}
+
+// clamp01Halo clamps to [0,1] (gen has its own clamp01; the icon package keeps
+// this local so the two halo implementations stay independent).
+func clamp01Halo(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
