@@ -148,7 +148,7 @@ fip station jazz        # switch station (explicit id; `fip jazz` is not a short
 
 Actions route through the same path as the media keys and MPRIS, so they are
 recorded in your stats the same way. When no instance is running, `fip` prints
-`fipindicateur n'est pas lancé` and exits 1. Unix only (Linux, macOS); on
+`fipindicateur n'est pas lancé` and exits 1. Unix only (Linux, macOS, BSD); on
 Windows the subcommands report that they are not supported.
 
 ### Notifications on GNOME

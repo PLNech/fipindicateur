@@ -208,7 +208,9 @@ export function discotheque(data, mk) {
   const capBits = ["Les genres sont à l’échelle de l’artiste, pas du morceau."];
   if (d.generatedAt) {
     const days = daysSince(d.generatedAt, data.generatedAt);
-    const age = days == null ? "" : `enrichi il y a ${num(days)} ${plural(days, "jour", "jours")}`;
+    let age = "";
+    if (days === 0) age = "enrichi aujourd’hui";
+    else if (days != null) age = `enrichi il y a ${num(days)} ${plural(days, "jour", "jours")}`;
     const gaps = `${num(d.unenriched)} ${plural(d.unenriched, "écoute sans genre", "écoutes sans genre")}`;
     capBits.push([age, gaps].filter(Boolean).join(" · ") + ".");
   } else {

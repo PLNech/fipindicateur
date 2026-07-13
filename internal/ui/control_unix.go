@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // controlListener holds the running server's socket. Kept in a package variable
@@ -40,7 +41,12 @@ func controlSocketPath() string {
 func (a *App) startControlServer() {
 	path := controlSocketPath()
 	_ = os.Remove(path) // clear a stale socket from a crashed instance
+	// Create the socket with 0600 from birth: set a restrictive umask around
+	// net.Listen so there is no window where the node is world-reachable. The
+	// Chmod below is belt-and-braces (umask masks bits, it cannot add them).
+	oldMask := syscall.Umask(0o177)
 	ln, err := net.Listen("unix", path)
+	syscall.Umask(oldMask)
 	if err != nil {
 		log.Printf("ui: control socket: %v", err)
 		return
