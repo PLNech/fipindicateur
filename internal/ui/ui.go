@@ -103,6 +103,7 @@ type App struct {
 	mShowNotif     *systray.MenuItem
 	mShowCalendar  *systray.MenuItem
 	mAuto          *systray.MenuItem
+	mPlayOnStart   *systray.MenuItem
 	mHistFile      *systray.MenuItem
 	mAnim          *systray.MenuItem
 	audioMI        map[string]*systray.MenuItem // audio-output items, keyed by device name ("auto" = automatic)
@@ -209,7 +210,12 @@ func (a *App) OnReady() {
 	// (icon already set at the top of OnReady, before the menu, to shrink the
 	// null-pixmap window at SNI registration.)
 	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.current.Key})
-	a.startStation(a.current, true)
+	// Autostart is not autoplay: launch tunes the antenna (station selected,
+	// icon, metadata polling) but only starts the stream when the user opted in
+	// with PlayOnStart. When off, startStation(_, false) leaves playback paused
+	// and the tray still indicates what is on air (metadata is API-driven, not
+	// stream-driven), so a first press of play resumes promptly.
+	a.startStation(a.current, a.cfg.PlayOnStart)
 
 	// Opt-in: one quiet update check at launch. Off by default.
 	if a.cfg.UpdateStartup {
@@ -361,6 +367,11 @@ func (a *App) buildMenu() {
 		a.mAuto = settings.AddSubMenuItemCheckbox("Lancer au démarrage", "", a.cfg.Autostart)
 		a.on(a.mAuto, "", a.toggleAutostart)
 	}
+	// Lecture au démarrage: whether launching also starts the stream. Off by
+	// default (autostart is not autoplay): the tray tunes and indicates the
+	// antenna silently, and you press play when you want sound.
+	a.mPlayOnStart = settings.AddSubMenuItemCheckbox("Lecture au démarrage", "Démarrer la lecture au lancement (sinon l'antenne est en pause)", a.cfg.PlayOnStart)
+	a.on(a.mPlayOnStart, "", a.togglePlayOnStart)
 	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
 	a.on(a.mHistFile, "", a.toggleHistFile)
 	a.mAnim = settings.AddSubMenuItemCheckbox("Icône animée", "Barres qui suivent le niveau audio", a.cfg.AnimatedIcon)
@@ -1322,6 +1333,19 @@ func (a *App) toggleAutostart() {
 		log.Printf("ui: autostart: %v", err)
 	}
 	a.rec.Record(events.Event{Kind: events.KindAutostart, Value: b2i(a.cfg.Autostart)})
+	a.save()
+}
+
+// togglePlayOnStart flips whether launch also starts the stream. It only
+// changes the next launch's behaviour; the current playback state is untouched.
+func (a *App) togglePlayOnStart() {
+	a.cfg.PlayOnStart = !a.cfg.PlayOnStart
+	if a.cfg.PlayOnStart {
+		a.mPlayOnStart.Check()
+	} else {
+		a.mPlayOnStart.Uncheck()
+	}
+	a.rec.Record(events.Event{Kind: events.KindPlayOnStart, Value: b2i(a.cfg.PlayOnStart)})
 	a.save()
 }
 

@@ -46,6 +46,7 @@ const (
 	KindShowCalendar  Kind = "show_calendar_toggle" // Value = 1 on, 0 off (émission calendar)
 	KindAnim          Kind = "anim_toggle"          // Value = 1 on, 0 off
 	KindAutostart     Kind = "autostart"            // Value = 1 on, 0 off
+	KindPlayOnStart   Kind = "play_on_start_toggle" // Value = 1 on, 0 off (play at launch)
 	KindOpenWiki      Kind = "open_wiki"
 	KindOpenLink      Kind = "open_link"
 	KindOpenHistory   Kind = "open_history"

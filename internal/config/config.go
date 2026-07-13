@@ -19,11 +19,16 @@ type Config struct {
 	// content, but are harmless (never fire) on the webradios.
 	ShowNotifications bool `json:"show_notifications"`
 	ShowCalendar      bool `json:"show_calendar"`
-	Autostart         bool `json:"autostart"`      // launch at login
-	HistoryFile       bool `json:"history_file"`   // append track changes to a local jsonl log
-	Stats             bool `json:"stats"`          // opt-in local listening analytics (events.jsonl)
-	UpdateStartup     bool `json:"update_startup"` // check GitHub for a newer release at launch (opt-in)
-	AnimatedIcon      bool `json:"animated_icon"`  // audio-responsive VU tray icon
+	Autostart         bool `json:"autostart"` // launch at login
+	// PlayOnStart controls whether launch also starts the stream. Default off:
+	// launching (or autostart at login) tunes and indicates the antenna without
+	// making noise; the user presses play (menu, media keys, or the fip CLI) to
+	// listen. Autostart is not autoplay.
+	PlayOnStart   bool `json:"play_on_start"`
+	HistoryFile   bool `json:"history_file"`   // append track changes to a local jsonl log
+	Stats         bool `json:"stats"`          // opt-in local listening analytics (events.jsonl)
+	UpdateStartup bool `json:"update_startup"` // check GitHub for a newer release at launch (opt-in)
+	AnimatedIcon  bool `json:"animated_icon"`  // audio-responsive VU tray icon
 	// CrossfadeSecs is the equal-power crossfade duration when zapping between
 	// stations while playing. 0 disables it (hard cut, the old behaviour);
 	// clamped to [0,10]. Absent in an older config means the 4s default.
@@ -49,6 +54,7 @@ func Default() Config {
 		ShowNotifications: true,
 		ShowCalendar:      true,
 		Autostart:         false,
+		PlayOnStart:       false,
 		HistoryFile:       false,
 		Stats:             false,
 		UpdateStartup:     false,
