@@ -20,20 +20,27 @@ import (
 )
 
 func main() {
-	// Subcommands run and exit without touching the tray. `stats` builds the
-	// local listening report; no args launches the tray as usual.
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "stats":
-			os.Exit(stats.RunCLI(os.Args[2:]))
-		case "version", "--version", "-v":
-			fmt.Println("fipindicateur " + version.String())
-			os.Exit(0)
-		case "status", "play", "pause", "toggle", "stations", "station":
-			// Control-socket client: talk to the running instance and exit.
-			// Also reached as `fip <cmd>` via the installed symlink.
-			os.Exit(ui.RunControlClient(os.Args[1:]))
-		}
+	// Resolve the invocation (program name + args) to an action. The decision
+	// is pure and lives in decide(); only the side effects (exit, I/O, tray)
+	// happen here. Reached both as `fipindicateur` and, via the installed
+	// symlink, as `fip` (which never launches the tray).
+	switch d := decide(os.Args[0], os.Args[1:]); d.kind {
+	case actHelp:
+		fmt.Print(usage())
+		os.Exit(0)
+	case actUsageErr:
+		fmt.Fprint(os.Stderr, usage())
+		os.Exit(2)
+	case actStats:
+		os.Exit(stats.RunCLI(d.args))
+	case actVersion:
+		fmt.Println("fipindicateur " + version.String())
+		os.Exit(0)
+	case actControl:
+		// Control-socket client: talk to the running instance and exit.
+		os.Exit(ui.RunControlClient(d.args))
+	case actLaunchTray:
+		// Fall through to the tray setup below.
 	}
 
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)

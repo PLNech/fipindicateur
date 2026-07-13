@@ -13,6 +13,7 @@ PREFIX  ?= $(HOME)/.local
 BINDIR  := $(PREFIX)/bin
 APPDIR  := $(PREFIX)/share/applications
 ICONDIR := $(PREFIX)/share/icons/hicolor
+MANDIR  := $(PREFIX)/share/man/man1
 
 .PHONY: build run test lint fix icons clean install uninstall windows web
 
@@ -67,10 +68,12 @@ fix: ## Auto-format and tidy
 icons: ## Regenerate the tray icons
 	$(GO) run internal/icon/gen/main.go
 
-install: ## Build and install for the current user (binary, launcher, icons)
-	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps
+install: ## Build and install for the current user (binary, launcher, icons, man page)
+	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps $(MANDIR)
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINDIR)/$(BIN) $(PKG)
 	ln -sf $(BIN) $(BINDIR)/fip
+	install -m 644 packaging/fip.1 $(MANDIR)/fip.1
+	printf '.so man1/fip.1\n' > $(MANDIR)/fipindicateur.1
 	sed "s|@BINDIR@|$(BINDIR)|" packaging/fipindicateur.desktop.in > $(APPDIR)/fipindicateur.desktop
 	install -m 644 internal/icon/icon_app_22.png  $(ICONDIR)/22x22/apps/fipindicateur.png
 	install -m 644 internal/icon/icon_app_44.png  $(ICONDIR)/44x44/apps/fipindicateur.png
@@ -91,6 +94,8 @@ uninstall: ## Remove the user-level install (binary, launcher, icons, autostart)
 	rm -f $(HOME)/.config/systemd/user/fipindicateur-watchdog.service
 	rm -f $(BINDIR)/$(BIN)
 	rm -f $(BINDIR)/fip
+	rm -f $(MANDIR)/fip.1
+	rm -f $(MANDIR)/fipindicateur.1
 	rm -f $(APPDIR)/fipindicateur.desktop
 	rm -f $(ICONDIR)/22x22/apps/fipindicateur.png
 	rm -f $(ICONDIR)/44x44/apps/fipindicateur.png

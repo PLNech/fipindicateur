@@ -1,0 +1,103 @@
+.TH FIP 1 "2026-07-13" "fipindicateur" "User Commands"
+.SH NAME
+fip, fipindicateur \- system-tray client and command line for FIP webradios
+.SH SYNOPSIS
+.B fipindicateur
+.RI [ command ]
+.br
+.B fip
+.RI [ command ]
+.SH DESCRIPTION
+.B fipindicateur
+is a small system-tray client for the FIP (Radio France) webradios on Linux
+(GNOME/X11 is the supported target).
+.PP
+Run with no argument,
+.B fipindicateur
+launches the tray icon and its menu. The same binary also acts as a command
+line: control subcommands talk to an already-running instance over a local
+socket and exit, so playback can be driven from scripts and keybindings.
+.PP
+The
+.B fip
+name (installed as a symlink to the binary) is the command-line front end. It
+.I never
+launches the tray: run with no argument it prints the current status
+(equivalent to
+.BR "fip status" ).
+An unknown subcommand prints usage and exits 2. When invoked as
+.BR fipindicateur ,
+an unknown first argument likewise prints usage and exits 2 rather than
+launching the tray.
+.SH COMMANDS
+.TP
+.B status
+Print the current playback state as a single JSON line (station, playing,
+artist, title, show, volume, mute, version).
+.TP
+.B play
+Start playback.
+.TP
+.B pause
+Pause playback.
+.TP
+.B toggle
+Toggle between play and pause.
+.TP
+.BI "station " id
+Switch to the webradio with the given identifier. Unknown identifiers are
+rejected. See
+.B stations
+for the list.
+.TP
+.B stations
+List the known webradio identifiers, one per line.
+.TP
+.BR "stats " [ \-\-out " " \fIfile.html\fR ] " " [ \-\-no\-open ]
+Build the local listening report as a self-contained offline HTML page and
+open it in the browser.
+.B \-\-out
+writes the report to the given file instead of a temporary one;
+.B \-\-no\-open
+suppresses opening the browser. Reads only the local opt-in event log; nothing
+is sent over the network.
+.TP
+.B version
+Print the build version and exit.
+.TP
+.BR help ", " \-h ", " \-\-help
+Print usage and exit 0.
+.PP
+The
+.BR status ", " play ", " pause ", " toggle ", " station " and " stations
+commands require a running instance. With none running they print
+.I fipindicateur n'est pas lanc\['e]
+to standard error and exit 1.
+.SH FILES
+.TP
+.I $XDG_RUNTIME_DIR/fipindicateur.sock
+Control socket exposed by the running instance (mode 0600, per user). Falls
+back to the system temporary directory when
+.I XDG_RUNTIME_DIR
+is unset. Removed on a clean shutdown; a stale node from a crash is cleared on
+the next launch.
+.TP
+.I ~/.config/fipindicateur/config.json
+Persisted settings (station, volume, mute, and the opt-in toggles).
+.TP
+.I ~/.local/share/fipindicateur/events.jsonl
+Opt-in local listening event log (play, pause, station changes, volume). Off
+by default; written only after the user enables the local statistics option.
+Records behaviour, never track identity. This is the file the
+.B stats
+report reads.
+.TP
+.I ~/.local/share/fipindicateur/history.jsonl
+Opt-in track-change log (artist and title). A separate consent and a separate
+file from the event log. Both logs are append-only JSON, one object per line,
+local only, and can be inspected or deleted by hand.
+.SH SEE ALSO
+.BR mpv (1)
+.PP
+Project documentation and source: the repository's README, docs/INSTALL.md and
+docs/FEATURES.md.

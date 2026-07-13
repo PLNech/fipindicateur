@@ -151,6 +151,10 @@ recorded in your stats the same way. When no instance is running, `fip` prints
 `fipindicateur n'est pas lancé` and exits 1. Unix only (Linux, macOS, BSD); on
 Windows the subcommands report that they are not supported.
 
+Bare `fip` is a shortcut for `fip status`, and it never launches the tray. Run
+`fip --help` (or `fipindicateur help`) for the full command list; `make install`
+also drops a man page, so `man fip` works after install.
+
 ### Notifications on GNOME
 
 Stock GNOME Shell caps notification banners at roughly 4 seconds and ignores the
