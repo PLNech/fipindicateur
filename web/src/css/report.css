@@ -327,6 +327,90 @@ header.hero { padding-top: clamp(2.5rem, 8vh, 5rem); }
 .hint-box { margin-top: var(--s4); padding: var(--s4); border: 1px dashed var(--hairline); border-radius: 12px; }
 .hint-box .tag { font-family: "Bricolage Grotesque", sans-serif; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--amber); }
 
+/* ============================================================ la discotheque */
+.disco-controls { margin-top: var(--s4); display: flex; flex-direction: column; gap: var(--s3); }
+.disco-search-wrap { display: block; }
+.disco-search {
+  width: 100%;
+  font-family: "Literata", Georgia, serif;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.disco-search::placeholder { color: var(--ink-muted); font-style: italic; }
+.disco-search:focus-visible { outline: 2px solid var(--fip); outline-offset: 1px; border-color: var(--fip); }
+
+.disco-chips { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); }
+.disco-facet-lbl {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--ink-muted); margin-right: var(--s2); flex: none;
+}
+.disco-chip {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 0.82rem; font-weight: 700;
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background-color .15s;
+}
+.disco-chip:hover { color: var(--ink); border-color: var(--ink-muted); }
+.disco-chip[aria-pressed="true"] { color: var(--night-0); background: var(--fip); border-color: var(--fip); }
+:root.light .disco-chip[aria-pressed="true"] { color: var(--paper-0); }
+.disco-chip:focus-visible { outline: 2px solid var(--fip); outline-offset: 2px; }
+
+.disco-head {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem; color: var(--ink-muted);
+  margin: var(--s4) 0 0;
+}
+.disco-list { display: flex; flex-direction: column; margin-top: var(--s3); }
+.disco-row {
+  display: grid; grid-template-columns: 48px 1fr; gap: var(--s3);
+  align-items: start;
+  padding-block: var(--s3);
+  border-bottom: 1px solid var(--hairline);
+}
+.disco-cover {
+  width: 48px; height: 48px; border-radius: 6px; object-fit: cover;
+  background: var(--surface-2); flex: none; display: block;
+}
+.disco-cover-empty { background: var(--surface-2); }
+.disco-title { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+.disco-title .t { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 1rem; color: var(--ink); }
+.disco-like { color: var(--fip-ink); font-size: 0.9rem; }
+.disco-dislike { color: var(--ink-muted); font-size: 0.9rem; }
+.disco-meta { display: flex; flex-wrap: wrap; gap: var(--s3); margin-top: 2px; font-size: 0.9rem; color: var(--ink-muted); }
+.disco-meta .ar { color: var(--ink); }
+.disco-meta .ge { font-style: italic; }
+.disco-foot { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: baseline; margin-top: 4px; font-size: 0.8rem; color: var(--ink-muted); }
+.disco-foot .ts { font-variant-numeric: tabular-nums; }
+.disco-listen { font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 0.78rem; }
+.disco-more-wrap { display: flex; justify-content: center; margin-top: var(--s4); }
+.disco-more {
+  font-family: "Bricolage Grotesque", sans-serif;
+  font-size: 0.85rem; font-weight: 700;
+  color: var(--ink-muted);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 8px 20px; cursor: pointer;
+  transition: color .2s, border-color .2s;
+}
+.disco-more:hover { color: var(--ink); border-color: var(--ink-muted); }
+.disco-more:focus-visible { outline: 2px solid var(--fip); outline-offset: 2px; }
+@media (max-width: 560px) {
+  .disco-row { grid-template-columns: 40px 1fr; }
+  .disco-cover { width: 40px; height: 40px; }
+}
+
 /* ============================================================ palmares (insignia) */
 .insignia { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: var(--s4); margin-top: var(--s4); }
 .insigne { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3); border: 1px solid var(--hairline); border-radius: 14px; background: var(--surface); }

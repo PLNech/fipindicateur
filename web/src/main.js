@@ -16,6 +16,7 @@ import { epochs } from "./sections/epochs.js";
 import { ciel } from "./sections/ciel.js";
 import { economie } from "./sections/economie.js";
 import { gout } from "./sections/gout.js";
+import { discotheque } from "./sections/discotheque.js";
 import { palmares } from "./sections/palmares.js";
 import { fin } from "./sections/fin.js";
 
@@ -24,9 +25,10 @@ const DATA = JSON.parse(byId("fip-data").textContent);
 // mk is the section-shell factory handed to every renderer.
 const mk = (opts) => section(opts);
 
-// Conditional sections (programme, shows, epochs, ciel, economie, gout) return
-// null when their data is absent, and the rundown simply skips them.
-const SECTIONS = [grille, zapping, programme, shows, epochs, ciel, economie, gout, palmares, fin];
+// Conditional sections (programme, shows, epochs, ciel, economie, gout,
+// discotheque) return null when their data is absent, and the rundown simply
+// skips them.
+const SECTIONS = [grille, zapping, programme, shows, epochs, ciel, economie, gout, discotheque, palmares, fin];
 
 function build() {
   const root = byId("report");
