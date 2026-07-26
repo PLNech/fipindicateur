@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"fyne.io/systray"
+	"github.com/PLNech/fipindicateur/internal/cast"
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/events"
 	"github.com/PLNech/fipindicateur/internal/histlog"
@@ -43,6 +44,12 @@ const (
 	// calendarSlots bounds how many upcoming programmes the tray lists. A single
 	// poll returns two to three days ahead, far more than a menu should show.
 	calendarSlots = 12
+	// castSlots bounds the "Diffuser sur…" device list. Pre-allocated because
+	// systray cannot remove items; a home network rarely exceeds a handful of
+	// Chromecast endpoints.
+	castSlots = 8
+	// castScanWindow is how long one mDNS discovery listens for answers.
+	castScanWindow = 3 * time.Second
 )
 
 // App holds the running application state.
@@ -86,6 +93,15 @@ type App struct {
 	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
 	prefsClearArmed bool // two-click confirm state for "Effacer mes goûts"
 
+	// casting ("Diffuser sur…"): the live Chromecast session (nil = playing
+	// locally) and the devices from the last mDNS scan. All guarded by a.mu.
+	// castName is the active target's friendly name, used only for menu
+	// checkmarks: device identity never reaches the events log.
+	castSess     *cast.Session
+	castName     string
+	castDevices  []cast.Device
+	castScanning bool // one discovery at a time
+
 	// menu items
 	mNow           *systray.MenuItem
 	mShow          *systray.MenuItem // current programme (émission) on air; hidden when none
@@ -111,6 +127,10 @@ type App struct {
 	mStatsClear    *systray.MenuItem
 	mPrefsClear    *systray.MenuItem
 	mUpdateStartup *systray.MenuItem
+	mCastLocal     *systray.MenuItem   // "Cet ordinateur", checked when not casting
+	mCastNone      *systray.MenuItem   // disabled placeholder when no device was found
+	mCastScan      *systray.MenuItem   // "Rechercher les appareils"
+	castMI         []*systray.MenuItem // pre-allocated device slots
 	mVolume        *systray.MenuItem
 	mMute          *systray.MenuItem
 	volMI          map[int]*systray.MenuItem
@@ -217,6 +237,11 @@ func (a *App) OnReady() {
 	// stream-driven), so a first press of play resumes promptly.
 	a.startStation(a.current, a.cfg.PlayOnStart)
 
+	// One background device scan at startup so "Diffuser sur…" is populated
+	// by the time it is first opened. Runs entirely off the tray goroutine:
+	// OnReady never waits on the network.
+	go a.scanCast()
+
 	// Control socket: lets `fip status`/`play`/`pause`/`station …` drive the
 	// running app (and survive the tray dying). Best-effort; the app runs on if
 	// it cannot bind. Unix-only (Windows is a no-op).
@@ -230,6 +255,23 @@ func (a *App) OnReady() {
 
 // OnExit tears everything down.
 func (a *App) OnExit() {
+	// A live cast ends with the app: record the end of the behaviour (before
+	// the recorder flushes) and tell the receiver goodbye, but never let a
+	// wedged device hold the exit hostage.
+	a.mu.Lock()
+	sess := a.castSess
+	a.castSess = nil
+	a.mu.Unlock()
+	if sess != nil {
+		a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+		done := make(chan struct{})
+		go func() { sess.Stop(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			sess.Close() // give up on the goodbye, just drop the connection
+		}
+	}
 	a.rec.Record(events.Event{Kind: events.KindAppStop, Station: a.current.Key})
 	a.rec.Close() // flushes the queued app_stop before we return
 	a.stopControlServer()
@@ -313,6 +355,31 @@ func (a *App) buildMenu() {
 	}
 	fipItem := radios.AddSubMenuItem("FIP sur radiofrance.fr", fipURL)
 	a.on(fipItem, events.KindOpenFip, func() { open.URL(fipURL) })
+
+	// Diffuser sur…: cast the antenna to a Chromecast speaker. Devices are
+	// discovered fresh each run, nothing persisted; the slots are
+	// pre-allocated because systray cannot remove items once added.
+	castMenu := systray.AddMenuItem("Diffuser sur…", "Diffuser la station sur un appareil Chromecast")
+	a.mCastLocal = castMenu.AddSubMenuItemCheckbox("Cet ordinateur", "Lecture locale (arrête la diffusion)", true)
+	// State-dependent: stopCasting records cast_stop at source only when a
+	// cast was actually active, so a redundant click logs nothing.
+	a.on(a.mCastLocal, "", func() { a.stopCasting(true) })
+	a.castMI = make([]*systray.MenuItem, castSlots)
+	for i := 0; i < castSlots; i++ {
+		it := castMenu.AddSubMenuItemCheckbox("", "", false)
+		it.Hide()
+		a.castMI[i] = it
+		idx := i
+		// State-dependent: startCast records cast_start at source once the
+		// device accepted the stream (a failed cast logs nothing).
+		a.on(it, "", func() { a.castToDevice(idx) })
+	}
+	a.mCastNone = castMenu.AddSubMenuItem("Aucun appareil trouvé", "Aucun Chromecast détecté sur le réseau local")
+	a.mCastNone.Disable()
+	a.mCastScan = castMenu.AddSubMenuItem("Rechercher les appareils", "Chercher les Chromecast sur le réseau (mDNS)")
+	// Discovery is ambient plumbing, not a listening behaviour: the
+	// measurable actions here are cast_start/cast_stop, recorded at source.
+	a.on(a.mCastScan, "", a.rescanCast)
 
 	// Historique
 	hist := systray.AddMenuItem("Historique", "Titres récents")
@@ -488,6 +555,19 @@ func (a *App) startStation(s stations.Station, play bool) {
 	a.current = s
 
 	url := s.StreamURL(a.quality())
+	if sess := a.castSession(); sess != nil {
+		// While casting, a zap re-LOADs the stream on the device instead of
+		// starting it here: the local player stays paused so the audio never
+		// doubles. The LOAD runs off the tray goroutine (a wedged device must
+		// not block the menu); a failure surfaces through onCastError.
+		play = false
+		ctype := a.castContentType()
+		go func() {
+			if err := sess.Load(url, ctype, castTitle(s)); err != nil {
+				a.onCastError(err)
+			}
+		}()
+	}
 	if play {
 		a.player.Play(url)
 	} else {
@@ -850,6 +930,13 @@ func (a *App) refreshHistoryMenu() {
 // --- click handlers ---
 
 func (a *App) togglePlay() {
+	// While casting, the play button means "bring the music back here": stop
+	// the cast and resume locally, never start a second stream on top of the
+	// speaker's.
+	if a.castSession() != nil {
+		a.stopCasting(true)
+		return
+	}
 	if a.player.IsPlaying() {
 		a.player.Stop()
 		a.setPlayingUI(false)
@@ -946,7 +1033,18 @@ func (a *App) toggleHiFi() {
 	// and fading identical content against itself would phase/echo. Stopping
 	// also drops the current URL so the reload starts from a not-playing handle,
 	// which the Fader's "only a live zap crossfades" rule relies on.
-	if a.player.IsPlaying() {
+	if sess := a.castSession(); sess != nil {
+		// Casting: re-LOAD at the new quality on the device; local playback
+		// stays paused. Same off-goroutine rule as the startStation seam.
+		url := a.current.StreamURL(a.quality())
+		ctype := a.castContentType()
+		title := castTitle(a.current)
+		go func() {
+			if err := sess.Load(url, ctype, title); err != nil {
+				a.onCastError(err)
+			}
+		}()
+	} else if a.player.IsPlaying() {
 		a.player.Stop()
 		a.player.Play(a.current.StreamURL(a.quality()))
 	}
@@ -1376,6 +1474,209 @@ func (a *App) setAudioDevice(name string) {
 	}
 }
 
+// --- casting (Diffuser sur…) ---
+
+// castSession returns the live cast session, or nil when playing locally.
+func (a *App) castSession() *cast.Session {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.castSess
+}
+
+// castContentType is the MIME type of the current stream quality, for the
+// device's LOAD request.
+func (a *App) castContentType() string {
+	if a.cfg.HiFi {
+		return "audio/aacp" // 192k AAC
+	}
+	return "audio/mpeg" // 128k MP3
+}
+
+// castTitle is the label the device UI shows for a station's live stream.
+func castTitle(s stations.Station) string {
+	return "FIP · " + s.Display
+}
+
+// rescanCast is the "Rechercher les appareils" click: a fresh discovery, off
+// the tray goroutine.
+func (a *App) rescanCast() { go a.scanCast() }
+
+// scanCast runs one mDNS discovery and refreshes the submenu. Blocking for
+// the scan window, so it always runs off the tray goroutine; a scan already
+// in flight is not doubled.
+func (a *App) scanCast() {
+	a.mu.Lock()
+	if a.castScanning {
+		a.mu.Unlock()
+		return
+	}
+	a.castScanning = true
+	a.mu.Unlock()
+
+	a.mCastScan.SetTitle("Recherche en cours…")
+	devs := cast.Discover(castScanWindow)
+	a.mCastScan.SetTitle("Rechercher les appareils")
+
+	a.mu.Lock()
+	a.castDevices = devs
+	a.castScanning = false
+	a.mu.Unlock()
+	a.refreshCastMenu()
+}
+
+// refreshCastMenu syncs the device slots, the placeholder and the checkmarks
+// with the last scan and the active target.
+func (a *App) refreshCastMenu() {
+	a.mu.Lock()
+	devs := make([]cast.Device, len(a.castDevices))
+	copy(devs, a.castDevices)
+	active := a.castName
+	casting := a.castSess != nil
+	a.mu.Unlock()
+
+	for i, it := range a.castMI {
+		if i < len(devs) {
+			it.SetTitle(devs[i].Name)
+			if casting && devs[i].Name == active {
+				it.Check()
+			} else {
+				it.Uncheck()
+			}
+			it.Show()
+		} else {
+			it.Uncheck()
+			it.Hide()
+		}
+	}
+	if len(devs) == 0 {
+		a.mCastNone.Show()
+	} else {
+		a.mCastNone.Hide()
+	}
+	if casting {
+		a.mCastLocal.Uncheck()
+	} else {
+		a.mCastLocal.Check()
+	}
+}
+
+// castToDevice starts casting the current station to the i-th discovered
+// device. The handshake and LOAD run off the tray goroutine.
+func (a *App) castToDevice(i int) {
+	a.mu.Lock()
+	if i >= len(a.castDevices) {
+		a.mu.Unlock()
+		return
+	}
+	dev := a.castDevices[i]
+	already := a.castSess != nil && a.castName == dev.Name
+	a.mu.Unlock()
+	if already {
+		return // clicking the active target changes nothing
+	}
+	go a.startCast(dev)
+}
+
+// startCast dials the device, LOADs the current stream and, on success,
+// pauses local playback and flips the menu state. Any failure surfaces as a
+// notification and the menu resets to local: casting never crashes or blocks
+// the tray. Runs off the tray goroutine (see castToDevice).
+func (a *App) startCast(dev cast.Device) {
+	station := a.current
+	url := station.StreamURL(a.quality())
+	ctype := a.castContentType()
+
+	sess, err := cast.Dial(dev, a.onCastError)
+	if err != nil {
+		a.castFailed(err)
+		return
+	}
+	if err := sess.Load(url, ctype, castTitle(station)); err != nil {
+		sess.Close()
+		a.castFailed(err)
+		return
+	}
+
+	a.mu.Lock()
+	old := a.castSess
+	a.castSess = sess
+	a.castName = dev.Name
+	a.mu.Unlock()
+	if old != nil {
+		// Device switch: quit the receiver on the previous target. Its
+		// deliberate Stop never triggers onCastError.
+		go old.Stop()
+	}
+
+	if old == nil {
+		// Local playback pauses so the audio does not double; setPlayingUI
+		// records that pause. The cast itself is the cast_start event,
+		// recorded at source, behaviour only: no device name or address
+		// ever reaches the events log.
+		a.player.Stop()
+		a.setPlayingUI(false)
+		a.rec.Record(events.Event{Kind: events.KindCastStart, Station: station.Key})
+	}
+	a.refreshCastMenu()
+	if a.cfg.Notifications && a.notif != nil {
+		a.notif.Notify("Diffusion en cours", "La station joue sur « "+dev.Name+" ».", "", a.cfg.NotifTimeoutMs)
+	}
+}
+
+// stopCasting ends the cast; when resume is true ("Cet ordinateur", the play
+// button, an external play), playback comes back to the local player. No-op
+// when not casting. Records cast_stop at source (behaviour only).
+func (a *App) stopCasting(resume bool) {
+	a.mu.Lock()
+	sess := a.castSess
+	a.castSess = nil
+	a.castName = ""
+	a.mu.Unlock()
+	if sess == nil {
+		a.refreshCastMenu() // keep "Cet ordinateur" checked on a redundant click
+		return
+	}
+	go sess.Stop() // the network goodbye is best-effort, off the tray goroutine
+	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+	a.refreshCastMenu()
+	if resume {
+		a.player.Play(a.current.StreamURL(a.quality()))
+		a.setPlayingUI(true)
+	}
+}
+
+// castFailed reports a cast that could not start. The menu never left the
+// local state, so refreshing it is enough of a reset.
+func (a *App) castFailed(err error) {
+	log.Printf("ui: cast: %v", err)
+	a.refreshCastMenu()
+	if a.notif != nil {
+		a.notif.Notify("Diffusion impossible", "Impossible de diffuser sur cet appareil.", "", a.cfg.NotifTimeoutMs)
+	}
+}
+
+// onCastError handles a live session dying unexpectedly (device rebooted,
+// network drop, LOAD refused mid-session). The menu resets to local but
+// playback stays paused: silently resuming sound here could blast at an
+// unexpected moment. The casting behaviour did end, so cast_stop is recorded.
+func (a *App) onCastError(err error) {
+	a.mu.Lock()
+	sess := a.castSess
+	a.castSess = nil
+	a.castName = ""
+	a.mu.Unlock()
+	if sess == nil {
+		return // a deliberate stop raced the failure; already reset
+	}
+	log.Printf("ui: cast session lost: %v", err)
+	sess.Close()
+	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+	a.refreshCastMenu()
+	if a.notif != nil {
+		a.notif.Notify("Diffusion interrompue", "La connexion avec l'appareil a été perdue.", "", a.cfg.NotifTimeoutMs)
+	}
+}
+
 // --- statistics (opt-in listening analytics) ---
 
 // toggleStats flips the opt-in and starts/stops the recorder at runtime. The
@@ -1679,8 +1980,14 @@ func (a *App) save() {
 
 // --- mpris.Controller ---
 
-// Play resumes playback (rejoins live).
+// Play resumes playback (rejoins live). While casting, an external play
+// (media key, playerctl, `fip play`) brings the music back to this machine,
+// like the menu's play button: local audio must never double the speaker's.
 func (a *App) Play() {
+	if a.castSession() != nil {
+		a.stopCasting(true)
+		return
+	}
 	a.player.Play(a.current.StreamURL(a.quality()))
 	a.setPlayingUI(true)
 }

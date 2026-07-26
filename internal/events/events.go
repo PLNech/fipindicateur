@@ -34,6 +34,8 @@ const (
 	KindPause         Kind = "pause"
 	KindLike          Kind = "like"                 // explicit taste: liked the current track
 	KindDislike       Kind = "dislike"              // explicit taste: disliked the current track
+	KindCastStart     Kind = "cast_start"           // started casting to a Chromecast (behaviour only: never the device name or address)
+	KindCastStop      Kind = "cast_stop"            // stopped casting, playback back local
 	KindStationChange Kind = "station_change"       // From, To set
 	KindShowChange    Kind = "show_change"          // From, To = programme conceptUuid (ambient, on the antenna)
 	KindAudioDevice   Kind = "audio_device"         // user picked an audio output device

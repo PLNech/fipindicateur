@@ -17,7 +17,10 @@ and `fipindicateur stats` renders **« Fin d'émission »**, a self-contained
 offline report of your nights: hours, a night clock, session lengths, a Markov
 graph of your zapping, release-year epochs, a 2D artist constellation, and the
 émissions you kept company with. Like or dislike the current track straight
-from the tray. Nothing ever leaves your machine.
+from the tray. **Diffuser sur…** casts the antenna to a Chromecast speaker on
+your network: devices are discovered automatically, local playback pauses so
+the sound never doubles, and "Cet ordinateur" brings it back. Nothing ever
+leaves your machine.
 
 Unofficial client. Linux (Ubuntu 24.04, GNOME/X11) is the supported target;
 macOS and Arch are kept buildable.

@@ -1,5 +1,22 @@
 # Changelog
 
+## Diffusion · 2026-07-26 · L'antenne dans les enceintes
+
+### Added
+- « Diffuser sur… » : cast the current station to a Chromecast speaker. A new
+  stdlib-only `internal/cast` package hand-rolls the whole exchange (mDNS
+  discovery of `_googlecast._tcp` devices, the CASTV2 length-prefixed protobuf
+  channel over TLS, launch of the Default Media Receiver, LOAD of the icecast
+  URL) so casting costs zero new dependencies. Devices are discovered fresh at
+  startup and on demand (« Rechercher les appareils »), nothing is persisted.
+  While casting, local playback pauses so the audio never doubles; zapping
+  stations or toggling Haute qualité re-LOADs the stream on the device; « Cet
+  ordinateur » (or the play button, or `fip play`) brings the music back. A
+  lost device surfaces as a notification and the menu resets, never a crash.
+- Two behaviour events, `cast_start` and `cast_stop`, recorded at source.
+  Privacy unchanged: events record the behaviour only, never the device name
+  or address.
+
 ## Distribution · 2026-07-12 · Les rayonnages
 
 ### Added
