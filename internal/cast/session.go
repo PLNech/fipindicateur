@@ -28,9 +28,13 @@ const (
 )
 
 const (
-	dialTimeout      = 5 * time.Second
-	handshakeTimeout = 10 * time.Second
-	writeTimeout     = 5 * time.Second
+	dialTimeout = 5 * time.Second
+	// launchTimeout bounds the wait for the RECEIVER_STATUS that answers
+	// LAUNCH. Deliberately generous: AV receivers cold-boot their cast module
+	// on LAUNCH (a Pioneer VSX-933 measured 8.2s to answer on a warm launch;
+	// cold exceeds 10s). PINGs keep being answered during the wait.
+	launchTimeout = 30 * time.Second
+	writeTimeout  = 5 * time.Second
 	// readIdleTimeout bounds the read loop: the device pings every ~5s, so a
 	// silent 30s means the link is dead even if TCP has not noticed yet.
 	readIdleTimeout = 30 * time.Second
@@ -87,8 +91,9 @@ func (s *Session) Device() Device { return s.dev }
 
 // handshake runs the session bring-up synchronously: CONNECT to the platform
 // receiver, LAUNCH the Default Media Receiver, wait for the RECEIVER_STATUS
-// carrying the session's transportId, then CONNECT to that transport. The
-// whole exchange is bounded by handshakeTimeout.
+// carrying the session's transportId, then CONNECT to that transport. Each
+// send is bounded by writeTimeout; the status wait is bounded by the more
+// generous launchTimeout (slow AV receivers, see the constant).
 func (s *Session) handshake() error {
 	if err := s.send(nsConnection, receiverID, `{"type":"CONNECT"}`); err != nil {
 		return err
@@ -96,7 +101,7 @@ func (s *Session) handshake() error {
 	if err := s.send(nsReceiver, receiverID, launchPayload(s.nextReq())); err != nil {
 		return err
 	}
-	_ = s.conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
+	_ = s.conn.SetReadDeadline(time.Now().Add(launchTimeout))
 	defer s.conn.SetReadDeadline(time.Time{})
 	for {
 		m, err := readFrame(s.conn)

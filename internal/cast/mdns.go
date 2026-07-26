@@ -6,6 +6,7 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,37 +30,67 @@ const (
 )
 
 // Discover looks for Chromecast devices: one mDNS PTR question for
-// _googlecast._tcp.local sent to 224.0.0.251:5353, answers collected for the
-// window. The question leaves from an ephemeral port, so responders reply
-// directly to our socket (RFC 6762 legacy unicast) and no multicast group
-// membership is needed; some resolvers answer from port 5353 regardless, and
-// we simply read everything that arrives. Best-effort by contract: any
-// network trouble yields an empty list, never an error (the tray must not
-// care why the network said nothing).
+// _googlecast._tcp.local sent to the mDNS group on port 5353, answers
+// collected for the window.
+//
+// The question sets the QU (unicast-response) bit and leaves from an
+// ephemeral port, so responders that honour QU reply straight to that socket.
+// Per RFC 6762 section 5.4, QU is a request, not a guarantee: responders may
+// still answer multicast (real devices do), so a second socket joins the mDNS
+// group on port 5353 to hear those. Go sets SO_REUSEADDR on the multicast
+// listen, so it coexists with a running avahi-daemon; if that listen fails on
+// an exotic setup we degrade gracefully to the unicast socket alone.
+// Best-effort by contract: any network trouble yields an empty list, never an
+// error (the tray must not care why the network said nothing).
 func Discover(window time.Duration) []Device {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	uni, err := net.ListenUDP("udp4", &net.UDPAddr{})
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
-	dst := &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
+	defer uni.Close()
+	group := &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
+	multi, merr := net.ListenMulticastUDP("udp4", nil, group)
+	if merr == nil {
+		defer multi.Close()
+	}
+
 	query := buildPTRQuery(castService)
-	if _, err := conn.WriteToUDP(query, dst); err != nil {
+	if _, err := uni.WriteToUDP(query, group); err != nil {
 		return nil
 	}
-	// mDNS over UDP is lossy: ask a second time mid-window.
-	again := time.AfterFunc(window/2, func() { _, _ = conn.WriteToUDP(query, dst) })
+	// mDNS over UDP is lossy: ask a second time mid-window, from the same
+	// ephemeral socket (its source port is where QU unicast replies land).
+	again := time.AfterFunc(window/2, func() { _, _ = uni.WriteToUDP(query, group) })
 	defer again.Stop()
 
-	_ = conn.SetReadDeadline(time.Now().Add(window))
-	found := map[string]Device{} // keyed by instance name; packets may split a record set
-	buf := make([]byte, 9000)    // an mDNS packet fits a jumbo frame
-	for {
-		n, _, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			break // window elapsed (or socket trouble): done collecting
+	// Read replies from both sockets until the window elapses, funnelling
+	// packets into one channel so record sets merge across sources.
+	deadline := time.Now().Add(window)
+	pkts := make(chan []byte, 16)
+	var wg sync.WaitGroup
+	collect := func(c *net.UDPConn) {
+		defer wg.Done()
+		_ = c.SetReadDeadline(deadline)
+		buf := make([]byte, 9000) // an mDNS packet fits a jumbo frame
+		for {
+			n, _, err := c.ReadFromUDP(buf)
+			if err != nil {
+				return // window elapsed (or socket trouble): done collecting
+			}
+			pkts <- append([]byte(nil), buf[:n]...)
 		}
-		for inst, d := range parseCastResponse(buf[:n]) {
+	}
+	wg.Add(1)
+	go collect(uni)
+	if merr == nil {
+		wg.Add(1)
+		go collect(multi)
+	}
+	go func() { wg.Wait(); close(pkts) }()
+
+	found := map[string]Device{} // keyed by instance name; packets may split a record set
+	for pkt := range pkts {
+		for inst, d := range parseCastResponse(pkt) {
 			found[inst] = mergeDevice(found[inst], d)
 		}
 	}
@@ -94,7 +125,9 @@ func mergeDevice(dst, src Device) Device {
 }
 
 // buildPTRQuery encodes a one-question DNS query (ID 0, no flags) asking for
-// PTR records of the given service.
+// PTR records of the given service. The QU bit (top bit of QCLASS, RFC 6762
+// §5.4) requests a unicast response back to our ephemeral source port; real
+// devices ignore the legacy multicast-response form of this query entirely.
 func buildPTRQuery(service string) []byte {
 	b := make([]byte, 12)
 	b[5] = 1 // QDCOUNT = 1
@@ -107,7 +140,7 @@ func buildPTRQuery(service string) []byte {
 	}
 	b = append(b, 0x00)       // root
 	b = append(b, 0x00, 0x0c) // QTYPE = PTR
-	b = append(b, 0x00, 0x01) // QCLASS = IN
+	b = append(b, 0x80, 0x01) // QCLASS = IN, QU (unicast response requested)
 	return b
 }
 

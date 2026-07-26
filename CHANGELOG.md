@@ -1,5 +1,27 @@
 # Changelog
 
+## Correctif · 2026-07-26 · L'oreille qui traîne
+
+### Fixed
+- Discovery now hears real devices. The v0.4.0 mDNS query was a legacy
+  unicast question from an ephemeral port; real hardware (a Pioneer VSX-933
+  on the bench) never answered it. The query now sets the QU bit (RFC 6762
+  §5.4) so QU-honouring responders reply straight to our socket, and a second
+  socket joins the 224.0.0.251:5353 multicast group to hear everyone else.
+  Confirmed on the receiver itself.
+- Casting waits out slow AV receivers: the LAUNCH answer is now bounded by a
+  30s launchTimeout instead of the 10s handshake bound. Receivers cold-boot
+  their cast module on LAUNCH (8.2s measured on a warm Pioneer; cold exceeds
+  10s), so v0.4.0 gave up just before the music started.
+- The « Diffusion impossible » notification now hints that the device may
+  need a few seconds: réessayez.
+
+### Added
+- `fipindicateur cast scan` (or plain `cast`): a standalone mDNS scan that
+  lists the Chromecast devices on the local network, one per line, no running
+  instance needed. The debug companion to « Rechercher les appareils »;
+  documented in the man page.
+
 ## Diffusion · 2026-07-26 · L'antenne dans les enceintes
 
 ### Added

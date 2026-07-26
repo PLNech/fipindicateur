@@ -62,6 +62,14 @@ writes the report to the given file instead of a temporary one;
 suppresses opening the browser. Reads only the local opt-in event log; nothing
 is sent over the network.
 .TP
+.BR "cast " [ scan ]
+Scan the local network for Chromecast devices (mDNS) and list them, one per
+line (friendly name, address:port). Runs standalone, without a running
+instance.
+.B cast
+alone behaves as
+.BR "cast scan" .
+.TP
 .B version
 Print the build version and exit.
 .TP

@@ -193,7 +193,13 @@ func TestBuildPTRQuery(t *testing.T) {
 	if typ := binary.BigEndian.Uint16(q[off:]); typ != typePTR {
 		t.Fatalf("QTYPE = %d, want PTR (%d)", typ, typePTR)
 	}
-	if class := binary.BigEndian.Uint16(q[off+2:]); class != 1 {
-		t.Fatalf("QCLASS = %d, want IN (1)", class)
+	// QU bit (RFC 6762 section 5.4) must be set on class IN: real devices
+	// ignore the legacy multicast-response form of this query.
+	class := binary.BigEndian.Uint16(q[off+2:])
+	if class&0x8000 == 0 {
+		t.Fatalf("QCLASS = %#04x, QU bit (0x8000) not set", class)
+	}
+	if class&0x7fff != 1 {
+		t.Fatalf("QCLASS = %#04x, want class IN (1) under the QU bit", class)
 	}
 }

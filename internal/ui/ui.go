@@ -1651,7 +1651,7 @@ func (a *App) castFailed(err error) {
 	log.Printf("ui: cast: %v", err)
 	a.refreshCastMenu()
 	if a.notif != nil {
-		a.notif.Notify("Diffusion impossible", "Impossible de diffuser sur cet appareil.", "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify("Diffusion impossible", "Impossible de diffuser sur cet appareil. L'appareil a peut-être besoin de quelques secondes : réessayez.", "", a.cfg.NotifTimeoutMs)
 	}
 }
 

@@ -39,6 +39,8 @@ func main() {
 	case actControl:
 		// Control-socket client: talk to the running instance and exit.
 		os.Exit(ui.RunControlClient(d.args))
+	case actCastScan:
+		os.Exit(runCastScan())
 	case actLaunchTray:
 		// Fall through to the tray setup below.
 	}

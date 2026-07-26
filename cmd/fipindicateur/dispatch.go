@@ -12,6 +12,7 @@ const (
 	actStats                        // build the local listening report
 	actVersion                      // print the stamped version
 	actControl                      // talk to the running instance over the socket
+	actCastScan                     // scan the LAN for Chromecast devices, standalone
 	actHelp                         // print usage to stdout, exit 0
 	actUsageErr                     // print usage to stderr, exit 2 (unknown command)
 )
@@ -63,6 +64,12 @@ func decide(base string, args []string) decision {
 	switch {
 	case args[0] == "stats":
 		return decision{kind: actStats, args: args[1:]}
+	case args[0] == "cast":
+		// `cast` alone means `cast scan`; an unknown subaction is a usage error.
+		if len(args) == 1 || (len(args) == 2 && args[1] == "scan") {
+			return decision{kind: actCastScan}
+		}
+		return decision{kind: actUsageErr}
 	case args[0] == "version" || args[0] == "--version" || args[0] == "-v":
 		return decision{kind: actVersion}
 	case controlVerbs[args[0]]:
@@ -98,6 +105,9 @@ Commandes:
                       Construit le rapport d'écoute local (page HTML hors ligne).
                       --out écrit le rapport dans un fichier; --no-open
                       n'ouvre pas le navigateur.
+  cast [scan]         Cherche les appareils Chromecast sur le réseau local
+                      (mDNS) et les liste, un par ligne. Ne requiert pas
+                      d'instance lancée.
   version             Affiche la version
   help, -h, --help    Affiche cette aide
 
