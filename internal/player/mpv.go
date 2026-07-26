@@ -214,6 +214,17 @@ func (m *MPV) setInternalVolume(pct float64) bool {
 	return m.setPropDouble("volume", pct)
 }
 
+// getPropDouble synchronously reads a double property; ok=false if unavailable.
+func (m *MPV) getPropDouble(name string) (float64, bool) {
+	cn := C.CString(name)
+	defer C.free(unsafe.Pointer(cn))
+	var v C.double
+	if C.mpv_get_property(m.handle, cn, C.MPV_FORMAT_DOUBLE, unsafe.Pointer(&v)) < 0 {
+		return 0, false
+	}
+	return float64(v), true
+}
+
 // setPropDouble synchronously sets a double property; false if unavailable.
 func (m *MPV) setPropDouble(name string, v float64) bool {
 	cn := C.CString(name)

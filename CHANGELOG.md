@@ -30,6 +30,23 @@
   panneau (gtk_init, fip_build, Show → present, clic → page interactive),
   l'ouverture chaude et la fin d'OnReady
 ### Fixed
+- Le fondu enchaîné s'entend enfin : le `volume` interne de mpv applique un
+  gain cubique (`(v/100)³`, vérifié dans mpv 0.37), donc la courbe équal-power
+  envoyée telle quelle laissait la station entrante sous -30 dB pendant le
+  premier cinquième du fondu (un trou de silence perçu comme une coupure
+  sèche). Les rampes passent par la racine cubique inverse : le croisement se
+  fait désormais à -3 dB de chaque côté, sans creux
+- Zapping rapide pendant un fondu : le nouveau zap reprend la station en cours
+  à son volume partiel et la fond vers le silence, au lieu de la claquer à
+  plein volume (la coupure sèche entendue sur chaque enchaînement A→B→C)
+- Fils d'Ariane `player: crossfade:` dans le journal : décision du zap (fondu
+  ou chargement direct, avec la raison), délai avant l'audio entrant, cause de
+  fin de rampe (complète, annulée, coupure après délai) : un fondu raté sur le
+  terrain se diagnostique désormais à la lecture du log
+- Le panneau fond ses couleurs au zap : l'accent de station (règle d'en-tête,
+  bouton lecture, pastille sélectionnée) transitionne en 0.8 s via des
+  propriétés CSS typées (`@property`), en écho au fondu audio ;
+  `prefers-reduced-motion` coupe la transition
 - Clic impatient pendant la première ouverture : le second Activate est
   désormais ignoré tant que le Show initial s'initialise, au lieu d'un Hide
   qui pouvait doubler le present sur le thread GTK et désynchroniser l'état

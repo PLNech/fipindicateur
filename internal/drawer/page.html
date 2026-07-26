@@ -55,6 +55,21 @@
       color-scheme: dark;
     }
   }
+  /* Registering the accent pair as typed <color> properties lets the engine
+     interpolate them: a station zap then FADES the panel's color identity
+     (header rule, eyebrow, play button, selected chip's color-mix) instead of
+     snapping. 0.8s sits with the app's spirit: the audio fondu is seconds
+     long, the panel echoes it without lagging the click. Engines without
+     @property simply snap, the previous behaviour. */
+  @property --accent {
+    syntax: "<color>"; inherits: true; initial-value: #e2007a;
+  }
+  @property --accent-ink {
+    syntax: "<color>"; inherits: true; initial-value: #ffffff;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .panel { transition: none; }
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: transparent; }
   body {
@@ -66,6 +81,7 @@
   }
   .panel {
     --accent: var(--fip);
+    transition: --accent .8s ease, --accent-ink .8s ease;
     background: var(--bg);
     border: 1px solid var(--hairline);
     border-radius: 16px;

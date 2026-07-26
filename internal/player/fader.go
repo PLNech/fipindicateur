@@ -1,6 +1,7 @@
 package player
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"sync"
@@ -48,14 +49,25 @@ type Fader struct {
 
 // fade is one in-flight crossfade. cancel is closed (once) to request early
 // termination; done is closed by the fade goroutine when it has fully cleaned
-// up (snapped the incoming to full and closed the outgoing).
+// up (snapped the incoming to full and closed the outgoing). superseded is set
+// (before cancel closes, so the fade goroutine reads it safely after <-cancel)
+// when the cancellation comes from a NEWER zap: then the incoming keeps its
+// current partial volume instead of snapping to full, because the next fade
+// immediately takes it over as its outgoing and ramps it down from that level.
+// Snapping there was audible as a hard cut on every rapid A->B->C zap.
 type fade struct {
-	cancel chan struct{}
-	done   chan struct{}
-	once   sync.Once
+	cancel     chan struct{}
+	done       chan struct{}
+	once       sync.Once
+	superseded bool
 }
 
-func (fd *fade) requestCancel() { fd.once.Do(func() { close(fd.cancel) }) }
+func (fd *fade) requestCancel(supersede bool) {
+	fd.once.Do(func() {
+		fd.superseded = supersede
+		close(fd.cancel)
+	})
+}
 
 const (
 	// fadeTick is the ramp granularity. 50ms is imperceptible as steps yet
@@ -84,6 +96,58 @@ func equalPowerGains(t float64) (in, out float64) {
 	in = 100 * math.Sin(t*math.Pi/2)
 	out = 100 * math.Cos(t*math.Pi/2)
 	return in, out
+}
+
+// mpvVolForAmp maps a desired linear amplitude a in [0,1] to the mpv `volume`
+// property value (0..100) that produces it. mpv's internal softvol applies a
+// CUBIC gain: amplitude = (volume/100)^3 (player/audio.c, `gain = pow(gain, 3)`,
+// verified on mpv 0.37). Feeding the equal-power sin/cos values straight into
+// that knob therefore yielded sin^3/cos^3 amplitudes: the incoming station sat
+// below -30 dB for the first fifth of the fade and the summed power dipped
+// -6 dB midway, which the ear reads as "old station out, silence, new station
+// in": a broken fondu. The cube root undoes the knob's curve so the acoustic
+// crossfade is actually equal-power.
+func mpvVolForAmp(a float64) float64 {
+	if a <= 0 {
+		return 0
+	}
+	if a >= 1 {
+		return 100
+	}
+	return 100 * math.Cbrt(a)
+}
+
+// fadeVolumes returns the mpv `volume` values for the incoming and outgoing
+// handles at fade progress t in [0,1]. outStart is the outgoing handle's
+// `volume` at the start of the fade: normally 100, but lower when a rapid zap
+// superseded a fade mid-ramp; the down-ramp then starts from that level instead
+// of snapping up. Pure function, unit-tested without libmpv.
+func fadeVolumes(t, outStart float64) (in, out float64) {
+	ampIn, ampOut := equalPowerGains(t)
+	in = mpvVolForAmp(ampIn / 100)
+	// Scaling the outgoing amplitude by its start amplitude keeps the curve's
+	// shape; in the cubic volume domain that is a plain product:
+	// 100*cbrt((outStart/100)^3 * cos) == outStart*cbrt(cos).
+	out = outStart / 100 * mpvVolForAmp(ampOut/100)
+	return in, out
+}
+
+// zapDecision is the pure Play gate: crossfade only when a fade duration is
+// configured AND the current handle is audibly playing AND the target URL
+// differs (a genuine live station zap). Returns the decision and a loggable
+// reason. Initial start and resume arrive on a stopped handle; the hi-fi
+// quality toggle stops first (ui.toggleHiFi); so neither crossfades.
+func zapDecision(cross time.Duration, playing bool, curURL, url string) (crossfade bool, reason string) {
+	switch {
+	case cross <= 0:
+		return false, "plain load (crossfade disabled)"
+	case !playing:
+		return false, "plain load (not playing)"
+	case curURL == url:
+		return false, "plain load (same URL)"
+	default:
+		return true, fmt.Sprintf("crossfade over %s (live zap)", cross)
+	}
 }
 
 // newHandle builds an MPV whose callbacks forward to the facade only while it
@@ -173,7 +237,9 @@ func (f *Fader) SetCrossfade(d time.Duration) {
 // Any in-flight fade is cancelled first, so a Play arriving mid-fade takes over
 // cleanly.
 func (f *Fader) Play(url string) {
-	f.cancelFade()
+	// supersede=true: if a fade is running, its incoming keeps its partial
+	// volume and becomes THIS zap's outgoing, ramping down from there.
+	f.cancelFade(true)
 
 	f.mu.Lock()
 	cur := f.current
@@ -183,7 +249,9 @@ func (f *Fader) Play(url string) {
 		return
 	}
 
-	if cross > 0 && cur.IsPlaying() && cur.URL() != url {
+	crossfade, reason := zapDecision(cross, cur.IsPlaying(), cur.URL(), url)
+	log.Printf("player: crossfade: zap gate: %s", reason)
+	if crossfade {
 		f.startCrossfade(cur, url, cross)
 		return
 	}
@@ -209,6 +277,13 @@ func (f *Fader) startCrossfade(outgoing *MPV, url string, dur time.Duration) {
 	// Match the currently selected sink before any audio flows.
 	incoming.SetAudioDevice(device)
 
+	// The down-ramp starts from the outgoing's CURRENT internal volume: 100 at
+	// rest, lower when this zap superseded a fade mid-ramp (no snap-up).
+	outStart := 100.0
+	if v, ok := outgoing.getPropDouble("volume"); ok {
+		outStart = v
+	}
+
 	fd := &fade{cancel: make(chan struct{}), done: make(chan struct{})}
 	restart := make(chan struct{})
 
@@ -224,7 +299,7 @@ func (f *Fader) startCrossfade(outgoing *MPV, url string, dur time.Duration) {
 	// PLAYBACK_RESTART cannot be missed by the fade goroutine.
 	incoming.Play(url)
 
-	go f.fadeLoop(fd, incoming, outgoing, restart, dur)
+	go f.fadeLoop(fd, incoming, outgoing, restart, dur, outStart)
 }
 
 // fadeLoop waits for the incoming audio to flow, then ramps the equal-power
@@ -232,28 +307,36 @@ func (f *Fader) startCrossfade(outgoing *MPV, url string, dur time.Duration) {
 // early on cancellation or on a wait timeout (hard cut to the incoming). It
 // always snaps the incoming to full volume and closes the outgoing before
 // returning, and always closes fd.done so a waiting cancelFade unblocks.
-func (f *Fader) fadeLoop(fd *fade, incoming, outgoing *MPV, restart <-chan struct{}, dur time.Duration) {
+func (f *Fader) fadeLoop(fd *fade, incoming, outgoing *MPV, restart <-chan struct{}, dur time.Duration, outStart float64) {
 	defer close(fd.done)
 
-	finish := func() {
-		incoming.setInternalVolume(100)
+	finish := func(cause string) {
+		// A superseding zap takes the incoming over as its own outgoing at its
+		// current partial volume; snapping it to full here was the audible hard
+		// cut on rapid zaps. Every other exit leaves the incoming at full.
+		if !fd.superseded {
+			incoming.setInternalVolume(100)
+		}
 		outgoing.Close() // blocks until the outgoing event loop drains
 		f.clearActive(fd)
+		log.Printf("player: crossfade: %s", cause)
 	}
 
 	// 1) Wait for the incoming stream to actually produce audio.
+	waitT0 := time.Now()
 	select {
 	case <-restart:
+		log.Printf("player: crossfade: incoming audio after %s, ramping over %s (out from %.0f)",
+			time.Since(waitT0).Round(time.Millisecond), dur, outStart)
 	case <-fd.cancel:
-		finish()
+		finish("cancelled while waiting for incoming audio")
 		return
 	case <-time.After(fadeWaitTimeout):
-		log.Printf("player: crossfade: incoming did not start within %s, hard cut", fadeWaitTimeout)
-		finish()
+		finish(fmt.Sprintf("incoming did not start within %s, hard cut", fadeWaitTimeout))
 		return
 	}
 
-	// 2) Equal-power ramp.
+	// 2) Equal-power ramp (cubic-knob compensated, see mpvVolForAmp).
 	ticks := int(dur / fadeTick)
 	if ticks < 1 {
 		ticks = 1
@@ -263,17 +346,17 @@ func (f *Fader) fadeLoop(fd *fade, incoming, outgoing *MPV, restart <-chan struc
 	for i := 1; i <= ticks; i++ {
 		select {
 		case <-fd.cancel:
-			finish()
+			finish(fmt.Sprintf("cancelled mid-ramp at %d%%", i*100/ticks))
 			return
 		case <-ticker.C:
 		}
-		in, out := equalPowerGains(float64(i) / float64(ticks))
+		in, out := fadeVolumes(float64(i)/float64(ticks), outStart)
 		incoming.setInternalVolume(in)
 		outgoing.setInternalVolume(out)
 	}
 
 	// 3) Done: incoming at full, outgoing gone.
-	finish()
+	finish("ramp complete")
 }
 
 // clearActive resets the fade bookkeeping if fd is still the active fade (a
@@ -290,22 +373,23 @@ func (f *Fader) clearActive(fd *fade) {
 }
 
 // cancelFade requests cancellation of any running fade and blocks until its
-// goroutine has finished cleaning up (incoming snapped to full, outgoing
-// closed). Safe to call with no fade active and safe under concurrent callers.
-func (f *Fader) cancelFade() {
+// goroutine has finished cleaning up (outgoing closed; incoming snapped to full
+// unless supersede, see fade.superseded). Safe to call with no fade active and
+// safe under concurrent callers.
+func (f *Fader) cancelFade(supersede bool) {
 	f.mu.Lock()
 	fd := f.active
 	f.mu.Unlock()
 	if fd == nil {
 		return
 	}
-	fd.requestCancel()
+	fd.requestCancel(supersede)
 	<-fd.done
 }
 
 // Stop cancels any fade and stops the current handle.
 func (f *Fader) Stop() {
-	f.cancelFade()
+	f.cancelFade(false)
 	f.mu.Lock()
 	cur := f.current
 	f.mu.Unlock()
@@ -316,7 +400,7 @@ func (f *Fader) Stop() {
 
 // Close cancels any fade and tears down the current handle.
 func (f *Fader) Close() {
-	f.cancelFade()
+	f.cancelFade(false)
 	f.mu.Lock()
 	cur := f.current
 	f.current = nil
