@@ -13,7 +13,6 @@ import (
 
 	"fmt"
 
-	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/stats"
 	"github.com/PLNech/fipindicateur/internal/ui"
 	"github.com/PLNech/fipindicateur/internal/version"
@@ -43,6 +42,8 @@ func main() {
 		os.Exit(runCastScan())
 	case actDrawer:
 		os.Exit(runDrawer())
+	case actSelftest:
+		os.Exit(runSelftest())
 	case actLaunchTray:
 		// Fall through to the tray setup below.
 	}
@@ -61,15 +62,17 @@ func main() {
 
 	app := ui.New()
 
-	// Translate termination signals into a clean systray shutdown, which in
-	// turn runs onExit (mpv teardown, D-Bus close).
+	// Translate termination signals into a clean shutdown of the platform main
+	// loop, which in turn runs OnExit (mpv teardown, D-Bus close).
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		s := <-sig
 		log.Printf("received %s, shutting down", s)
-		systray.Quit()
+		ui.Quit()
 	}()
 
-	systray.Run(app.OnReady, app.OnExit)
+	// The platform main loop: systray on macOS/Windows; on Linux the SNI +
+	// drawer need no loop of their own, so Run waits on Quit.
+	ui.Run(app)
 }

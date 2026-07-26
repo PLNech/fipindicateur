@@ -2,18 +2,12 @@ package ui
 
 import (
 	"encoding/binary"
-
-	"fyne.io/systray"
 )
 
-// setTrayIcon is the single, platform-neutral chokepoint for handing bytes to
-// systray. It is the ONLY place `systray.SetIcon` is called in the tree (the
-// guard test in guard_test.go enforces that). App.setIcon dedupes and refuses
-// empty bytes before reaching here; this layer only adapts the byte format to
-// what the platform's tray expects, via encodeTrayIcon.
-func setTrayIcon(b []byte) {
-	systray.SetIcon(encodeTrayIcon(b))
-}
+// setTrayIcon (the single chokepoint handing icon bytes to the platform tray)
+// lives per platform: ui_menu.go feeds systray via encodeTrayIcon below;
+// ui_sni_linux.go feeds the hand-rolled StatusNotifierItem directly. This
+// file keeps the platform-neutral byte plumbing (PNG-in-ICO for Windows).
 
 // pngToICO wraps a PNG image in a minimal single-image ICO container. Windows'
 // systray hands icon bytes to LoadImageW, which wants an .ico; Vista and later

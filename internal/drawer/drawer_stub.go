@@ -25,5 +25,14 @@ func (d *Drawer) Show(state State) error {
 // Push is a no-op.
 func (d *Drawer) Push(state State) {}
 
+// SetView is a no-op.
+func (d *Drawer) SetView(view string) {}
+
+// Eval is a no-op.
+func (d *Drawer) Eval(script string) {}
+
+// SetWindowTitle is a no-op.
+func (d *Drawer) SetWindowTitle(title string) {}
+
 // Hide is a no-op.
 func (d *Drawer) Hide() {}

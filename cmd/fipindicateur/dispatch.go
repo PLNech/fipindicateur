@@ -14,6 +14,7 @@ const (
 	actControl                      // talk to the running instance over the socket
 	actCastScan                     // scan the LAN for Chromecast devices, standalone
 	actDrawer                       // open « le panneau » standalone with mock state (design iteration)
+	actSelftest                     // drawer --selftest: panel wiring self-test (real page, real webkit)
 	actHelp                         // print usage to stdout, exit 0
 	actUsageErr                     // print usage to stderr, exit 2 (unknown command)
 )
@@ -72,7 +73,13 @@ func decide(base string, args []string) decision {
 		}
 		return decision{kind: actUsageErr}
 	case args[0] == "drawer":
-		return decision{kind: actDrawer}
+		if len(args) == 2 && args[1] == "--selftest" {
+			return decision{kind: actSelftest}
+		}
+		if len(args) == 1 {
+			return decision{kind: actDrawer}
+		}
+		return decision{kind: actUsageErr}
 	case args[0] == "version" || args[0] == "--version" || args[0] == "-v":
 		return decision{kind: actVersion}
 	case controlVerbs[args[0]]:
@@ -113,7 +120,11 @@ Commandes:
                       d'instance lancée.
   drawer              Ouvre « le panneau » (le tiroir de contrôle rapide) seul,
                       avec un état factice, pour itérer sur son design (Linux).
-                      Échap ou perte de focus ferme la fenêtre.
+                      Échap ou perte de focus ferme la fenêtre. Des commandes
+                      sur stdin pilotent la maquette (view/hist/upcoming).
+  drawer --selftest   Vérifie le câblage du panneau : la vraie page dans le
+                      vrai webkit, chaque bouton cliqué, chaque commande
+                      attendue côté Go (voir make selftest; xvfb-run possible).
   version             Affiche la version
   help, -h, --help    Affiche cette aide
 

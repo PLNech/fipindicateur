@@ -58,7 +58,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: transparent; }
   body {
-    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
     color: var(--ink);
     padding: 10px; /* breathing room for the panel shadow */
     -webkit-user-select: none;
@@ -70,7 +70,7 @@
     border: 1px solid var(--hairline);
     border-radius: 16px;
     box-shadow: var(--shadow);
-    padding: 14px 20px 20px;
+    padding: 10px 16px 14px;
     overflow: hidden;
   }
   button {
@@ -79,7 +79,7 @@
   }
 
   /* header bar: view title + navigation (history, settings) + close */
-  .bar { display: flex; align-items: center; gap: 4px; margin-bottom: 12px; }
+  .bar { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
   .bar-title {
     font-size: 11px; font-weight: 700; letter-spacing: .14em;
     text-transform: uppercase; color: var(--ink-muted); flex: 1;
@@ -98,12 +98,12 @@
   /* now playing */
   .now { display: flex; gap: 12px; align-items: center; }
   .art {
-    width: 64px; height: 64px; border-radius: 12px; flex: none;
+    width: 52px; height: 52px; border-radius: 10px; flex: none;
     background: var(--accent); position: relative; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
   }
   .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .art svg { width: 28px; height: 28px; }
+  .art svg { width: 24px; height: 24px; }
   .meta { min-width: 0; flex: 1; }
   .eyebrow {
     font-size: 11px; font-weight: 700; letter-spacing: .12em;
@@ -114,47 +114,50 @@
     content: ""; width: 18px; height: 3px; border-radius: 2px;
     background: var(--accent);
   }
-  .title { font-size: 15px; font-weight: 650; margin-top: 3px;
+  .title { font-size: 14px; font-weight: 650; margin-top: 2px;
            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .artist { font-size: 13px; color: var(--ink-muted);
+  .artist { font-size: 12.5px; color: var(--ink-muted);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* taste (like / dislike): same consent model as the menu, the click IS it */
-  .taste { display: flex; gap: 6px; margin-top: 10px; }
+  .taste { display: flex; gap: 6px; margin-top: 8px; }
   .taste button {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12px; padding: 4px 12px; border-radius: 999px;
+    font-size: 12px; padding: 3px 10px; border-radius: 999px;
     border: 1px solid var(--hairline); color: var(--ink-muted);
     background: var(--surface); transition: background .12s ease, color .12s ease;
   }
   .taste button:hover:not(:disabled) { background: var(--hover); color: var(--ink); border-color: var(--ink-muted); }
   .taste button:disabled { opacity: .4; cursor: default; }
+  /* display:inline-flex above beats the UA [hidden] rule (same hazard as
+     #back[hidden]): restate it so the Écouter ailleurs pill can hide. */
+  .taste button[hidden] { display: none; }
   .taste button svg { width: 13px; height: 13px; }
   .taste button.flash { color: var(--accent); border-color: var(--accent); }
 
   /* transport + volume */
-  .transport { display: flex; gap: 14px; align-items: center; margin-top: 16px; }
+  .transport { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
   .play {
-    width: 48px; height: 48px; border-radius: 999px; flex: none;
+    width: 42px; height: 42px; border-radius: 999px; flex: none;
     background: var(--accent); color: var(--accent-ink, #fff);
     display: flex; align-items: center; justify-content: center;
     transition: transform .12s ease;
   }
   .play:hover { transform: scale(1.04); }
   .play:active { transform: scale(.94); }
-  .play svg { width: 20px; height: 20px; }
+  .play svg { width: 18px; height: 18px; }
   .vol { flex: 1; min-width: 0; }
   .vol-row { display: flex; justify-content: space-between; align-items: baseline; }
   .vol-label { font-size: 11px; font-weight: 700; letter-spacing: .1em;
                text-transform: uppercase; color: var(--ink-muted); }
   .vol-pct { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
   input[type=range] {
-    width: 100%; margin: 8px 0 0; accent-color: var(--accent);
+    width: 100%; margin: 5px 0 0; accent-color: var(--accent);
     height: 18px;
   }
   .muted-look input[type=range] { opacity: .35; }
   .mute {
-    width: 36px; height: 36px; border-radius: 999px; flex: none;
+    width: 32px; height: 32px; border-radius: 999px; flex: none;
     border: 1px solid var(--hairline); color: var(--ink-muted);
     display: flex; align-items: center; justify-content: center;
     transition: background .12s ease;
@@ -165,17 +168,40 @@
   .vol-note { font-size: 11px; color: var(--ink-muted); margin-top: 4px; min-height: 0; }
 
   /* sections */
-  .section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+  .section { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--hairline); }
   .section-label {
-    font-size: 11px; font-weight: 700; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 8px;
+    font-size: 10px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 6px;
   }
+  /* sub-groups inside a section (Sortie: local device vs network) */
+  .sub-label {
+    font-size: 10.5px; color: var(--ink-muted); margin: 6px 0 4px;
+  }
+  .sub-label:first-of-type { margin-top: 0; }
+
+  /* Sortie header: one-line summary, expands the device list on demand */
+  .out-head {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    min-height: 28px; border-radius: 8px; padding: 0 2px;
+    transition: background .12s ease;
+  }
+  .out-head:hover { background: var(--hover); }
+  .out-head .section-label { margin-bottom: 0; }
+  .out-current {
+    flex: 1; min-width: 0; text-align: right; font-size: 12px;
+    color: var(--ink-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .out-head svg { width: 14px; height: 14px; flex: none; color: var(--ink-muted);
+                  transition: transform .15s ease; }
+  .out-head[aria-expanded="true"] svg { transform: rotate(180deg); }
+  #outBody { margin-top: 6px; }
 
   /* output + station chips */
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
   .chip {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12.5px; padding: 5px 12px; border-radius: 999px;
+    font-size: 12px; padding: 3px 10px; border-radius: 999px;
     border: 1px solid var(--hairline); color: var(--ink);
     background: var(--surface); transition: background .12s ease;
   }
@@ -197,8 +223,8 @@
   .rows { display: flex; flex-direction: column; }
   .row {
     display: flex; align-items: center; gap: 10px; width: 100%;
-    text-align: left; padding: 9px 10px; border-radius: 10px;
-    font-size: 13.5px; transition: background .12s ease;
+    text-align: left; padding: 4px 10px; border-radius: 8px;
+    font-size: 13px; min-height: 28px; transition: background .12s ease;
   }
   button.row:hover { background: var(--hover); }
   .row .grow { flex: 1; min-width: 0; }
@@ -225,18 +251,29 @@
   .row[aria-checked="true"] .switch { background: var(--accent); border-color: var(--accent); }
   .row[aria-checked="true"] .switch::after { left: 18px; background: #fff; }
 
-  /* history list */
-  .hist-row { display: block; padding: 8px 10px; border-radius: 10px; }
+  /* history list (rows are buttons: a click opens the artist page) */
+  .hist-row { display: block; width: 100%; text-align: left; padding: 4px 10px; border-radius: 8px; min-height: 28px; }
   .hist-row + .hist-row { border-top: 1px solid var(--hairline); border-radius: 0 0 10px 10px; }
-  .hist-title { font-size: 13.5px; font-weight: 600;
+  button.hist-row { transition: background .12s ease; }
+  button.hist-row:hover { background: var(--hover); }
+  .hist-title { font-size: 12.5px; font-weight: 600;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hist-artist { font-size: 12px; color: var(--ink-muted);
-                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .empty { font-size: 13px; color: var(--ink-muted); padding: 14px 10px; text-align: center; }
+  .hist-artist { font-weight: 400; color: var(--ink-muted); }
+  .empty { font-size: 12.5px; color: var(--ink-muted); padding: 10px; text-align: center; }
+
+  /* crossfade slider row (Réglages) */
+  .fade-row { display: flex; align-items: center; gap: 10px; padding: 0 10px; }
+  .fade-row input[type=range] { flex: 1; margin: 0; }
+  .fade-val { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; min-width: 74px; text-align: right; }
+  .fade-hint { font-size: 10.5px; color: var(--ink-muted); margin: 4px 10px 0; }
+
+  /* the now-playing block opens the artist page when a track is known */
+  button.now { width: 100%; text-align: left; border-radius: 12px; }
+  button.now:not(:disabled):hover { background: var(--hover); }
 
   footer {
-    margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--hairline);
-    font-size: 11px; color: var(--ink-muted); display: flex; justify-content: space-between;
+    margin-top: 10px; padding-top: 7px; border-top: 1px solid var(--hairline);
+    font-size: 10px; color: var(--ink-muted); display: flex; justify-content: space-between;
   }
 </style>
 </head>
@@ -251,17 +288,18 @@
   </header>
 
   <section id="view-main">
-    <div class="now">
+    <button class="now" id="nowBtn" title="Ouvrir la page Wikipédia de l'artiste">
       <div class="art" id="art"></div>
       <div class="meta">
         <div class="eyebrow" id="stationName">FIP</div>
         <div class="title" id="trackTitle">En direct</div>
         <div class="artist" id="trackArtist"></div>
       </div>
-    </div>
+    </button>
     <div class="taste">
       <button id="like" title="Mémoriser que vous aimez ce titre (prefs.jsonl)"></button>
       <button id="dislike" title="Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)"></button>
+      <button id="listenLink" hidden title="Lien musique fourni par Radio France"><span>Écouter ailleurs</span></button>
     </div>
 
     <div class="transport">
@@ -278,8 +316,17 @@
     </div>
 
     <div class="section">
-      <div class="section-label">Sortie</div>
-      <div class="chips" id="outputs"></div>
+      <button class="out-head" id="outToggle" title="Choisir la sortie audio" aria-expanded="false">
+        <span class="section-label">Sortie</span>
+        <span class="out-current" id="outCurrent"></span>
+        <svg id="outChev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 10l3.5 4 3.5-4"/></svg>
+      </button>
+      <div id="outBody" hidden>
+        <div class="sub-label">Sur cet appareil</div>
+        <div class="chips" id="outputsLocal"></div>
+        <div class="sub-label">Sur le réseau</div>
+        <div class="chips" id="outputsNet"></div>
+      </div>
     </div>
 
     <div class="section">
@@ -290,10 +337,22 @@
 
   <section id="view-history" hidden>
     <div class="rows" id="histList"></div>
+    <div class="section" id="upcomingSection" hidden>
+      <div class="section-label">À venir</div>
+      <div class="rows" id="upcomingList"></div>
+    </div>
   </section>
 
   <section id="view-settings" hidden>
     <div class="rows" id="settingToggles"></div>
+    <div class="section">
+      <div class="section-label">Fondu enchaîné</div>
+      <div class="fade-row">
+        <input type="range" id="fade" min="0" max="10" step="1" value="0" aria-label="Durée du fondu entre stations">
+        <span class="fade-val" id="fadeVal"></span>
+      </div>
+      <div class="fade-hint">Durée du fondu entre stations (0 = coupure sèche)</div>
+    </div>
     <div class="section">
       <div class="section-label">Statistiques</div>
       <div class="rows">
@@ -309,6 +368,7 @@
         <button class="row" id="updateCheck"><span class="grow">Vérifier les mises à jour</span><span class="hint" id="verHint"></span></button>
         <button class="row" id="openFip"><span class="grow">FIP sur radiofrance.fr</span></button>
         <button class="row" id="openGithub"><span class="grow">GitHub · le fipindicateur</span></button>
+        <button class="row" id="restart"><span class="grow">Relancer</span></button>
         <button class="row danger" id="quit"><span class="grow">Quitter</span></button>
       </div>
     </div>
@@ -319,14 +379,46 @@
 
 <script>
 'use strict';
-let S = null;         // last state pushed by Go
-let dragging = false; // true while the finger owns the volume slider
-let view = 'main';    // 'main' | 'history' | 'settings'
+let S = null;             // last state pushed by Go
+let dragging = false;     // true while the finger owns the volume slider
+let fadeDragging = false; // same, for the crossfade slider
+let view = 'main';        // 'main' | 'history' | 'settings'
+let outputsOpen = false;  // Sortie device list expanded (collapsed by default)
+
+// ACTIONS is the complete user-command vocabulary this page can post: the
+// single greppable source TestDrawerActionsWired checks (two-way) against the
+// Go router, and send() refuses anything undeclared, so a new button cannot
+// ship without its Go handler failing the build.
+const ACTIONS = [
+  'toggle_play', 'volume', 'toggle_mute', 'station', 'output', 'audio_device',
+  'rescan', 'like', 'dislike', 'open_wiki', 'open_link', 'open_history',
+  'toggle_stats', 'stats_view', 'stats_folder', 'stats_clear', 'prefs_clear',
+  'toggle_hifi', 'crossfade', 'toggle_notif', 'toggle_show_notif',
+  'toggle_show_calendar', 'toggle_anim', 'toggle_hist_file',
+  'toggle_update_startup', 'toggle_play_on_start', 'toggle_autostart',
+  'update_check', 'restart', 'open_fip', 'open_github', 'quit',
+];
+// The drawer's own plumbing (consumed before the app router) plus the error
+// and selftest reporting channels.
+const INTERNAL_ACTIONS = ['ready', 'height', 'hide', 'js_error', 'selftest'];
 
 function send(cmd) {
+  if (!ACTIONS.includes(cmd.action) && !INTERNAL_ACTIONS.includes(cmd.action)) {
+    reportError('action non déclarée: ' + cmd.action);
+    return;
+  }
   try { window.webkit.messageHandlers.fip.postMessage(JSON.stringify(cmd)); }
   catch (e) { console.log('cmd', JSON.stringify(cmd)); } // standalone browser preview
 }
+
+// Any JS failure surfaces on the Go side (logged by the app, fatal in the
+// selftest): a render bug must never again be a silent blank view.
+function reportError(msg) {
+  try { window.webkit.messageHandlers.fip.postMessage(JSON.stringify({ action: 'js_error', key: String(msg) })); }
+  catch (e) { console.log('js_error', msg); }
+}
+window.onerror = function (msg, src, line) { reportError(msg + ' (' + line + ')'); };
+window.addEventListener('unhandledrejection', e => reportError('unhandled rejection: ' + e.reason));
 
 const svgPlay  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
 const svgPause = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"/></svg>';
@@ -373,6 +465,9 @@ function setView(v) {
 
 function renderBar() {
   document.getElementById('barTitle').textContent = viewTitles[view];
+  // Réglages already shows the version inline (verHint): dropping the footer
+  // there keeps the tallest view under the height cap.
+  document.querySelector('footer').hidden = view === 'settings';
   document.getElementById('back').hidden = view === 'main';
   document.getElementById('navHistory').classList.toggle('active', view === 'history');
   document.getElementById('navSettings').classList.toggle('active', view === 'settings');
@@ -412,9 +507,18 @@ const toggleDefs = [
   { key: 'stats', label: "Statistiques d'écoute (local)", action: 'toggle_stats' },
   { key: 'hifi', label: 'Haute qualité (AAC 192k)', action: 'toggle_hifi' },
   { key: 'notifications', label: 'Notifications', action: 'toggle_notif' },
+  { key: 'showNotifications', label: "Notifications d'émission", action: 'toggle_show_notif' },
+  { key: 'showCalendar', label: 'Afficher le calendrier', action: 'toggle_show_calendar' },
+  { key: 'animatedIcon', label: 'Icône animée', action: 'toggle_anim' },
+  { key: 'historyFile', label: 'Historique local (fichier)', action: 'toggle_hist_file' },
   { key: 'playOnStart', label: 'Lecture au lancement', action: 'toggle_play_on_start' },
   { key: 'autostart', label: 'Lancer au démarrage', action: 'toggle_autostart', gate: 'autostartSupported' },
+  { key: 'updateStartup', label: 'Vérifier les mises à jour au démarrage', action: 'toggle_update_startup' },
 ];
+
+function fadeLabel(secs) {
+  return secs === 0 ? 'Désactivé' : secs + ' s';
+}
 
 function renderSettings() {
   const box = document.getElementById('settingToggles');
@@ -435,6 +539,10 @@ function renderSettings() {
       b.addEventListener('click', () => send({ action: d.action }));
       return b;
     }));
+  // Crossfade: the slider tracks Go's value except while the finger owns it.
+  const secs = st.crossfadeSecs || 0;
+  if (!fadeDragging) document.getElementById('fade').value = secs;
+  document.getElementById('fadeVal').textContent = fadeLabel(fadeDragging ? +document.getElementById('fade').value : secs);
   document.getElementById('verHint').textContent = S.version || '';
 }
 
@@ -447,18 +555,40 @@ function renderHistory() {
     d.className = 'empty';
     d.textContent = 'Aucun titre récent';
     box.replaceChildren(d);
-    return;
+  } else {
+    box.replaceChildren(...rows.map((h, i) => {
+      // A row is a button: clicking it opens the artist page, like the
+      // Historique menu entries (open_history records KindOpenHistory).
+      // One line per track (title · artist) keeps the view compact.
+      const d = document.createElement('button');
+      d.className = 'hist-row';
+      d.title = "Ouvrir la page Wikipédia de l'artiste";
+      const t = document.createElement('div');
+      t.className = 'hist-title';
+      t.textContent = h.title || '';
+      if (h.artist) {
+        const a = document.createElement('span');
+        a.className = 'hist-artist';
+        a.textContent = ' · ' + h.artist;
+        t.appendChild(a);
+      }
+      d.append(t);
+      d.addEventListener('click', () => send({ action: 'open_history', value: i }));
+      return d;
+    }));
   }
-  box.replaceChildren(...rows.map(h => {
+
+  // « À venir »: the scheduled programmes (display only), under the recent
+  // tracks. Hidden when the calendar setting is off or nothing is scheduled.
+  const up = S.upcoming || [];
+  document.getElementById('upcomingSection').hidden = up.length === 0;
+  document.getElementById('upcomingList').replaceChildren(...up.map(u => {
     const d = document.createElement('div');
     d.className = 'hist-row';
     const t = document.createElement('div');
     t.className = 'hist-title';
-    t.textContent = h.title || '';
-    const a = document.createElement('div');
-    a.className = 'hist-artist';
-    a.textContent = h.artist || '';
-    d.append(t, a);
+    t.textContent = u.time ? u.time + ' · ' + (u.title || '') : (u.title || '');
+    d.append(t);
     return d;
   }));
 }
@@ -476,9 +606,10 @@ function render() {
 
   renderBar();
 
-  // now playing
+  // now playing: the track when known, else the programme on air (émissions
+  // without per-song titling), else the live placeholder
   document.getElementById('stationName').textContent = st.display;
-  document.getElementById('trackTitle').textContent = (S.track && S.track.title) || 'En direct';
+  document.getElementById('trackTitle').textContent = (S.track && S.track.title) || S.show || 'En direct';
   document.getElementById('trackArtist').textContent = (S.track && S.track.artist) || '';
   const art = document.getElementById('art');
   if (S.track && S.track.artwork) {
@@ -488,10 +619,12 @@ function render() {
     art.innerHTML = svgNote;
   }
 
-  // taste verdicts need a known track, like the menu items
+  // taste verdicts and the artist link need a known track, like the menu items
   const hasTrack = !!(S.track && S.track.title);
   document.getElementById('like').disabled = !hasTrack;
   document.getElementById('dislike').disabled = !hasTrack;
+  document.getElementById('nowBtn').disabled = !hasTrack;
+  document.getElementById('listenLink').hidden = !(hasTrack && S.track.hasLink);
 
   // transport: the button drives the ACTIVE sink (device when casting)
   const playing = S.cast && S.cast.active ? S.cast.playing : S.playing;
@@ -514,17 +647,33 @@ function render() {
   mute.classList.toggle('on', !!muted);
   document.getElementById('volWrap').classList.toggle('muted-look', !!muted);
 
-  // outputs
-  const outputs = document.getElementById('outputs');
-  outputs.replaceChildren(
-    chip('Cet ordinateur', { active: !casting, onclick: () => send({ action: 'output', value: -1 }) })
-  );
+  // outputs: a one-line summary (the active sink's name), expandable into two
+  // groups. « Sur cet appareil »: the local sinks (picking one while casting
+  // also brings playback home). « Sur le réseau »: the Chromecast devices
+  // from the last scan.
+  const curDev = (S.audioDevices || []).find(d => d.name === S.audioDevice);
+  document.getElementById('outCurrent').textContent =
+    casting ? S.cast.deviceName : ((curDev && curDev.label) || 'Automatique');
+  document.getElementById('outToggle').setAttribute('aria-expanded', outputsOpen ? 'true' : 'false');
+  document.getElementById('outBody').hidden = !outputsOpen;
+  const local = document.getElementById('outputsLocal');
+  local.replaceChildren(...(S.audioDevices || []).map(d =>
+    chip(d.label || d.name, {
+      active: !casting && d.name === S.audioDevice,
+      onclick: () => send({ action: 'audio_device', key: d.name }),
+    })));
+
+  const net = document.getElementById('outputsNet');
+  net.replaceChildren();
   (S.devices || []).forEach((name, i) => {
-    outputs.appendChild(chip(name, {
+    net.appendChild(chip(name, {
       active: casting && name === S.cast.deviceName,
       onclick: () => send({ action: 'output', value: i }),
     }));
   });
+  if ((S.devices || []).length === 0 && !S.scanning) {
+    net.appendChild(chip('Aucun appareil trouvé', { ghost: true, disabled: true }));
+  }
   const scan = chip(S.scanning ? 'Recherche…' : 'Rechercher', {
     ghost: true, disabled: !!S.scanning,
     title: 'Chercher les appareils Chromecast (mDNS)',
@@ -532,7 +681,7 @@ function render() {
   });
   scan.insertAdjacentHTML('afterbegin', svgScan);
   scan.firstChild.style.cssText = 'width:12px;height:12px;margin-right:5px';
-  outputs.appendChild(scan);
+  net.appendChild(scan);
 
   // station strip
   const stations = document.getElementById('stations');
@@ -553,6 +702,9 @@ function reportHeight() {
 }
 
 window.fipState = function (s) { S = (typeof s === 'string') ? JSON.parse(s) : s; render(); };
+// fipView lets Go land the panel on a named view (the tray icon's right
+// click opens straight onto Réglages).
+window.fipView = function (v) { if (viewTitles[v]) setView(v); };
 
 // --- static wiring -----------------------------------------------------
 document.getElementById('back').innerHTML = svgBack;
@@ -563,9 +715,15 @@ document.getElementById('like').innerHTML = svgHeart + '<span>J’aime</span>';
 document.getElementById('dislike').innerHTML = svgNope + '<span>Pas pour moi</span>';
 
 function hidePanel() {
-  view = 'main'; // next open lands on the main view
+  view = 'main';       // next open lands on the main view
+  outputsOpen = false; // and with the device list folded again
   send({ action: 'hide' });
 }
+
+document.getElementById('outToggle').addEventListener('click', () => {
+  outputsOpen = !outputsOpen;
+  render();
+});
 
 document.getElementById('close').addEventListener('click', hidePanel);
 document.getElementById('back').addEventListener('click', () => setView('main'));
@@ -583,6 +741,11 @@ document.getElementById('dislike').addEventListener('click', () => { send({ acti
 document.getElementById('play').addEventListener('click', () => send({ action: 'toggle_play' }));
 document.getElementById('mute').addEventListener('click', () => send({ action: 'toggle_mute' }));
 
+// Links out of the current track: the artist page (like the menu's "Voir
+// Wikipédia") and the Radio France music link when one exists.
+document.getElementById('nowBtn').addEventListener('click', () => send({ action: 'open_wiki' }));
+document.getElementById('listenLink').addEventListener('click', () => send({ action: 'open_link' }));
+
 document.getElementById('statsView').addEventListener('click', () => send({ action: 'stats_view' }));
 document.getElementById('statsFolder').addEventListener('click', () => send({ action: 'stats_folder' }));
 document.getElementById('statsClear').addEventListener('click', () =>
@@ -592,7 +755,18 @@ document.getElementById('prefsClear').addEventListener('click', () =>
 document.getElementById('updateCheck').addEventListener('click', () => send({ action: 'update_check' }));
 document.getElementById('openFip').addEventListener('click', () => send({ action: 'open_fip' }));
 document.getElementById('openGithub').addEventListener('click', () => send({ action: 'open_github' }));
+document.getElementById('restart').addEventListener('click', () => send({ action: 'restart' }));
 document.getElementById('quit').addEventListener('click', () => send({ action: 'quit' }));
+
+// Crossfade slider: the label follows the drag live; the value is committed
+// once on release ('change'), so Go records one KindCrossfade per adjustment.
+const fade = document.getElementById('fade');
+fade.addEventListener('pointerdown', () => { fadeDragging = true; });
+window.addEventListener('pointerup', () => { fadeDragging = false; });
+fade.addEventListener('input', () => {
+  document.getElementById('fadeVal').textContent = fadeLabel(+fade.value);
+});
+fade.addEventListener('change', () => send({ action: 'crossfade', value: +fade.value }));
 
 // The slider applies live but throttled (trailing edge), so a drag is a stream
 // of a few commands, not hundreds; Go records one event per applied value at

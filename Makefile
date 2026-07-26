@@ -54,6 +54,14 @@ run: ## Build and run
 test: ## Run tests
 	$(GO) test ./...
 
+# The panel wiring self-test drives the REAL page in the REAL webkit: every
+# button of every view clicked across scenario states, every command asserted
+# on the Go side, any JS error fatal. Kept out of `make test` because it needs
+# webkit2gtk and an X server (xvfb-run provides a headless one); CI and humans
+# call it explicitly.
+selftest: build ## Panel wiring self-test (real webkit; headless via xvfb-run)
+	xvfb-run -a ./$(BIN) drawer --selftest
+
 lint: ## Same checks CI runs: formatting, vet, tests, build, no em dashes
 	@test -z "$$(gofmt -l . | grep -v '/gen/')" || { echo "gofmt needed:"; gofmt -l . | grep -v '/gen/'; exit 1; }
 	@! grep -rIn --exclude-dir=.git --exclude-dir=.venv --exclude-dir=node_modules "$$(printf '\342\200\224')" . || { echo "em dash (U+2014) found, replace it (house style: middot, colon, parentheses)"; exit 1; }

@@ -39,6 +39,10 @@ static GtkWidget *fip_build(WebKitWebView **out_view, const char *html, int widt
 	gtk_window_set_skip_taskbar_hint(GTK_WINDOW(win), TRUE);
 	gtk_window_set_skip_pager_hint(GTK_WINDOW(win), TRUE);
 	gtk_window_set_keep_above(GTK_WINDOW(win), TRUE);
+	// The panel follows you: visible on every workspace, not only the one it
+	// was invoked from. Re-asserted at each present, as some WMs drop the
+	// sticky bit across hide/show cycles.
+	gtk_window_stick(GTK_WINDOW(win));
 	gtk_window_set_type_hint(GTK_WINDOW(win), GDK_WINDOW_TYPE_HINT_UTILITY);
 	gtk_window_set_default_size(GTK_WINDOW(win), width, height);
 
@@ -46,13 +50,23 @@ static GtkWidget *fip_build(WebKitWebView **out_view, const char *html, int widt
 	webkit_user_content_manager_register_script_message_handler(ucm, "fip");
 	GtkWidget *view = webkit_web_view_new_with_user_content_manager(ucm);
 
+	// Surface the page's console (including uncaught JS exceptions) on the
+	// process stdout: a render bug in the panel must be observable from the
+	// app log and the `fipindicateur drawer` harness, never a silent blank.
+	webkit_settings_set_enable_write_console_messages_to_stdout(
+		webkit_web_view_get_settings(WEBKIT_WEB_VIEW(view)), TRUE);
+
 	// Transparent window + webview background when a compositor is there, so
 	// the page's own rounded corners and shadow show through; without one the
-	// panel stays a clean opaque rectangle.
+	// panel stays a clean opaque rectangle. app_paintable is the load-bearing
+	// third leg: without it GTK fills the toplevel with the theme background
+	// even under an RGBA visual, which reads as opaque square corners around
+	// the page's rounded panel.
 	GdkScreen *screen = gtk_widget_get_screen(win);
 	GdkVisual *visual = gdk_screen_get_rgba_visual(screen);
 	if (visual != NULL && gdk_screen_is_composited(screen)) {
 		gtk_widget_set_visual(win, visual);
+		gtk_widget_set_app_paintable(win, TRUE);
 		GdkRGBA transparent = {1.0, 1.0, 1.0, 0.0};
 		webkit_web_view_set_background_color(WEBKIT_WEB_VIEW(view), &transparent);
 	}
@@ -78,6 +92,7 @@ static GtkWidget *fip_build(WebKitWebView **out_view, const char *html, int widt
 // never needs recomputing on resize.
 static void fip_present(GtkWidget *win, int width, int margin) {
 	gtk_widget_show(win);
+	gtk_window_stick(GTK_WINDOW(win)); // see fip_build: survive hide/show
 	GdkDisplay *dpy = gtk_widget_get_display(win);
 	GdkMonitor *mon = gdk_display_get_primary_monitor(dpy);
 	if (mon == NULL) mon = gdk_display_get_monitor(dpy, 0);
@@ -142,10 +157,11 @@ type Drawer struct {
 	onCommand func(Command)
 	onHide    func()
 
-	mu        sync.Mutex
-	lastState State
-	hasState  bool
-	started   bool // GTK goroutine launched (protects reading ready/initErr)
+	mu          sync.Mutex
+	lastState   State
+	hasState    bool
+	pendingView string // view requested before the page could take it
+	started     bool   // GTK goroutine launched (protects reading ready/initErr)
 
 	startOnce sync.Once
 	ready     chan struct{}
@@ -235,6 +251,103 @@ func (d *Drawer) Push(state State) {
 	d.runOnGTK(func() { d.evalStateLocked() })
 }
 
+// SetView asks the page to switch to a named view ("main", "history",
+// "settings"). Sticky until the page has run its script: a view requested
+// alongside the very first Show is applied right after the initial state
+// lands, so a right click can open straight onto Réglages.
+func (d *Drawer) SetView(view string) {
+	d.mu.Lock()
+	d.pendingView = view
+	started := d.started
+	d.mu.Unlock()
+	if !started {
+		return // applied by the page's "ready" dispatch after Show
+	}
+	select {
+	case <-d.ready:
+	default:
+		return
+	}
+	if d.initErr != nil {
+		return
+	}
+	d.runOnGTK(func() { d.evalViewLocked() })
+}
+
+// evalViewLocked pushes the pending view request, if any. GTK thread only
+// (the Locked suffix follows evalStateLocked's convention).
+func (d *Drawer) evalViewLocked() {
+	if !d.pageReady {
+		return // the "ready" dispatch will re-run this
+	}
+	d.mu.Lock()
+	view := d.pendingView
+	d.pendingView = ""
+	d.mu.Unlock()
+	if view == "" {
+		return
+	}
+	data, err := json.Marshal(view)
+	if err != nil {
+		return
+	}
+	script := C.CString("window.fipView && window.fipView(" + string(data) + ");")
+	C.fip_eval(d.view, script)
+	C.free(unsafe.Pointer(script))
+}
+
+// Eval runs a script in the page once it is ready. Test/dev plumbing (the
+// selftest drives the page's buttons through it); the app itself pushes state
+// only through Push/SetView.
+func (d *Drawer) Eval(script string) {
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	if !started {
+		return
+	}
+	select {
+	case <-d.ready:
+	default:
+		return
+	}
+	if d.initErr != nil {
+		return
+	}
+	d.runOnGTK(func() {
+		if !d.pageReady {
+			return
+		}
+		cs := C.CString(script)
+		C.fip_eval(d.view, cs)
+		C.free(unsafe.Pointer(cs))
+	})
+}
+
+// SetWindowTitle renames the toplevel. The dev harness uses it so a leftover
+// mock window can never pass for the real panel.
+func (d *Drawer) SetWindowTitle(title string) {
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	if !started {
+		return
+	}
+	select {
+	case <-d.ready:
+	default:
+		return
+	}
+	if d.initErr != nil {
+		return
+	}
+	t := C.CString(title)
+	d.runOnGTK(func() {
+		C.gtk_window_set_title((*C.GtkWindow)(unsafe.Pointer(d.win)), t)
+		C.free(unsafe.Pointer(t))
+	})
+}
+
 // Hide withdraws the panel (it stays resident for an instant reopen).
 func (d *Drawer) Hide() {
 	d.mu.Lock()
@@ -292,6 +405,7 @@ func (d *Drawer) dispatch(cmd Command) {
 	case "ready":
 		d.pageReady = true
 		d.evalStateLocked()
+		d.evalViewLocked()
 	case "height":
 		// Content-driven height, reported by the page after each render.
 		h := cmd.Value

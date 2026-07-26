@@ -1,9 +1,12 @@
-// Package ui builds the system-tray menu and wires together the player,
-// metadata, MPRIS and notifications.
+// Package ui wires together the tray presence, the player, metadata, MPRIS
+// and notifications. The user-facing skin is platform-split: on Linux a
+// hand-rolled StatusNotifierItem plus « le panneau » (the drawer) are the
+// whole UI (ui_sni_linux.go); elsewhere fyne/systray builds the classic tray
+// menu (ui_menu.go). This file is the shared core: state, chokepoints,
+// handlers and telemetry.
 package ui
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -12,13 +15,10 @@ import (
 	"log"
 	"math"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/cast"
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/drawer"
@@ -113,53 +113,52 @@ type App struct {
 	drawerDark  bool
 	drawerShown bool
 
-	// menu items
-	mNow           *systray.MenuItem
-	mShow          *systray.MenuItem // current programme (émission) on air; hidden when none
-	mVoirWiki      *systray.MenuItem
-	mVoirLink      *systray.MenuItem
-	mLike          *systray.MenuItem
-	mDislike       *systray.MenuItem
-	mPlay          *systray.MenuItem
-	stationMI      map[string]*systray.MenuItem
-	histMI         []*systray.MenuItem
-	mCalendar      *systray.MenuItem   // calendar submenu container; hidden when disabled
-	calMI          []*systray.MenuItem // pre-allocated calendar slots
-	mHiFi          *systray.MenuItem
-	mNotif         *systray.MenuItem
-	mShowNotif     *systray.MenuItem
-	mShowCalendar  *systray.MenuItem
-	mAuto          *systray.MenuItem
-	mPlayOnStart   *systray.MenuItem
-	mHistFile      *systray.MenuItem
-	mAnim          *systray.MenuItem
-	audioMI        map[string]*systray.MenuItem // audio-output items, keyed by device name ("auto" = automatic)
-	mStats         *systray.MenuItem
-	mStatsClear    *systray.MenuItem
-	mPrefsClear    *systray.MenuItem
-	mUpdateStartup *systray.MenuItem
-	mCastLocal     *systray.MenuItem   // "Cet ordinateur", checked when not casting
-	mCastNone      *systray.MenuItem   // disabled placeholder when no device was found
-	mCastScan      *systray.MenuItem   // "Rechercher les appareils"
-	castMI         []*systray.MenuItem // pre-allocated device slots
-	mVolume        *systray.MenuItem
-	mMute          *systray.MenuItem
-	volMI          map[int]*systray.MenuItem
-	mCrossfade     *systray.MenuItem
-	crossfadeMI    map[int]*systray.MenuItem // preset checkboxes; nil in zenity-slider mode
+	// audioDevs is mpv's output-device enumeration, cached once at startup:
+	// the menu's "Sortie audio" submenu and the panel's « Sur cet appareil »
+	// section both render from it.
+	audioDevs []player.AudioDevice
+
+	// menu items (menuItem is *systray.MenuItem off Linux; on Linux a nil-safe
+	// no-op stand-in, since the drawer replaced the menu there).
+	mNow           *menuItem
+	mShow          *menuItem // current programme (émission) on air; hidden when none
+	mVoirWiki      *menuItem
+	mVoirLink      *menuItem
+	mLike          *menuItem
+	mDislike       *menuItem
+	mPlay          *menuItem
+	stationMI      map[string]*menuItem
+	histMI         []*menuItem
+	mCalendar      *menuItem   // calendar submenu container; hidden when disabled
+	calMI          []*menuItem // pre-allocated calendar slots
+	mHiFi          *menuItem
+	mNotif         *menuItem
+	mShowNotif     *menuItem
+	mShowCalendar  *menuItem
+	mAuto          *menuItem
+	mPlayOnStart   *menuItem
+	mHistFile      *menuItem
+	mAnim          *menuItem
+	audioMI        map[string]*menuItem // audio-output items, keyed by device name ("auto" = automatic)
+	mStats         *menuItem
+	mStatsClear    *menuItem
+	mPrefsClear    *menuItem
+	mUpdateStartup *menuItem
+	mCastLocal     *menuItem   // "Cet ordinateur", checked when not casting
+	mCastNone      *menuItem   // disabled placeholder when no device was found
+	mCastScan      *menuItem   // "Rechercher les appareils"
+	castMI         []*menuItem // pre-allocated device slots
+	mVolume        *menuItem
+	mMute          *menuItem
+	volMI          map[int]*menuItem
+	mCrossfade     *menuItem
+	crossfadeMI    map[int]*menuItem // preset checkboxes; nil in zenity-slider mode
 
 	// dialogOpen guards against launching two zenity dialogs at once (the volume
 	// slider and the crossfade slider share it). A click while one is open is
 	// ignored. Guarded by a.mu.
 	dialogOpen bool
 }
-
-// volumePresets are the quick-pick volume levels in the tray menu.
-var volumePresets = []int{10, 25, 50, 75, 100}
-
-// crossfadePresets are the quick-pick crossfade durations (seconds) for the
-// fallback submenu shown when zenity is unavailable. 0 = hard cut.
-var crossfadePresets = []int{0, 2, 4, 6}
 
 // nowLabelMinInterval is the floor between two "now playing" label pushes to
 // the tray. livemeta polls are naturally minutes apart, but an ICY burst (or a
@@ -175,12 +174,13 @@ func New() *App {
 		meta:      metadata.NewManager(),
 		wiki:      wiki.NewResolver(),
 		rec:       events.NewRecorder(cfg.Stats),
-		stationMI: map[string]*systray.MenuItem{},
+		stationMI: map[string]*menuItem{},
 	}
 }
 
-// OnReady is the systray onReady callback: it builds everything and starts
-// playing the last station.
+// OnReady builds everything and starts playing the last station. Called by
+// Run at the head of the platform main loop (systray's onReady callback off
+// Linux; directly on Linux).
 func (a *App) OnReady() {
 	a.current = stations.ByKey(a.cfg.Station)
 
@@ -197,6 +197,10 @@ func (a *App) OnReady() {
 	a.nowThrottle = newThrottle(nowLabelMinInterval, func(label string) {
 		a.mNow.SetTitle(label)
 		a.mNow.SetTooltip(label)
+		// On Linux the label lives on the SNI itself (title + tooltip); the
+		// menu-item calls above are nil-safe no-ops there, and this one is a
+		// no-op elsewhere.
+		a.setTrayNowLabel(label)
 	})
 
 	a.player = &player.Fader{
@@ -217,6 +221,12 @@ func (a *App) OnReady() {
 	// Restore the persisted audio sink. SetAudioDevice maps ""->"auto", so an
 	// unconditional call is harmless when no device was ever chosen.
 	a.player.SetAudioDevice(a.cfg.AudioDevice)
+	// Enumerate the output devices once for both skins (menu submenu, panel
+	// section). mpv's list is stable for a session; a failed enumeration
+	// leaves the slice empty and the UIs fall back to a single Automatique.
+	if devs, ok := a.player.AudioDeviceList(); ok {
+		a.audioDevs = devs
+	}
 
 	if ins, err := mpris.Connect(a); err != nil {
 		if errors.Is(err, mpris.ErrAlreadyRunning) {
@@ -234,7 +244,7 @@ func (a *App) OnReady() {
 	a.notif = notify.New()
 	a.anim.app = a
 
-	a.buildMenu()
+	a.buildUI()
 	if a.mpris != nil {
 		a.mpris.SetVolume(float64(a.cfg.Volume) / 100)
 	}
@@ -299,273 +309,7 @@ func (a *App) OnExit() {
 	if a.notif != nil {
 		a.notif.Close()
 	}
-}
-
-func (a *App) buildMenu() {
-	a.mNow = systray.AddMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
-	a.on(a.mNow, events.KindOpenWiki, a.openNow)
-
-	// The programme (émission) currently on air. Display-only (disabled), hidden
-	// until a show is playing. Shows exist only on the main antenna.
-	a.mShow = systray.AddMenuItem("", "Émission en cours sur l'antenne")
-	a.mShow.Disable()
-	a.mShow.Hide()
-
-	voir := systray.AddMenuItem("Voir…", "Liens pour ce titre")
-	a.mVoirWiki = voir.AddSubMenuItem("Wikipédia (artiste)", "Chercher l'artiste sur fr.wikipedia.org")
-	a.on(a.mVoirWiki, events.KindOpenWiki, a.openNow)
-	a.mVoirLink = voir.AddSubMenuItem("Écouter ailleurs (lien FIP)", "Lien musique fourni par Radio France")
-	a.mVoirLink.Disable()
-	a.on(a.mVoirLink, events.KindOpenLink, a.openNowLink)
-
-	// Taste signals: an explicit verdict on the current track. Unlike the events
-	// log, prefs has no opt-in gate: the click itself is the consent (see
-	// internal/prefs). The a.on chokepoint records the behaviour (KindLike/
-	// KindDislike, station only, no track identity); the handler snapshots the
-	// track into prefs.jsonl. Both are no-ops when nothing is playing.
-	a.mLike = systray.AddMenuItem("J'aime ce morceau", "Mémoriser que vous aimez ce titre (prefs.jsonl)")
-	a.mLike.Disable() // enabled once a track is known (see onNowPlaying)
-	a.on(a.mLike, events.KindLike, func() { a.recordTaste(prefs.Like) })
-	a.mDislike = systray.AddMenuItem("Pas pour moi", "Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)")
-	a.mDislike.Disable()
-	a.on(a.mDislike, events.KindDislike, func() { a.recordTaste(prefs.Dislike) })
-
-	systray.AddSeparator()
-	a.mPlay = systray.AddMenuItem("⏸ Pause", "Lecture / pause")
-	// Play/pause is state-dependent: setPlayingUI records the resulting
-	// play/pause event (so media keys and MPRIS are captured too), hence "".
-	a.on(a.mPlay, "", a.togglePlay)
-
-	// « Le panneau »: the quick-control drawer. On Linux (drawer.Available,
-	// a build-tagged constant) it REPLACES the volume submenu below; other
-	// platforms keep the submenu and never see this item. The entry is a
-	// toggle (show when hidden, hide when shown), so the kind is recorded at
-	// source: toggleDrawer records KindDrawerOpen only when it actually opens.
-	if drawer.Available {
-		panel := systray.AddMenuItem("Panneau de contrôle", "Afficher ou masquer le panneau de contrôle")
-		a.on(panel, "", a.toggleDrawer)
-	}
-
-	// Volume submenu: only where the panel is not available (macOS/Windows).
-	// Volume stays measurable there through the same setters; on Linux the
-	// panel drives the very same chokepoints.
-	if !drawer.Available {
-		a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
-		a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
-		a.on(a.mMute, "", a.toggleMute) // toggleMute records the resulting state
-		a.volMI = map[int]*systray.MenuItem{}
-		for _, pct := range volumePresets {
-			it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
-			a.volMI[pct] = it
-			p := pct
-			a.on(it, "", func() { a.setVolume(p) }) // setVolume records the level
-		}
-		// A real slider, when zenity is present. Absent on macOS/Windows and
-		// minimal installs, so the item is only added when the binary exists (no
-		// dead item). The resulting volume change is the measurable action,
-		// recorded once at source on OK inside runVolumeSlider, so this click
-		// carries no Kind.
-		if zenityAvailable() {
-			slider := a.mVolume.AddSubMenuItem("Régler au curseur…", "Curseur de volume (zenity)")
-			a.on(slider, "", a.openVolumeSlider)
-		}
-	}
-
-	// Radios
-	radios := systray.AddMenuItem("Radios", "Choisir une webradio")
-	for _, s := range stations.All {
-		it := radios.AddSubMenuItemCheckbox(s.Display, s.Slug, s.Key == a.current.Key)
-		a.stationMI[s.Key] = it
-		key := s.Key
-		a.on(it, "", func() { a.setStation(key) }) // startStation records the from->to transition
-	}
-	fipItem := radios.AddSubMenuItem("FIP sur radiofrance.fr", fipURL)
-	a.on(fipItem, events.KindOpenFip, func() { open.URL(fipURL) })
-
-	// Diffuser sur…: cast the antenna to a Chromecast speaker. Devices are
-	// discovered fresh each run, nothing persisted; the slots are
-	// pre-allocated because systray cannot remove items once added.
-	castMenu := systray.AddMenuItem("Diffuser sur…", "Diffuser la station sur un appareil Chromecast")
-	a.mCastLocal = castMenu.AddSubMenuItemCheckbox("Cet ordinateur", "Lecture locale (arrête la diffusion)", true)
-	// State-dependent: stopCasting records cast_stop at source only when a
-	// cast was actually active, so a redundant click logs nothing.
-	a.on(a.mCastLocal, "", func() { a.stopCasting(true) })
-	a.castMI = make([]*systray.MenuItem, castSlots)
-	for i := 0; i < castSlots; i++ {
-		it := castMenu.AddSubMenuItemCheckbox("", "", false)
-		it.Hide()
-		a.castMI[i] = it
-		idx := i
-		// State-dependent: startCast records cast_start at source once the
-		// device accepted the stream (a failed cast logs nothing).
-		a.on(it, "", func() { a.castToDevice(idx) })
-	}
-	a.mCastNone = castMenu.AddSubMenuItem("Aucun appareil trouvé", "Aucun Chromecast détecté sur le réseau local")
-	a.mCastNone.Disable()
-	a.mCastScan = castMenu.AddSubMenuItem("Rechercher les appareils", "Chercher les Chromecast sur le réseau (mDNS)")
-	// Discovery is ambient plumbing, not a listening behaviour: the
-	// measurable actions here are cast_start/cast_stop, recorded at source.
-	a.on(a.mCastScan, "", a.rescanCast)
-
-	// Historique
-	hist := systray.AddMenuItem("Historique", "Titres récents")
-	a.histMI = make([]*systray.MenuItem, historySlots)
-	for i := 0; i < historySlots; i++ {
-		it := hist.AddSubMenuItem("", "")
-		it.Hide()
-		a.histMI[i] = it
-		idx := i
-		a.on(it, events.KindOpenHistory, func() { a.openHistory(idx) })
-	}
-
-	// Calendrier: the upcoming programmes on the antenna (station 7 only). The
-	// slots are display-only (no click telemetry needed); the whole submenu is
-	// hidden when the calendar setting is off or nothing is scheduled.
-	a.mCalendar = systray.AddMenuItem("Calendrier", "Prochaines émissions sur l'antenne")
-	a.calMI = make([]*systray.MenuItem, calendarSlots)
-	for i := 0; i < calendarSlots; i++ {
-		it := a.mCalendar.AddSubMenuItem("", "")
-		it.Disable()
-		it.Hide()
-		a.calMI[i] = it
-	}
-	// Start hidden: refreshCalendarMenu reveals it once programmes are scheduled
-	// and the setting is on (so the webradios never show an empty submenu).
-	a.mCalendar.Hide()
-
-	// Réglages
-	settings := systray.AddMenuItem("Réglages", "Options")
-	a.mHiFi = settings.AddSubMenuItemCheckbox("Haute qualité (AAC 192k)", "", a.cfg.HiFi)
-	a.on(a.mHiFi, "", a.toggleHiFi)
-	// Fondu enchaîné (crossfade on a live station zap). With zenity a single item
-	// opens a 0..10s slider; without it, a preset-checkbox submenu is the fallback
-	// (macOS / minimal installs). Either way setCrossfade records KindCrossfade at
-	// source, so the a.on click carries no Kind.
-	if zenityAvailable() {
-		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, true), "Durée du fondu entre stations (curseur zenity)")
-		a.on(a.mCrossfade, "", a.openCrossfadeSlider)
-	} else {
-		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, false), "Durée du fondu entre stations")
-		a.crossfadeMI = map[int]*systray.MenuItem{}
-		for _, secs := range crossfadePresets {
-			it := a.mCrossfade.AddSubMenuItemCheckbox(crossfadePresetLabel(secs), "", secs == a.cfg.CrossfadeSecs)
-			a.crossfadeMI[secs] = it
-			s := secs
-			a.on(it, "", func() { a.setCrossfade(s) }) // setCrossfade records KindCrossfade at source
-		}
-	}
-	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
-	a.on(a.mNotif, "", a.toggleNotif)
-	a.mShowNotif = settings.AddSubMenuItemCheckbox("Notifications d'émission", "Prévenir au début d'une émission sur l'antenne", a.cfg.ShowNotifications)
-	a.on(a.mShowNotif, "", a.toggleShowNotif)
-	a.mShowCalendar = settings.AddSubMenuItemCheckbox("Afficher le calendrier", "Lister les prochaines émissions dans le menu", a.cfg.ShowCalendar)
-	a.on(a.mShowCalendar, "", a.toggleShowCalendar)
-	// Launch at login is XDG-only (writes ~/.config/autostart/*.desktop); hide
-	// it where config.SetAutostart is a no-op (macOS and other non-Linux).
-	if config.AutostartSupported {
-		a.mAuto = settings.AddSubMenuItemCheckbox("Lancer au démarrage", "", a.cfg.Autostart)
-		a.on(a.mAuto, "", a.toggleAutostart)
-	}
-	// Lecture au lancement: whether launching also starts the stream. Off by
-	// default (autostart is not autoplay): the tray tunes and indicates the
-	// antenna silently, and you press play when you want sound.
-	a.mPlayOnStart = settings.AddSubMenuItemCheckbox("Lecture au lancement", "Démarrer la lecture au lancement (sinon l'antenne est en pause)", a.cfg.PlayOnStart)
-	a.on(a.mPlayOnStart, "", a.togglePlayOnStart)
-	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
-	a.on(a.mHistFile, "", a.toggleHistFile)
-	a.mAnim = settings.AddSubMenuItemCheckbox("Icône animée", "Barres qui suivent le niveau audio", a.cfg.AnimatedIcon)
-	a.on(a.mAnim, "", a.toggleAnim)
-
-	// Sortie audio: pick the output sink through mpv's audio-device property,
-	// so no pavucontrol (Linux) or macOS audio panel is needed. mpv enumerates
-	// the devices cross-platform; the list already carries an "auto" entry.
-	audio := settings.AddSubMenuItem("Sortie audio", "Choisir la sortie audio")
-	a.audioMI = map[string]*systray.MenuItem{}
-	cur := a.cfg.AudioDevice
-	if cur == "" {
-		cur = "auto" // empty config means mpv's automatic default
-	}
-	if devs, ok := a.player.AudioDeviceList(); ok && len(devs) > 0 {
-		for _, dev := range devs {
-			label := dev.Description
-			if dev.Name == "auto" {
-				label = "Automatique" // friendlier than mpv's "Autodetect device"
-			} else if label == "" {
-				label = dev.Name // fall back to the raw name when unlabeled
-			}
-			it := audio.AddSubMenuItemCheckbox(label, dev.Name, dev.Name == cur)
-			a.audioMI[dev.Name] = it
-			name := dev.Name
-			a.on(it, events.KindAudioDevice, func() { a.setAudioDevice(name) })
-		}
-	} else {
-		// Enumeration failed or is empty: keep a single Automatique entry so the
-		// submenu is never blank and the user can still reset to the default.
-		it := audio.AddSubMenuItemCheckbox("Automatique", "auto", cur == "auto")
-		a.audioMI["auto"] = it
-		a.on(it, events.KindAudioDevice, func() { a.setAudioDevice("auto") })
-	}
-
-	// Statistiques d'écoute: opt-in (default off), local-only. The toggle
-	// gates the recorder; the submenu lets you see, locate and delete the data.
-	a.mStats = settings.AddSubMenuItemCheckbox("Statistiques d'écoute (local)", "Journal d'actions local pour vos statistiques (events.jsonl)", a.cfg.Stats)
-	a.on(a.mStats, "", a.toggleStats)
-	statsMenu := settings.AddSubMenuItem("Statistiques", "Voir et gérer vos statistiques d'écoute")
-	mStatsView := statsMenu.AddSubMenuItem("Voir le rapport", "Ouvrir le rapport d'écoute dans le navigateur")
-	a.on(mStatsView, events.KindStatsView, a.viewStats)
-	mStatsFolder := statsMenu.AddSubMenuItem("Ouvrir le dossier de données", "Dossier ~/.local/share/fipindicateur")
-	a.on(mStatsFolder, "", a.openDataDir)
-	a.mStatsClear = statsMenu.AddSubMenuItem("Effacer les statistiques…", "Supprimer events.jsonl (l'historique des titres n'est pas touché)")
-	a.on(a.mStatsClear, "", a.clearStatsConfirm)
-	// Taste verdicts (J'aime / Pas pour moi) persist to a separate file,
-	// prefs.jsonl, with its own consent. It gets its own delete affordance so
-	// the "see / edit / delete" promise covers every local log.
-	a.mPrefsClear = statsMenu.AddSubMenuItem("Effacer mes goûts…", "Supprimer prefs.jsonl (vos J'aime / Pas pour moi)")
-	a.on(a.mPrefsClear, "", a.clearPrefsConfirm)
-
-	systray.AddSeparator()
-	about := systray.AddMenuItem("À propos", "Ouvrir la page du projet")
-	a.on(about, events.KindOpenAbout, func() { open.URL(repoURL) })
-	ver := systray.AddMenuItem("le fipindicateur "+version.String(), "Version installée")
-	ver.Disable()
-	// Mises à jour: "Vérifier maintenant" is the on-demand check; the checkbox
-	// is the opt-in startup check. Both off + never clicking = never checks.
-	maj := systray.AddMenuItem("Mises à jour", "Vérifier les nouvelles versions")
-	checkNow := maj.AddSubMenuItem("Vérifier maintenant", "Comparer avec la dernière release sur GitHub")
-	a.on(checkNow, events.KindUpdateCheck, a.checkUpdates)
-	a.mUpdateStartup = maj.AddSubMenuItemCheckbox("Vérifier au démarrage", "Un contrôle discret au lancement (sinon jamais)", a.cfg.UpdateStartup)
-	a.on(a.mUpdateStartup, "", a.toggleUpdateStartup)
-	relancer := systray.AddMenuItem("Relancer", "Redémarrer le fipindicateur (recharge la dernière version installée)")
-	a.on(relancer, events.KindRestart, a.restart)
-	quit := systray.AddMenuItem("Quitter", "Fermer le fipindicateur")
-	a.on(quit, events.KindQuit, func() { systray.Quit() })
-
-	systray.SetTitle("")
-	systray.SetTooltip("le fipindicateur")
-}
-
-// on wires a menu item's click to fn and, for a fixed-kind action, records the
-// event automatically. This is the "measurable by design" chokepoint: every
-// clickable item goes through here, so an action cannot be added without a
-// telemetry decision. A kind of "" means the handler records its own event at
-// source (state-dependent actions like play/pause, volume, station change).
-//
-// Invariant (enforced by TestSingleOnClickCallSite): the only onClick loop in
-// this package lives below. Add clickable items via a.on, never onClick.
-func (a *App) on(mi *systray.MenuItem, kind events.Kind, fn func()) {
-	go a.onClick(mi.ClickedCh, func() {
-		if kind != "" {
-			a.rec.Record(events.Event{Kind: kind, Station: a.current.Key})
-		}
-		fn()
-	})
-}
-
-// onClick loops over a menu item's click channel, running fn each time.
-func (a *App) onClick(ch <-chan struct{}, fn func()) {
-	for range ch {
-		fn()
-	}
+	a.teardownUI()
 }
 
 // startStation switches to a station: stop, load new URL, restart metadata.
@@ -1243,114 +987,6 @@ func clampPct(pct int) int {
 	return pct
 }
 
-// --- zenity dialogs (volume slider, crossfade slider) ---
-
-// zenityAvailable reports whether the zenity binary is on PATH. GNOME/most Linux
-// desktops ship it; macOS, Windows and minimal installs do not, so the slider
-// items are only added when it exists (no dead menu entry).
-func zenityAvailable() bool {
-	_, err := exec.LookPath("zenity")
-	return err == nil
-}
-
-// acquireDialog claims the single zenity dialog slot, returning true on success.
-// A false result means a dialog is already open and the caller must do nothing.
-// Pair every true with a releaseDialog (deferred).
-func (a *App) acquireDialog() bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.dialogOpen {
-		return false
-	}
-	a.dialogOpen = true
-	return true
-}
-
-func (a *App) releaseDialog() {
-	a.mu.Lock()
-	a.dialogOpen = false
-	a.mu.Unlock()
-}
-
-// openVolumeSlider launches the zenity volume slider off the tray goroutine.
-// A second click while one is open is ignored (single dialog at a time).
-func (a *App) openVolumeSlider() {
-	if !a.acquireDialog() {
-		log.Printf("ui: a zenity dialog is already open, ignoring volume slider")
-		return
-	}
-	start := a.cfg.Volume
-	go func() {
-		defer a.releaseDialog()
-		a.runVolumeSlider(start)
-	}()
-}
-
-// runVolumeSlider runs `zenity --scale --print-partial` and applies each live
-// drag value to the player immediately, WITHOUT recording an event or saving
-// config (no telemetry/disk spam while dragging). On OK (exit 0) it commits:
-// one KindVolume event at the final value plus one config save. On Cancel/Esc/
-// close (non-zero exit) it reverts to the volume that was current when the
-// dialog opened (apply + UI sync, no event, no save). External pavucontrol
-// changes during the drag flow through onExternalVolume; last writer wins.
-func (a *App) runVolumeSlider(start int) {
-	cmd := exec.Command("zenity", "--scale",
-		"--title", "FIP · Volume",
-		"--text", "Volume de lecture",
-		"--min-value", "0",
-		"--max-value", "100",
-		"--step", "1",
-		"--value", strconv.Itoa(start),
-		"--print-partial",
-	)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		log.Printf("ui: volume slider: stdout pipe: %v", err)
-		return
-	}
-	if err := cmd.Start(); err != nil {
-		log.Printf("ui: volume slider: start: %v", err)
-		return
-	}
-
-	last := start
-	sc := bufio.NewScanner(stdout)
-	for sc.Scan() {
-		v, perr := strconv.Atoi(strings.TrimSpace(sc.Text()))
-		if perr != nil {
-			continue
-		}
-		v = clampPct(v)
-		last = v
-		a.applyVolumeLive(v) // player + menu + MPRIS, no event, no save
-	}
-
-	if err := cmd.Wait(); err == nil {
-		// OK: state is already applied live; record exactly one event and persist.
-		a.cfg.Volume = clampPct(last)
-		a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: a.cfg.Volume})
-		a.save()
-		a.applyVolumeUI()
-	} else {
-		// Cancel/Esc/close: revert to the pre-dialog level, silently.
-		a.applyVolumeLive(start)
-	}
-}
-
-// applyVolumeLive applies a volume to the player, MPRIS and the menu WITHOUT
-// recording an event or saving config. It sets a.cfg.Volume BEFORE SetVolume so
-// the ao-volume observer echo is swallowed by onExternalVolume's equal-value
-// guard (the same trick setVolume uses). Used for slider drag ticks and revert.
-func (a *App) applyVolumeLive(pct int) {
-	pct = clampPct(pct)
-	a.cfg.Volume = pct
-	a.player.SetVolume(float64(pct))
-	if a.mpris != nil {
-		a.mpris.SetVolume(float64(pct) / 100)
-	}
-	a.applyVolumeUI()
-}
-
 // --- crossfade duration ---
 
 // crossfadeTitle is the label for the "Fondu enchaîné" menu item: it always
@@ -1409,45 +1045,6 @@ func (a *App) setCrossfade(secs int) {
 	a.save()
 	a.player.SetCrossfade(time.Duration(secs) * time.Second)
 	a.applyCrossfadeUI()
-}
-
-// openCrossfadeSlider launches the zenity crossfade-duration slider off the tray
-// goroutine, sharing the single-dialog guard with the volume slider.
-func (a *App) openCrossfadeSlider() {
-	if !a.acquireDialog() {
-		log.Printf("ui: a zenity dialog is already open, ignoring crossfade slider")
-		return
-	}
-	start := a.cfg.CrossfadeSecs
-	go func() {
-		defer a.releaseDialog()
-		a.runCrossfadeSlider(start)
-	}()
-}
-
-// runCrossfadeSlider runs `zenity --scale` over 0..10s. On OK (exit 0) it commits
-// the chosen value via setCrossfade (which records the single KindCrossfade
-// event). On Cancel/Esc/close (non-zero exit) it does nothing. No live-apply:
-// crossfade only takes effect at the next zap, so a per-tick apply would be
-// pointless here.
-func (a *App) runCrossfadeSlider(start int) {
-	out, err := exec.Command("zenity", "--scale",
-		"--title", "FIP · Fondu enchaîné",
-		"--text", "Durée du fondu entre stations (secondes, 0 = coupure sèche)",
-		"--min-value", "0",
-		"--max-value", "10",
-		"--step", "1",
-		"--value", strconv.Itoa(start),
-	).Output()
-	if err != nil {
-		return // non-zero exit = Cancel/Esc/close: do nothing
-	}
-	v, perr := strconv.Atoi(strings.TrimSpace(string(out)))
-	if perr != nil {
-		log.Printf("ui: crossfade slider: unparsable value %q: %v", strings.TrimSpace(string(out)), perr)
-		return
-	}
-	a.setCrossfade(v)
 }
 
 func (a *App) toggleHistFile() {
@@ -1715,9 +1312,9 @@ func (a *App) onCastError(err error) {
 
 // --- le panneau (quick-control drawer) ---
 
-// toggleDrawer is the "Panneau de contrôle" menu entry: it shows « le
-// panneau » when hidden and hides it when shown. The drawer is built lazily
-// on first open and stays resident afterwards (hidden, instant to
+// toggleDrawer shows « le panneau » when hidden and hides it when shown; on
+// Linux it is the tray icon's Activate (left click). The drawer is built
+// lazily on first open and stays resident afterwards (hidden, instant to
 // re-present). KindDrawerOpen is recorded at source, only on an actual open
 // (hiding is not an open). The desktop color-scheme is re-probed at each
 // open, so a theme flip lands on the next show.
@@ -1759,6 +1356,67 @@ func (a *App) onDrawerHidden() {
 	a.mu.Unlock()
 }
 
+// openDrawerSettings is the tray icon's ContextMenu (right click): the panel
+// opens (or stays open) and lands on the Réglages view, the closest thing to
+// the old right-click menu. KindDrawerOpen is recorded only on an actual
+// open, like toggleDrawer.
+func (a *App) openDrawerSettings() {
+	dark := drawer.DarkPreferred()
+	a.mu.Lock()
+	if a.drawer == nil {
+		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+	}
+	d := a.drawer
+	shown := a.drawerShown
+	if !shown {
+		a.drawerShown = true
+		a.drawerDark = dark
+	}
+	a.mu.Unlock()
+
+	// SetView is sticky until the page is ready, so ordering with Show is
+	// safe on the very first open.
+	d.SetView("settings")
+	if shown {
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindDrawerOpen, Station: a.current.Key})
+	go func() {
+		if err := d.Show(a.drawerState()); err != nil {
+			log.Printf("ui: panneau: %v", err)
+			a.onDrawerHidden()
+		}
+	}()
+}
+
+// scrollVolume is the tray icon's Scroll: a vertical wheel notch steps the
+// ACTIVE sink's volume (the cast device while casting, mpv otherwise), like
+// the panel's slider. On GNOME a wheel-up arrives as a negative vertical
+// delta; only the sign is trusted (hosts scale deltas differently). The
+// resulting change is recorded at its usual source (setVolume /
+// setCastVolume), and an equal-value step (already at 0 or 100) records
+// nothing.
+func (a *App) scrollVolume(delta int, orientation string) {
+	if orientation != "vertical" || delta == 0 {
+		return
+	}
+	step := scrollVolumeStep
+	if delta > 0 {
+		step = -scrollVolumeStep
+	}
+	if sess := a.castSession(); sess != nil {
+		if v, ok := sess.ReceiverVolume(); ok {
+			a.setCastVolume(sess, clampPct(int(math.Round(v.Level*100))+step))
+		}
+		return
+	}
+	a.setVolume(clampPct(a.cfg.Volume + step))
+}
+
+// scrollVolumeStep is the volume change (percent) per wheel notch on the tray
+// icon.
+const scrollVolumeStep = 5
+
 // drawerStations is the station strip data, straight from internal/stations
 // (official brand colors included).
 func drawerStations() []drawer.Station {
@@ -1784,33 +1442,111 @@ func (a *App) drawerState() drawer.State {
 	dark := a.drawerDark
 	// The history view shows the same recent-tracks ring as the menu's
 	// Historique submenu (refreshHistoryMenu): titles and artists, most
-	// recent first. Display only; it never touches the events log.
+	// recent first. Clicking a row opens the artist page (open_history).
 	hist := make([]drawer.HistoryEntry, len(a.history))
 	for i, h := range a.history {
 		hist[i] = drawer.HistoryEntry{Title: h.Title, Artist: h.Artist}
 	}
+	// Upcoming programmes for the « À venir » section (display only), same
+	// data and cap as the menu's Calendrier, gated on the same setting.
+	var upcoming []drawer.Upcoming
+	if a.cfg.ShowCalendar {
+		for i, s := range a.upcoming {
+			if i >= calendarSlots {
+				break
+			}
+			u := drawer.Upcoming{Title: s.Title}
+			if !s.Start.IsZero() {
+				u.Time = s.Start.Local().Format("15:04")
+			}
+			upcoming = append(upcoming, u)
+		}
+	}
+	var showTitle string
+	if np.Show != nil {
+		showTitle = np.Show.Title
+	}
 	a.mu.Unlock()
 
+	// Local output devices for « Sur cet appareil »: the cached mpv
+	// enumeration, with the same labels the menu uses; a failed enumeration
+	// degrades to the single Automatique entry. mpv lists every backend, so
+	// the same physical sink appears once per backend and the alsa family
+	// adds plugin pseudo-devices (rate converters, JACK bridges): where a
+	// submenu could afford the full list, the panel keeps auto + the best
+	// backend's sinks (pipewire, else pulse, else everything), deduplicated
+	// by label. The selected device is always kept, so a sink chosen through
+	// another backend still shows as active.
+	backend := ""
+	for _, want := range []string{"pipewire", "pulse"} {
+		for _, dev := range a.audioDevs {
+			if dev.Name == want || strings.HasPrefix(dev.Name, want+"/") {
+				backend = want
+				break
+			}
+		}
+		if backend != "" {
+			break
+		}
+	}
+	audio := make([]drawer.AudioDevice, 0, len(a.audioDevs)+1)
+	seen := map[string]bool{}
+	for _, dev := range a.audioDevs {
+		selected := dev.Name == a.cfg.AudioDevice
+		inBackend := dev.Name == backend || strings.HasPrefix(dev.Name, backend+"/")
+		if backend != "" && dev.Name != "auto" && !inBackend && !selected {
+			continue
+		}
+		label := dev.Description
+		if dev.Name == "auto" {
+			label = "Automatique"
+		} else if label == "" {
+			label = dev.Name
+		}
+		if seen[label] && !selected {
+			continue
+		}
+		seen[label] = true
+		audio = append(audio, drawer.AudioDevice{Name: dev.Name, Label: label})
+	}
+	if len(audio) == 0 {
+		audio = append(audio, drawer.AudioDevice{Name: "auto", Label: "Automatique"})
+	}
+	curAudio := a.cfg.AudioDevice
+	if curAudio == "" {
+		curAudio = "auto"
+	}
+
 	st := drawer.State{
-		Dark:     dark,
-		Station:  a.current.Key,
-		Playing:  a.player != nil && a.player.IsPlaying(),
-		Volume:   a.cfg.Volume,
-		Muted:    a.cfg.Mute,
-		Devices:  devs,
-		Scanning: scanning,
-		Track:    drawer.Track{Title: np.Title, Artist: np.Artist, Artwork: np.CoverURL},
-		Stations: drawerStations(),
+		Dark:         dark,
+		Station:      a.current.Key,
+		Playing:      a.player != nil && a.player.IsPlaying(),
+		Volume:       a.cfg.Volume,
+		Muted:        a.cfg.Mute,
+		Devices:      devs,
+		Scanning:     scanning,
+		AudioDevices: audio,
+		AudioDevice:  curAudio,
+		Track:        drawer.Track{Title: np.Title, Artist: np.Artist, Artwork: np.CoverURL, HasLink: np.Link != ""},
+		Show:         showTitle,
+		Stations:     drawerStations(),
 		Settings: drawer.Settings{
 			Stats:              a.cfg.Stats,
 			HiFi:               a.cfg.HiFi,
 			Notifications:      a.cfg.Notifications,
+			ShowNotifications:  a.cfg.ShowNotifications,
+			ShowCalendar:       a.cfg.ShowCalendar,
+			AnimatedIcon:       a.cfg.AnimatedIcon,
+			HistoryFile:        a.cfg.HistoryFile,
+			UpdateStartup:      a.cfg.UpdateStartup,
 			PlayOnStart:        a.cfg.PlayOnStart,
 			Autostart:          a.cfg.Autostart,
 			AutostartSupported: config.AutostartSupported,
+			CrossfadeSecs:      a.cfg.CrossfadeSecs,
 		},
-		History: hist,
-		Version: version.String(),
+		History:  hist,
+		Upcoming: upcoming,
+		Version:  version.String(),
 	}
 	if sess != nil {
 		st.Cast = drawer.Cast{Active: true, DeviceName: castName, Playing: sess.MediaPlaying()}
@@ -1889,6 +1625,29 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 		}
 	case "rescan":
 		a.rescanCast()
+	case "audio_device":
+		// A local sink pick from « Sur cet appareil »: same kind the menu item
+		// records via a.on. Picking a local output while casting also means
+		// "play here": stop the cast (records cast_stop at source) and resume.
+		a.rec.Record(events.Event{Kind: events.KindAudioDevice, Station: a.current.Key})
+		if a.castSession() != nil {
+			a.stopCasting(true)
+		}
+		a.setAudioDevice(c.Key)
+	case "crossfade":
+		a.setCrossfade(c.Value) // records KindCrossfade at source
+
+	// Links out of the current track and the history rows: same fixed kinds
+	// their menu twins record via a.on.
+	case "open_wiki":
+		a.rec.Record(events.Event{Kind: events.KindOpenWiki, Station: a.current.Key})
+		a.openNow()
+	case "open_link":
+		a.rec.Record(events.Event{Kind: events.KindOpenLink, Station: a.current.Key})
+		a.openNowLink()
+	case "open_history":
+		a.rec.Record(events.Event{Kind: events.KindOpenHistory, Station: a.current.Key})
+		a.openHistory(c.Value)
 
 	// Taste verdicts: the click IS the consent, exactly like the menu items.
 	// The a.on chokepoint records the kind for the menu twin; here the record
@@ -1910,6 +1669,16 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 		a.toggleHiFi()
 	case "toggle_notif":
 		a.toggleNotif()
+	case "toggle_show_notif":
+		a.toggleShowNotif()
+	case "toggle_show_calendar":
+		a.toggleShowCalendar()
+	case "toggle_anim":
+		a.toggleAnim()
+	case "toggle_hist_file":
+		a.toggleHistFile()
+	case "toggle_update_startup":
+		a.toggleUpdateStartup()
 	case "toggle_play_on_start":
 		a.togglePlayOnStart()
 	case "toggle_autostart":
@@ -1930,6 +1699,10 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 	case "update_check":
 		a.rec.Record(events.Event{Kind: events.KindUpdateCheck, Station: a.current.Key})
 		a.checkUpdates()
+	case "restart":
+		a.rec.Record(events.Event{Kind: events.KindRestart, Station: a.current.Key})
+		a.restart()
+		return // restart quits: no state push into teardown
 	case "open_fip":
 		a.rec.Record(events.Event{Kind: events.KindOpenFip, Station: a.current.Key})
 		open.URL(fipURL)
@@ -1938,8 +1711,13 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 		open.URL(repoURL)
 	case "quit":
 		a.rec.Record(events.Event{Kind: events.KindQuit, Station: a.current.Key})
-		systray.Quit()
+		quitApp()
 		return // no state push into teardown
+
+	// The page's error trap: any JS exception or undeclared action lands here
+	// so a broken render is loud in the app log, never a silent blank view.
+	case "js_error":
+		log.Printf("ui: panneau: erreur JS: %s", c.Key)
 	default:
 		log.Printf("ui: panneau: commande inconnue %q", c.Action)
 	}
@@ -2159,7 +1937,7 @@ func (a *App) restart() {
 		log.Printf("ui: restart: relaunch failed: %v", err)
 		return
 	}
-	systray.Quit() // clean teardown: records app_stop, closes mpv and D-Bus
+	quitApp() // clean teardown: records app_stop, closes mpv and D-Bus
 }
 
 // checkUpdates runs an on-demand update check off the UI goroutine.
