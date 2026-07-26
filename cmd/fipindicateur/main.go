@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"fmt"
@@ -41,7 +42,11 @@ func main() {
 	case actCastScan:
 		os.Exit(runCastScan())
 	case actDrawer:
-		os.Exit(runDrawer())
+		theme := ""
+		if len(d.args) == 1 {
+			theme = strings.TrimPrefix(d.args[0], "--")
+		}
+		os.Exit(runDrawer(theme))
 	case actSelftest:
 		os.Exit(runSelftest())
 	case actLaunchTray:

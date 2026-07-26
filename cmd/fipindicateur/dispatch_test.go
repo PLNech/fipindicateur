@@ -53,6 +53,10 @@ func TestDecide(t *testing.T) {
 		// drawer: the standalone design-iteration window.
 		{"drawer", "fipindicateur", []string{"drawer"}, decision{kind: actDrawer}},
 		{"drawer via fip", "fip", []string{"drawer"}, decision{kind: actDrawer}},
+		{"drawer dark", "fipindicateur", []string{"drawer", "--dark"}, decision{kind: actDrawer, args: []string{"--dark"}}},
+		{"drawer light", "fipindicateur", []string{"drawer", "--light"}, decision{kind: actDrawer, args: []string{"--light"}}},
+		{"drawer selftest", "fipindicateur", []string{"drawer", "--selftest"}, decision{kind: actSelftest}},
+		{"drawer unknown flag", "fipindicateur", []string{"drawer", "--nope"}, decision{kind: actUsageErr}},
 
 		// Unknown subcommand: usage error (exit 2), never the tray, for both names.
 		{"unknown via fipindicateur", "fipindicateur", []string{"frobnicate"}, decision{kind: actUsageErr}},

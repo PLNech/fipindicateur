@@ -82,13 +82,21 @@ func mockState() drawer.State {
 // running tray, a stream or a Chromecast. Commands from the page are echoed
 // to stdout and applied to the mock state (so the whole UI is clickable), and
 // the process blocks until the window closes (Escape or the ✕ button).
-func runDrawer() int {
+// theme is "dark", "light" or "": the flags force a skin regardless of the
+// desktop preference, so a headless CI display captures both deterministically.
+func runDrawer(theme string) int {
 	if !drawer.Available {
 		fmt.Fprintln(os.Stderr, "le panneau n'est disponible que sous Linux")
 		return 1
 	}
 
 	state := mockState()
+	switch theme {
+	case "dark":
+		state.Dark = true
+	case "light":
+		state.Dark = false
+	}
 
 	done := make(chan struct{})
 	var d *drawer.Drawer

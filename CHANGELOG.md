@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased · Le panneau
+## v0.5.0 · 2026-07-26 · Le panneau
 
 ### Added
 - **« Le panneau »**, a branded quick-control drawer (Linux/GNOME): a
@@ -9,11 +9,10 @@
   light/dark following the desktop). Now playing with the station's brand
   color and artwork, play/pause, a real 0-100 volume slider with mute, a
   « Sortie » picker (this computer + Chromecast devices, rescan), and the 13
-  stations as colored chips. Opened from the menu (« Panneau de contrôle »);
-  Escape or a click elsewhere hides it, and it stays resident for an instant
-  reopen. The old volume preset submenu is gone on Linux (macOS/Windows keep
-  it); every panel action flows through the same measurable chokepoints as
-  the menu.
+  stations as colored chips. Opened from the tray icon; Escape or a click
+  elsewhere hides it, and it stays resident for an instant reopen. The old
+  volume preset submenu is gone on Linux (macOS/Windows keep it); every panel
+  action flows through the same measurable chokepoints as the menu.
 - **Cast-aware volume and transport.** While casting, the panel's slider and
   mute drive the DEVICE's own volume, quantized to its stepInterval and
   displayed from RECEIVER_STATUS, never invented: on an AV receiver
@@ -22,8 +21,33 @@
   PAUSE/PLAY on the device's media session while casting (new events
   cast_pause/cast_resume), the local player otherwise. The menu and media-key
   semantics are unchanged (play while casting still brings the music home).
-- `fipindicateur drawer`: open the panel standalone with mock state, for
-  design iteration.
+- `fipindicateur drawer [--dark|--light]`: open the panel standalone with
+  mock state, for design iteration; the flags force a theme regardless of the
+  desktop preference (useful headless, e.g. CI captures).
+
+### Changed
+- **The panel IS the interface on Linux.** The tray icon is now a hand-rolled
+  StatusNotifierItem over godbus, with no DBusMenu and no popup menu at all:
+  left-click toggles the panel, middle-click toggles play/pause, scrolling
+  adjusts the volume, right-click opens the réglages view. Under GNOME the
+  appindicator extension delivers the left-click activation on DOUBLE-click
+  only (its constraint, documented, not ours to fix). fyne/systray now builds
+  for macOS/Windows only; those targets keep the classic menu UI.
+- Full menu parity moved into the panel: audio outputs merged into a single
+  « Sortie » view (« Sur cet appareil » / « Sur le réseau »), crossfade and
+  the « À venir » programme joined the réglages and main views, and the main
+  view compacted by 37%. The panel gains true compositor transparency, sticks
+  across workspaces, fixes the historique CSS overflow, and hooks the WebKit
+  console so page errors land in the app log.
+
+### Infra
+- The panel test belt: `TestDrawerActionsWired` keeps every drawer action
+  wired through the telemetry chokepoint, and `fipindicateur drawer
+  --selftest` (aka `make selftest`) drives 350 scripted interactions through
+  the real page in the real webkit, headless via xvfb.
+- CI: Go module caching on every job; a `drawer-visual` job runs the wiring
+  self-test under xvfb, then captures the panel's three views in light and
+  dark as a `drawer-screenshots` artifact (14-day retention).
 
 ### Packaging
 - The .deb now depends on libwebkit2gtk-4.1-0; the AUR packages on

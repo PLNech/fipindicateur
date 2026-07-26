@@ -79,6 +79,12 @@ func decide(base string, args []string) decision {
 		if len(args) == 1 {
 			return decision{kind: actDrawer}
 		}
+		// --dark / --light force a theme regardless of the desktop preference,
+		// so headless captures (CI screenshots under xvfb) cover both,
+		// deterministically.
+		if len(args) == 2 && (args[1] == "--dark" || args[1] == "--light") {
+			return decision{kind: actDrawer, args: args[1:]}
+		}
 		return decision{kind: actUsageErr}
 	case args[0] == "version" || args[0] == "--version" || args[0] == "-v":
 		return decision{kind: actVersion}
@@ -118,8 +124,11 @@ Commandes:
   cast [scan]         Cherche les appareils Chromecast sur le réseau local
                       (mDNS) et les liste, un par ligne. Ne requiert pas
                       d'instance lancée.
-  drawer              Ouvre « le panneau » (le tiroir de contrôle rapide) seul,
+  drawer [--dark|--light]
+                      Ouvre « le panneau » (le tiroir de contrôle rapide) seul,
                       avec un état factice, pour itérer sur son design (Linux).
+                      --dark / --light forcent le thème, quel que soit le
+                      bureau (utile en headless, ex. CI).
                       Échap ou perte de focus ferme la fenêtre. Des commandes
                       sur stdin pilotent la maquette (view/hist/upcoming).
   drawer --selftest   Vérifie le câblage du panneau : la vraie page dans le

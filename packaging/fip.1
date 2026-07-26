@@ -70,9 +70,18 @@ instance.
 alone behaves as
 .BR "cast scan" .
 .TP
-.B drawer
+.BR "drawer " [ \-\-dark | \-\-light ]
 Open « le panneau » (the quick-control drawer) standalone with mock state, for
 design iteration (Linux only). Escape or losing focus closes it.
+.BR \-\-dark " / " \-\-light
+force a theme regardless of the desktop preference (useful headless, e.g.
+under xvfb).
+.TP
+.B drawer \-\-selftest
+Run the panel wiring self-test: the real page in the real webkit, every
+control exercised, every expected command asserted on the Go side. Headless
+via
+.BR xvfb-run "; see also " "make selftest" .
 .TP
 .B version
 Print the build version and exit.

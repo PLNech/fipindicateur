@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true # module + build cache, keyed on go.sum
       - name: Install libmpv and webkit2gtk
         run: sudo apt-get update && sudo apt-get install -y libmpv-dev libwebkit2gtk-4.1-dev
       - name: gofmt
@@ -37,6 +38,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true # module + build cache, keyed on go.sum
       - name: Install mpv
         run: brew install mpv
       # Portability canary for the future macOS target. If this fails, fix the
@@ -57,6 +59,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true # module + build cache, keyed on go.sum
       - name: Install mingw-w64 cross toolchain and 7z
         run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64 p7zip-full
       - name: Cache libmpv dev drop
@@ -80,4 +83,55 @@ jobs:
           path: |
             build/windows/fipindicateur.exe
             build/windows/libmpv-2.dll
+          if-no-files-found: error
+
+  drawer-visual:
+    # The panel belt: the 350-interaction wiring self-test (the real page in
+    # the real webkit, headless under xvfb), then a screenshot pass over the
+    # drawer's three views in both themes, uploaded for human review.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true # module + build cache, keyed on go.sum
+      - name: Install libmpv, webkit2gtk, xvfb and imagemagick
+        run: sudo apt-get update && sudo apt-get install -y libmpv-dev libwebkit2gtk-4.1-dev xvfb imagemagick
+      - name: Panel wiring self-test (xvfb)
+        run: make selftest
+      - name: Capture drawer screenshots (light and dark)
+        run: |
+          set -euo pipefail
+          mkdir -p shots
+          # One xvfb per theme: launch the design harness (mock state, branded
+          # « maquette »), drive its stdin to switch views, grab the root
+          # window. --light/--dark force the theme (deterministic headless).
+          for theme in light dark; do
+            flag="--$theme"
+            xvfb-run -a --server-args='-screen 0 1280x900x24' bash -c '
+              set -euo pipefail
+              theme="$1"; flag="$2"
+              mkfifo drive.fifo
+              ./fipindicateur drawer $flag < drive.fifo > "drawer-$theme.log" 2>&1 &
+              pid=$!
+              exec 9> drive.fifo   # hold the driver open: EOF would end the harness stdin loop
+              sleep 6              # let webkit settle and paint
+              for view in main history settings; do
+                echo "view $view" >&9
+                sleep 2
+                import -window root "shots/drawer-$theme-$view.png"
+              done
+              exec 9>&-
+              kill "$pid" 2>/dev/null || true
+              rm -f drive.fifo
+            ' _ "$theme" "$flag"
+          done
+          ls -l shots
+      - name: Upload drawer screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: drawer-screenshots
+          path: shots/*.png
+          retention-days: 14
           if-no-files-found: error
