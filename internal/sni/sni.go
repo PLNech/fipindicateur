@@ -1,11 +1,13 @@
 //go:build linux
 
 // Package sni exposes one StatusNotifierItem on the session bus, hand-rolled
-// over godbus: the tray icon without any menu. On Linux the drawer (« le
-// panneau ») is the single UI, so the item deliberately publishes no DBusMenu
-// (ItemIsMenu=false, Menu points at a dead path): the host forwards clicks and
-// scrolls as method calls (Activate, ContextMenu, SecondaryActivate, Scroll)
-// and the app decides what they mean.
+// over godbus. On Linux the drawer (« le panneau ») is the single UI: the host
+// forwards clicks and scrolls as method calls (Activate, ContextMenu,
+// SecondaryActivate, Scroll) and the app decides what they mean. A minimal
+// one-entry DBusMenu (« Ouvrir le panneau », see dbusmenu.go) exists solely so
+// a SINGLE left click does something on GNOME, whose AppIndicator extension
+// reserves Activate for double clicks and only reacts to a single click by
+// toggling a non-empty menu.
 //
 // The wire conventions (premultiplied ARGB32 pixmaps, registration payload,
 // property set, NewIcon/NewTitle/NewToolTip signals) mirror what fyne/systray
@@ -66,6 +68,11 @@ type Handlers struct {
 	SecondaryActivate func()
 	ContextMenu       func()
 	Scroll            func(delta int, orientation string)
+	// MenuOpen fires when the host opens the item's DBusMenu or activates its
+	// one entry (the GNOME single-click path, see dbusmenu.go). It may fire
+	// while the panel is already open (menu popup then entry click), so the
+	// handler must be idempotent: an "open", never a toggle.
+	MenuOpen func()
 }
 
 // Item is one live StatusNotifierItem. All methods are safe from any
@@ -212,17 +219,17 @@ func New(id, title string, iconPNG []byte, h Handlers) (*Item, error) {
 			"XAyatanaLabelGuide":    {Value: "", Emit: prop.EmitTrue},
 			"XAyatanaOrderingIndex": {Value: uint32(0), Emit: prop.EmitTrue},
 			"ToolTip":               {Value: toolTip{Title: title}, Emit: prop.EmitTrue},
-			// The whole point of this package: no menu. ItemIsMenu=false tells
-			// spec-following hosts (KDE) to deliver Activate/ContextMenu
-			// instead of demanding a DBusMenu. The Menu path deliberately
-			// points at a path nothing is exported on: it must NOT be the
-			// magic "/NO_DBUSMENU", because the GNOME AppIndicator extension
-			// maps that to "no menu path" and then refuses to show the item
-			// at all (its readiness check requires Id + a menu path). With a
-			// dead path the item shows, its menu stays permanently empty, and
-			// clicks fall through to the SNI methods.
+			// ItemIsMenu=false tells spec-following hosts (KDE) to deliver
+			// Activate/ContextMenu on clicks rather than always popping the
+			// menu. Menu points at the real (minimal) DBusMenu exported in
+			// dbusmenu.go: on GNOME its opening IS the single-click signal
+			// (the extension reserves Activate for double clicks); on KDE it
+			// only shows on right click. It must NOT be the magic
+			// "/NO_DBUSMENU": the GNOME AppIndicator extension maps that to
+			// "no menu path" and then refuses to show the item at all (its
+			// readiness check requires Id + a menu path).
 			"ItemIsMenu": {Value: false, Emit: prop.EmitTrue},
-			"Menu":       {Value: dbus.ObjectPath("/StatusNotifierMenu"), Emit: prop.EmitTrue},
+			"Menu":       {Value: dbus.ObjectPath(menuPath), Emit: prop.EmitTrue},
 		},
 	})
 	if err != nil {
@@ -240,6 +247,13 @@ func New(id, title string, iconPNG []byte, h Handlers) (*Item, error) {
 		},
 	}
 	if err := conn.Export(introspect.NewIntrospectable(&node), itemPath, "org.freedesktop.DBus.Introspectable"); err != nil {
+		conn.Close()
+		return nil, err
+	}
+
+	// The one-entry menu that turns a GNOME single left click into an open
+	// signal (see dbusmenu.go).
+	if err := exportMenu(conn, it); err != nil {
 		conn.Close()
 		return nil, err
 	}

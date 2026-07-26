@@ -2,10 +2,13 @@
 
 package ui
 
-// The Linux half of the UI: no tray menu at all. The StatusNotifierItem
-// (internal/sni, hand-rolled over godbus, no DBusMenu) is only an icon plus
-// input events, and « le panneau » (internal/drawer) is the single UI:
-//   left click     -> toggle the drawer (main view)
+// The Linux half of the UI: the StatusNotifierItem (internal/sni, hand-rolled
+// over godbus) is an icon plus input events, and « le panneau »
+// (internal/drawer) is the single UI:
+//   left click     -> open the drawer (on GNOME a single click opens the
+//                     one-entry DBusMenu, whose opening IS the open signal;
+//                     a double click, and KDE's plain click, land on Activate
+//                     which toggles)
 //   right click    -> open the drawer on the Réglages view
 //   middle click   -> play/pause (togglePlay, same semantics as everywhere)
 //   vertical wheel -> volume steps on the active sink
@@ -113,6 +116,11 @@ func (a *App) buildUI() {
 		ContextMenu:       a.openDrawerSettings,
 		SecondaryActivate: a.togglePlay,
 		Scroll:            a.scrollVolume,
+		// The GNOME single-click path: the extension only reacts to a single
+		// left click by opening the item's DBusMenu, and that opening (or its
+		// one entry being clicked) means "show the panel". Idempotent open,
+		// never a toggle: both signals can fire for one interaction.
+		MenuOpen: a.openDrawer,
 	})
 	if err != nil {
 		log.Printf("ui: statusnotifier: %v (pas d'icône; le panneau reste accessible via MPRIS/fip)", err)

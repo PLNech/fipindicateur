@@ -3,6 +3,25 @@
 ## Non publié · Le panneau sans attente
 
 ### Added
+- Simple clic gauche sur l'icône (GNOME) : l'item SNI exporte désormais un
+  DBusMenu minimal (« Ouvrir le panneau ») ; l'extension AppIndicator n'envoie
+  Activate qu'au double clic, mais l'ouverture de ce menu (ou le clic sur son
+  entrée) devient le signal d'ouverture du panneau (#18). Le double clic et le
+  clic simple KDE (Activate) continuent de basculer le panneau
+- Le panneau s'ouvre sous le pointeur : à l'ouverture, la fenêtre se centre
+  sur la position x du pointeur (donc sous l'icône qu'on vient de cliquer),
+  bornée dans la zone de travail de l'écran du pointeur ; repli sur le coin
+  haut-droit historique si aucun pointeur n'est interrogeable
+- Volume en direct pendant le glissement : le curseur du panneau applique la
+  valeur en continu (premier mouvement immédiat, puis au plus une commande
+  toutes les 120 ms, valeur finale garantie au relâchement) au lieu d'attendre
+  le relâchement ; côté cast, une valeur déjà affichée par l'appareil n'est
+  pas renvoyée
+### Changed
+- Les événements `volume` du journal d'écoute sont regroupés par geste
+  (premier niveau immédiat, niveau final en fin de fenêtre de 500 ms) : un
+  glissement ne journalise plus des dizaines de lignes ; toujours enregistrés
+  à la source, vidés avant `app_stop` à la fermeture
 - Préchauffage du panneau : la fenêtre webkit se construit en arrière-plan
   quelques secondes après le démarrage (cachée, sans voler le focus), donc le
   premier clic ne paie plus tout le démarrage de WebKit (#14, partie

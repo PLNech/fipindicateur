@@ -768,17 +768,35 @@ fade.addEventListener('input', () => {
 });
 fade.addEventListener('change', () => send({ action: 'crossfade', value: +fade.value }));
 
-// The slider applies live but throttled (trailing edge), so a drag is a stream
-// of a few commands, not hundreds; Go records one event per applied value at
-// its usual chokepoints.
+// The slider applies LIVE while dragging, throttled: the first move sends
+// immediately (leading edge), then at most one command per volSendMinMs, and
+// 'change' commits the final value on release. So a drag is an audible stream
+// of ~8 commands per second, not hundreds; Go-side, the KindVolume record is
+// coalesced per gesture (recordVolume) so the log keeps the start and settled
+// levels only.
+const volSendMinMs = 120;
 let volTimer = 0;
+let volLastSentAt = 0;
+let volLastSent = null;
 const slider = document.getElementById('vol');
-slider.addEventListener('pointerdown', () => { dragging = true; });
+function sendVolume(v) {
+  if (v === volLastSent) return; // nothing new to apply
+  volLastSentAt = Date.now();
+  volLastSent = v;
+  send({ action: 'volume', value: v });
+}
+slider.addEventListener('pointerdown', () => { dragging = true; volLastSent = null; });
 window.addEventListener('pointerup', () => { dragging = false; });
 slider.addEventListener('input', () => {
   document.getElementById('volPct').textContent = slider.value + ' %';
   clearTimeout(volTimer);
-  volTimer = setTimeout(() => send({ action: 'volume', value: +slider.value }), 120);
+  const elapsed = Date.now() - volLastSentAt;
+  if (elapsed >= volSendMinMs) sendVolume(+slider.value);
+  else volTimer = setTimeout(() => sendVolume(+slider.value), volSendMinMs - elapsed);
+});
+slider.addEventListener('change', () => {
+  clearTimeout(volTimer);
+  sendVolume(+slider.value); // the released value always lands
 });
 
 document.addEventListener('keydown', (e) => {

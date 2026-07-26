@@ -85,20 +85,41 @@ static GtkWidget *fip_build(WebKitWebView **out_view, const char *html, int widt
 	return win;
 }
 
-// fip_present shows the panel at the TOP-RIGHT of the primary monitor's work
-// area: right edge minus the window width minus a small margin, a margin from
-// the top (under the GNOME top bar; the WM clamps to the work area anyway).
-// The width is fixed (only the height is content-driven), so the x position
-// never needs recomputing on resize.
+// fip_present shows the panel UNDER THE POINTER: at open time the pointer
+// sits on the tray icon that was just clicked (SNI never exposes icon
+// geometry, and the DBusMenu-triggered open also happens right after a
+// click), so centering the window on the pointer's x lands it right below
+// the icon. The x is clamped inside the pointer's monitor work area (margin
+// from both edges); the y is a margin below the work area top (under the
+// GNOME top bar). When no pointer can be queried, it falls back to the
+// historical top-right corner of the primary monitor.
 static void fip_present(GtkWidget *win, int width, int margin) {
 	gtk_widget_show(win);
 	gtk_window_stick(GTK_WINDOW(win)); // see fip_build: survive hide/show
 	GdkDisplay *dpy = gtk_widget_get_display(win);
-	GdkMonitor *mon = gdk_display_get_primary_monitor(dpy);
+	GdkMonitor *mon = NULL;
+	gboolean have_ptr = FALSE;
+	int px = 0, py = 0;
+	GdkSeat *seat = gdk_display_get_default_seat(dpy);
+	GdkDevice *pointer = seat != NULL ? gdk_seat_get_pointer(seat) : NULL;
+	if (pointer != NULL) {
+		gdk_device_get_position(pointer, NULL, &px, &py);
+		have_ptr = TRUE;
+		mon = gdk_display_get_monitor_at_point(dpy, px, py);
+	}
+	if (mon == NULL) mon = gdk_display_get_primary_monitor(dpy);
 	if (mon == NULL) mon = gdk_display_get_monitor(dpy, 0);
 	GdkRectangle wa = {0, 0, 1280, 720}; // last-resort fallback geometry
 	if (mon != NULL) gdk_monitor_get_workarea(mon, &wa);
-	gtk_window_move(GTK_WINDOW(win), wa.x + wa.width - width - margin, wa.y + margin);
+	int x = wa.x + wa.width - width - margin; // fallback: top-right corner
+	if (have_ptr) {
+		x = px - width / 2;
+		int lo = wa.x + margin;
+		int hi = wa.x + wa.width - width - margin;
+		if (x > hi) x = hi;
+		if (x < lo) x = lo;
+	}
+	gtk_window_move(GTK_WINDOW(win), x, wa.y + margin);
 	gtk_window_present(GTK_WINDOW(win));
 }
 
@@ -140,7 +161,7 @@ const Available = true
 
 const (
 	panelWidth  = 380
-	panelMargin = 12 // gap from the work area's top-right corner
+	panelMargin = 12 // gap kept from the work area's edges
 	minHeight   = 200
 	maxHeight   = 800
 )
@@ -233,7 +254,8 @@ func (d *Drawer) ensureStarted() error {
 }
 
 // Show builds the window on first use, pushes the given state and presents
-// the panel at the top-right of the primary monitor's work area.
+// the panel under the pointer (top-right of the primary monitor's work area
+// when no pointer is available; see fip_present).
 func (d *Drawer) Show(state State) error {
 	t0 := time.Now()
 	d.mu.Lock()

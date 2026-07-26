@@ -91,6 +91,13 @@ type App struct {
 	// of metadata updates cannot hammer the appindicator extension.
 	nowThrottle *throttle
 
+	// volRec coalesces KindVolume records: a slider drag (panel or
+	// pavucontrol) is a stream of applied values, and the log wants the
+	// gesture (first level, then the settled one), not every intermediate
+	// step. Built lazily by recordVolume; flushed on exit.
+	volRecOnce sync.Once
+	volRec     *volCoalescer
+
 	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
 	prefsClearArmed bool // two-click confirm state for "Effacer mes goûts"
 
@@ -317,6 +324,7 @@ func (a *App) OnExit() {
 			sess.Close() // give up on the goodbye, just drop the connection
 		}
 	}
+	a.flushVolumeRecord() // a drag's settled level must not die with the app
 	a.rec.Record(events.Event{Kind: events.KindAppStop, Station: a.current.Key})
 	a.rec.Close() // flushes the queued app_stop before we return
 	a.stopControlServer()
@@ -890,6 +898,26 @@ func volumeLabel(pct int) string {
 	return fmt.Sprintf("Volume (%d %%)", pct)
 }
 
+// recordVolume is the single chokepoint for KindVolume records (panel slider,
+// menu preset, wheel, MPRIS, pavucontrol echo, cast volume). The change stays
+// measurable by design; it is only coalesced per gesture (volCoalescer): a
+// slider drag logs its first level immediately and its settled level on the
+// trailing edge, not every intermediate step.
+func (a *App) recordVolume(pct int) {
+	a.volRecOnce.Do(func() {
+		a.volRec = &volCoalescer{min: volumeRecordMin, record: a.rec.Record}
+	})
+	a.volRec.submit(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+}
+
+// flushVolumeRecord empties any pending coalesced volume record (exit path,
+// before the recorder closes).
+func (a *App) flushVolumeRecord() {
+	if a.volRec != nil {
+		a.volRec.flush()
+	}
+}
+
 // applyVolumeUI syncs the volume submenu (title, preset checkmarks, mute)
 // with the current config, and mirrors the level into the panel. On Linux the
 // submenu does not exist (the panel replaced it): only the push happens.
@@ -922,7 +950,7 @@ func (a *App) setVolume(pct int) {
 	}
 	if pct != a.cfg.Volume {
 		a.cfg.Volume = pct
-		a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+		a.recordVolume(pct)
 		a.save()
 		// ao-volume applies only while the AO is open; when it is not (e.g.
 		// paused), the persisted value is applied on the next playback
@@ -967,7 +995,7 @@ func (a *App) onExternalVolume(v float64) {
 		return
 	}
 	a.cfg.Volume = pct
-	a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+	a.recordVolume(pct)
 	a.save()
 	a.applyVolumeUI()
 	if a.mpris != nil {
@@ -995,7 +1023,7 @@ func (a *App) SetVolumeFrac(v float64) {
 		return
 	}
 	a.cfg.Volume = pct
-	a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+	a.recordVolume(pct)
 	a.save()
 	a.player.SetVolume(float64(pct))
 	a.applyVolumeUI()
@@ -1433,6 +1461,33 @@ func (a *App) showDrawer(d *drawer.Drawer) {
 	a.mu.Unlock()
 }
 
+// openDrawer opens « le panneau » if it is not already open (or opening) and
+// does nothing otherwise: the idempotent sibling of toggleDrawer for signals
+// that can legitimately arrive while the panel is visible. On Linux it is the
+// SNI DBusMenu's MenuOpen (the GNOME single-click path, which may fire twice
+// for one interaction: menu opened, then its entry clicked). KindDrawerOpen
+// is recorded once, only on an actual open, exactly like toggleDrawer.
+func (a *App) openDrawer() {
+	dark := drawer.DarkPreferred()
+	a.mu.Lock()
+	if a.drawer == nil {
+		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+	}
+	d := a.drawer
+	act := decideDrawerToggle(a.drawerPhase)
+	if act == drawerActOpen {
+		a.drawerPhase = drawerOpening
+		a.drawerDark = dark
+	}
+	a.mu.Unlock()
+
+	if act != drawerActOpen {
+		return // already visible or opening: hold steady, record nothing
+	}
+	a.rec.Record(events.Event{Kind: events.KindDrawerOpen, Station: a.current.Key})
+	go a.showDrawer(d)
+}
+
 // onDrawerHidden is the drawer's onHide callback: whatever hid the panel
 // (Escape, the page's close button, the menu toggle), the menu entry must
 // know it now opens again.
@@ -1834,11 +1889,18 @@ func (a *App) castResume(sess *cast.Session) {
 // panel via onCastStatus.
 func (a *App) setCastVolume(sess *cast.Session, pct int) {
 	pct = clampPct(pct)
+	// Equal-value skip: a live slider drag repeats values (throttled page-side
+	// to ~8/s, but still); when the device already reports this level there is
+	// nothing to send, record or refresh. The comparison uses the last known
+	// RECEIVER_STATUS, so a stale status errs on the side of sending.
+	if v, ok := sess.ReceiverVolume(); ok && clampPct(int(math.Round(v.Level*100))) == pct {
+		return
+	}
 	if err := sess.SetVolume(float64(pct) / 100); err != nil {
 		log.Printf("ui: cast volume: %v", err)
 		return
 	}
-	a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+	a.recordVolume(pct)
 }
 
 // toggleCastMuted flips the device-side mute (the level is preserved
