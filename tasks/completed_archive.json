@@ -82,5 +82,47 @@
     "subject": "Final integration: merges, e2e verify on real data, CHANGELOG",
     "completedAt": "2026-07-11",
     "learnings": "Whole-tree lint greps break on untracked toolchain dirs (node_modules, .venv) left by worktree agents; exclude them in the gate itself and mirror the exclusion in CI."
+  },
+  {
+    "id": "s5-1",
+    "subject": "Chromecast casting: stdlib mDNS + CASTV2, tray submenu",
+    "completedAt": "2026-07-26",
+    "learnings": "CASTV2 is hand-rollable: 6-field protobuf over TLS + JSON payloads; contentType must track stream quality (audio/mpeg vs audio/aacp)."
+  },
+  {
+    "id": "s5-2",
+    "subject": "Blind review of cast feature",
+    "completedAt": "2026-07-26",
+    "learnings": "Code review + green tests prove wiring, not product: every hardware-facing milestone needed one more fix after meeting the real device."
+  },
+  {
+    "id": "s5-3",
+    "subject": "Release v0.4.0",
+    "completedAt": "2026-07-26",
+    "learnings": "release.yml is tag-triggered and publishes itself: create tag, let CI publish, then gh release edit; gh release create races it."
+  },
+  {
+    "id": "s5-4",
+    "subject": "Fix mDNS discovery + slow-AVR handshake, fip cast scan",
+    "completedAt": "2026-07-26",
+    "learnings": "Real cast devices ignore legacy unicast mDNS queries: QU bit AND multicast-group listener both needed; AVRs cold-boot their cast module on LAUNCH (8.2s warm measured) so the status wait needs ~30s."
+  },
+  {
+    "id": "s5-5",
+    "subject": "Le panneau: webkit2gtk quick-control drawer",
+    "completedAt": "2026-07-26",
+    "learnings": "cgo shim straight on webkit2gtk (libmpv precedent) beats a Go module; GTK on one LockOSThread goroutine + g_idle_add marshaling coexists with DBus SNI; CSS [hidden] loses to any display rule (specificity trap that blanked a whole view)."
+  },
+  {
+    "id": "s5-6",
+    "subject": "SNI single-UI refactor + test belt",
+    "completedAt": "2026-07-26",
+    "learnings": "GNOME appindicator: Activate only fires on DOUBLE-click; a missing IconAccessibleDesc property silently drops the icon; Menu=/NO_DBUSMENU hides the item (export a dead menu path); synthetic X wheel events are not forwarded (smooth-scroll only). Test hygiene: brand mock windows visibly or they haunt the real UI."
+  },
+  {
+    "id": "s5-7",
+    "subject": "CI upgrade + v0.5.0 ship",
+    "completedAt": "2026-07-26",
+    "learnings": "Headless 'light' captures inherit desktop gsettings: determinism needs explicit --light/--dark flags; screenshot artifacts turn design QA into a CI gate."
   }
 ]

@@ -1,5 +1,30 @@
 # Changelog
 
+## Sprint 5 · 2026-07-26 · L'antenne dans les enceintes, le panneau dans la barre
+
+Three releases in one day: v0.4.0 (Chromecast), v0.4.1 (hardware fixes), v0.5.0
+(le panneau + SNI). Details live in the release sections below; this entry
+records the sprint shape and what the releases cannot.
+
+### Added
+- Chromecast casting, stdlib-only mDNS + CASTV2 (#1, #3 · v0.4.0)
+- « Le panneau » webkit2gtk drawer, cast-aware volume (#5 · v0.5.0)
+- Hand-rolled SNI tray, panel as single Linux UI, test belt (#6 · v0.5.0)
+### Fixed
+- Discovery deaf to real devices (QU bit + multicast), slow-AVR launch
+  timeout, `fip cast scan` debug CLI (#4 · v0.4.1)
+### Infra
+- CI: xvfb selftest + drawer screenshots as artifacts, Go caching (#7)
+- `feat/avr-zones` branch: offline eISCP zone client groundwork (#10, pass 2
+  pending a user-approved live moment)
+### Doctrine
+- Hardware is the only test bench for hardware: every "green" cast milestone
+  needed one more fix after touching the real amp.
+- Name your mocks: an unlabeled dev-harness window stacked pixel-identical on
+  the real panel simulated a total UI outage for an hour.
+- Ship the hotfix before building the belt; never batch P0 fixes behind P1
+  infrastructure.
+
 ## v0.5.0 · 2026-07-26 · Le panneau
 
 ### Added
