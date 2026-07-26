@@ -19,8 +19,12 @@ graph of your zapping, release-year epochs, a 2D artist constellation, and the
 émissions you kept company with. Like or dislike the current track straight
 from the tray. **Diffuser sur…** casts the antenna to a Chromecast speaker on
 your network: devices are discovered automatically, local playback pauses so
-the sound never doubles, and "Cet ordinateur" brings it back. Nothing ever
-leaves your machine.
+the sound never doubles, and "Cet ordinateur" brings it back. On Linux,
+**« Le panneau »** (menu : Panneau de contrôle) is a slick popup drawer with
+the current track, play/pause, a real volume slider, the output picker and the
+13 stations as colored chips; while casting, the slider drives the device's
+own volume (your amp's master level, read from the device, never guessed).
+Nothing ever leaves your machine.
 
 Unofficial client. Linux (Ubuntu 24.04, GNOME/X11) is the supported target;
 macOS and Arch are kept buildable.

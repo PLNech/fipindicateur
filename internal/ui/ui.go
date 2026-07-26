@@ -21,6 +21,7 @@ import (
 	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/cast"
 	"github.com/PLNech/fipindicateur/internal/config"
+	"github.com/PLNech/fipindicateur/internal/drawer"
 	"github.com/PLNech/fipindicateur/internal/events"
 	"github.com/PLNech/fipindicateur/internal/histlog"
 	"github.com/PLNech/fipindicateur/internal/icon"
@@ -101,6 +102,16 @@ type App struct {
 	castName     string
 	castDevices  []cast.Device
 	castScanning bool // one discovery at a time
+
+	// « le panneau »: the quick-control drawer (Linux only; a stub elsewhere).
+	// Built lazily on first open, then resident. drawerDark caches the desktop
+	// color-scheme probe, refreshed at each open. drawerShown tracks visibility
+	// so the menu entry toggles (show when hidden, hide when shown); it flips
+	// false through onDrawerHidden whenever the panel hides (Escape, the page's
+	// close button, or the toggle itself). Guarded by a.mu.
+	drawer      *drawer.Drawer
+	drawerDark  bool
+	drawerShown bool
 
 	// menu items
 	mNow           *systray.MenuItem
@@ -325,24 +336,39 @@ func (a *App) buildMenu() {
 	// play/pause event (so media keys and MPRIS are captured too), hence "".
 	a.on(a.mPlay, "", a.togglePlay)
 
-	// Volume
-	a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
-	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
-	a.on(a.mMute, "", a.toggleMute) // toggleMute records the resulting state
-	a.volMI = map[int]*systray.MenuItem{}
-	for _, pct := range volumePresets {
-		it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
-		a.volMI[pct] = it
-		p := pct
-		a.on(it, "", func() { a.setVolume(p) }) // setVolume records the level
+	// « Le panneau »: the quick-control drawer. On Linux (drawer.Available,
+	// a build-tagged constant) it REPLACES the volume submenu below; other
+	// platforms keep the submenu and never see this item. The entry is a
+	// toggle (show when hidden, hide when shown), so the kind is recorded at
+	// source: toggleDrawer records KindDrawerOpen only when it actually opens.
+	if drawer.Available {
+		panel := systray.AddMenuItem("Panneau de contrôle", "Afficher ou masquer le panneau de contrôle")
+		a.on(panel, "", a.toggleDrawer)
 	}
-	// A real slider, when zenity is present (Linux/GNOME). Absent on macOS/Windows
-	// and minimal installs, so the item is only added when the binary exists (no
-	// dead item). The resulting volume change is the measurable action, recorded
-	// once at source on OK inside runVolumeSlider, so this click carries no Kind.
-	if zenityAvailable() {
-		slider := a.mVolume.AddSubMenuItem("Régler au curseur…", "Curseur de volume (zenity)")
-		a.on(slider, "", a.openVolumeSlider)
+
+	// Volume submenu: only where the panel is not available (macOS/Windows).
+	// Volume stays measurable there through the same setters; on Linux the
+	// panel drives the very same chokepoints.
+	if !drawer.Available {
+		a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
+		a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
+		a.on(a.mMute, "", a.toggleMute) // toggleMute records the resulting state
+		a.volMI = map[int]*systray.MenuItem{}
+		for _, pct := range volumePresets {
+			it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
+			a.volMI[pct] = it
+			p := pct
+			a.on(it, "", func() { a.setVolume(p) }) // setVolume records the level
+		}
+		// A real slider, when zenity is present. Absent on macOS/Windows and
+		// minimal installs, so the item is only added when the binary exists (no
+		// dead item). The resulting volume change is the measurable action,
+		// recorded once at source on OK inside runVolumeSlider, so this click
+		// carries no Kind.
+		if zenityAvailable() {
+			slider := a.mVolume.AddSubMenuItem("Régler au curseur…", "Curseur de volume (zenity)")
+			a.on(slider, "", a.openVolumeSlider)
+		}
 	}
 
 	// Radios
@@ -440,10 +466,10 @@ func (a *App) buildMenu() {
 		a.mAuto = settings.AddSubMenuItemCheckbox("Lancer au démarrage", "", a.cfg.Autostart)
 		a.on(a.mAuto, "", a.toggleAutostart)
 	}
-	// Lecture au démarrage: whether launching also starts the stream. Off by
+	// Lecture au lancement: whether launching also starts the stream. Off by
 	// default (autostart is not autoplay): the tray tunes and indicates the
 	// antenna silently, and you press play when you want sound.
-	a.mPlayOnStart = settings.AddSubMenuItemCheckbox("Lecture au démarrage", "Démarrer la lecture au lancement (sinon l'antenne est en pause)", a.cfg.PlayOnStart)
+	a.mPlayOnStart = settings.AddSubMenuItemCheckbox("Lecture au lancement", "Démarrer la lecture au lancement (sinon l'antenne est en pause)", a.cfg.PlayOnStart)
 	a.on(a.mPlayOnStart, "", a.togglePlayOnStart)
 	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
 	a.on(a.mHistFile, "", a.toggleHistFile)
@@ -646,6 +672,9 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	if !changed && !showChanged && !trackCleared && !pendingShow {
 		return
 	}
+
+	// Whatever moved (track, show, cleared label), the panel shows it too.
+	a.pushDrawerState()
 
 	if changed {
 		label := np.Title
@@ -976,6 +1005,7 @@ func (a *App) setPlayingUI(playing bool) {
 	if a.mpris != nil {
 		a.mpris.SetPlaybackStatus(playing)
 	}
+	a.pushDrawerState()
 }
 
 // b2i maps a toggle's resulting state to the event Value field (1 on, 0 off).
@@ -1093,21 +1123,25 @@ func volumeLabel(pct int) string {
 }
 
 // applyVolumeUI syncs the volume submenu (title, preset checkmarks, mute)
-// with the current config.
+// with the current config, and mirrors the level into the panel. On Linux the
+// submenu does not exist (the panel replaced it): only the push happens.
 func (a *App) applyVolumeUI() {
-	a.mVolume.SetTitle(volumeLabel(a.cfg.Volume))
-	for pct, it := range a.volMI {
-		if pct == a.cfg.Volume {
-			it.Check()
+	if a.mVolume != nil {
+		a.mVolume.SetTitle(volumeLabel(a.cfg.Volume))
+		for pct, it := range a.volMI {
+			if pct == a.cfg.Volume {
+				it.Check()
+			} else {
+				it.Uncheck()
+			}
+		}
+		if a.cfg.Mute {
+			a.mMute.Check()
 		} else {
-			it.Uncheck()
+			a.mMute.Uncheck()
 		}
 	}
-	if a.cfg.Mute {
-		a.mMute.Check()
-	} else {
-		a.mMute.Uncheck()
-	}
+	a.pushDrawerState()
 }
 
 // setVolume applies a menu-selected volume preset.
@@ -1512,6 +1546,7 @@ func (a *App) scanCast() {
 	}
 	a.castScanning = true
 	a.mu.Unlock()
+	a.pushDrawerState() // the panel shows "Recherche…" while the scan runs
 
 	a.mCastScan.SetTitle("Recherche en cours…")
 	devs := cast.Discover(castScanWindow)
@@ -1558,6 +1593,7 @@ func (a *App) refreshCastMenu() {
 	} else {
 		a.mCastLocal.Check()
 	}
+	a.pushDrawerState()
 }
 
 // castToDevice starts casting the current station to the i-th discovered
@@ -1586,7 +1622,7 @@ func (a *App) startCast(dev cast.Device) {
 	url := station.StreamURL(a.quality())
 	ctype := a.castContentType()
 
-	sess, err := cast.Dial(dev, a.onCastError)
+	sess, err := cast.Dial(dev, a.onCastError, a.onCastStatus)
 	if err != nil {
 		a.castFailed(err)
 		return
@@ -1677,6 +1713,286 @@ func (a *App) onCastError(err error) {
 	}
 }
 
+// --- le panneau (quick-control drawer) ---
+
+// toggleDrawer is the "Panneau de contrôle" menu entry: it shows « le
+// panneau » when hidden and hides it when shown. The drawer is built lazily
+// on first open and stays resident afterwards (hidden, instant to
+// re-present). KindDrawerOpen is recorded at source, only on an actual open
+// (hiding is not an open). The desktop color-scheme is re-probed at each
+// open, so a theme flip lands on the next show.
+func (a *App) toggleDrawer() {
+	dark := drawer.DarkPreferred()
+	a.mu.Lock()
+	if a.drawer == nil {
+		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+	}
+	d := a.drawer
+	shown := a.drawerShown
+	if !shown {
+		a.drawerShown = true // optimistic: a double-click must not double-open
+		a.drawerDark = dark
+	}
+	a.mu.Unlock()
+
+	if shown {
+		d.Hide() // onDrawerHidden resets the flag
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindDrawerOpen, Station: a.current.Key})
+	// Show waits for the GTK thread to build the window on first open: keep
+	// it off the tray goroutine.
+	go func() {
+		if err := d.Show(a.drawerState()); err != nil {
+			log.Printf("ui: panneau: %v", err)
+			a.onDrawerHidden()
+		}
+	}()
+}
+
+// onDrawerHidden is the drawer's onHide callback: whatever hid the panel
+// (Escape, the page's close button, the menu toggle), the menu entry must
+// know it now opens again.
+func (a *App) onDrawerHidden() {
+	a.mu.Lock()
+	a.drawerShown = false
+	a.mu.Unlock()
+}
+
+// drawerStations is the station strip data, straight from internal/stations
+// (official brand colors included).
+func drawerStations() []drawer.Station {
+	out := make([]drawer.Station, len(stations.All))
+	for i, s := range stations.All {
+		out[i] = drawer.Station{Key: s.Key, Display: s.Display, Color: s.Color}
+	}
+	return out
+}
+
+// drawerState snapshots the full panel state. The page renders exclusively
+// from this JSON, so everything the panel shows is assembled here.
+func (a *App) drawerState() drawer.State {
+	a.mu.Lock()
+	np := a.now
+	sess := a.castSess
+	castName := a.castName
+	devs := make([]string, len(a.castDevices))
+	for i, d := range a.castDevices {
+		devs[i] = d.Name
+	}
+	scanning := a.castScanning
+	dark := a.drawerDark
+	// The history view shows the same recent-tracks ring as the menu's
+	// Historique submenu (refreshHistoryMenu): titles and artists, most
+	// recent first. Display only; it never touches the events log.
+	hist := make([]drawer.HistoryEntry, len(a.history))
+	for i, h := range a.history {
+		hist[i] = drawer.HistoryEntry{Title: h.Title, Artist: h.Artist}
+	}
+	a.mu.Unlock()
+
+	st := drawer.State{
+		Dark:     dark,
+		Station:  a.current.Key,
+		Playing:  a.player != nil && a.player.IsPlaying(),
+		Volume:   a.cfg.Volume,
+		Muted:    a.cfg.Mute,
+		Devices:  devs,
+		Scanning: scanning,
+		Track:    drawer.Track{Title: np.Title, Artist: np.Artist, Artwork: np.CoverURL},
+		Stations: drawerStations(),
+		Settings: drawer.Settings{
+			Stats:              a.cfg.Stats,
+			HiFi:               a.cfg.HiFi,
+			Notifications:      a.cfg.Notifications,
+			PlayOnStart:        a.cfg.PlayOnStart,
+			Autostart:          a.cfg.Autostart,
+			AutostartSupported: config.AutostartSupported,
+		},
+		History: hist,
+		Version: version.String(),
+	}
+	if sess != nil {
+		st.Cast = drawer.Cast{Active: true, DeviceName: castName, Playing: sess.MediaPlaying()}
+		if v, ok := sess.ReceiverVolume(); ok {
+			// The DEVICE's own level: displayed, never invented. On a
+			// controlType "master" device this is the amp's master volume.
+			st.Cast.Volume = clampPct(int(math.Round(v.Level * 100)))
+			st.Cast.Muted = v.Muted
+			st.Cast.VolumeKnown = true
+			st.Cast.ControlType = v.ControlType
+		}
+	}
+	return st
+}
+
+// pushDrawerState refreshes the panel's state (a no-op before the first
+// open). Called from the same chokepoints that refresh the tray menu, so the
+// two views can never disagree.
+func (a *App) pushDrawerState() {
+	a.mu.Lock()
+	d := a.drawer
+	a.mu.Unlock()
+	if d == nil {
+		return
+	}
+	d.Push(a.drawerState())
+}
+
+// onCastStatus mirrors a device-side status update (its volume knob turned,
+// its media paused) into the panel. Called from the session's read goroutine.
+func (a *App) onCastStatus() { a.pushDrawerState() }
+
+// onDrawerCommand routes a panel action. Every branch lands on an EXISTING
+// measurable chokepoint (togglePlay/setPlayingUI, setVolume, toggleMute,
+// setStation, castToDevice/stopCasting) or records at source here
+// (cast_pause/cast_resume, cast volume/mute): a panel click can never dodge
+// the events log. Runs off the GTK thread (the drawer dispatches commands on
+// a fresh goroutine, like the MPRIS handlers cross goroutines).
+func (a *App) onDrawerCommand(c drawer.Command) {
+	switch c.Action {
+	case "toggle_play":
+		// The button drives the ACTIVE sink: the device's media transport
+		// while casting, the local player otherwise. The menu/MPRIS
+		// semantics (play while casting = bring the music home) are
+		// deliberately untouched.
+		if sess := a.castSession(); sess != nil {
+			if sess.MediaPlaying() {
+				a.castPause(sess)
+			} else {
+				a.castResume(sess)
+			}
+		} else {
+			a.togglePlay()
+		}
+	case "volume":
+		if sess := a.castSession(); sess != nil {
+			a.setCastVolume(sess, c.Value)
+		} else {
+			a.setVolume(c.Value)
+		}
+	case "toggle_mute":
+		if sess := a.castSession(); sess != nil {
+			a.toggleCastMuted(sess)
+		} else {
+			a.toggleMute()
+		}
+	case "station":
+		if stations.Exists(c.Key) {
+			a.setStation(c.Key) // startStation records the Markov edge
+		}
+	case "output":
+		if c.Value < 0 {
+			a.stopCasting(true) // records cast_stop at source; no-op when local
+		} else {
+			a.castToDevice(c.Value) // records cast_start at source on success
+		}
+	case "rescan":
+		a.rescanCast()
+
+	// Taste verdicts: the click IS the consent, exactly like the menu items.
+	// The a.on chokepoint records the kind for the menu twin; here the record
+	// happens before the same handler runs, so each verdict logs once
+	// (behaviour only) and prefs.jsonl gets the track identity.
+	case "like":
+		a.rec.Record(events.Event{Kind: events.KindLike, Station: a.current.Key})
+		a.recordTaste(prefs.Like)
+	case "dislike":
+		a.rec.Record(events.Event{Kind: events.KindDislike, Station: a.current.Key})
+		a.recordTaste(prefs.Dislike)
+
+	// Settings: every branch is the SAME handler func the menu checkbox uses,
+	// which records its kind at source and keeps the menu checkmarks in sync
+	// (two skins over one wiring).
+	case "toggle_stats":
+		a.toggleStats()
+	case "toggle_hifi":
+		a.toggleHiFi()
+	case "toggle_notif":
+		a.toggleNotif()
+	case "toggle_play_on_start":
+		a.togglePlayOnStart()
+	case "toggle_autostart":
+		if config.AutostartSupported {
+			a.toggleAutostart()
+		}
+	case "stats_view":
+		a.rec.Record(events.Event{Kind: events.KindStatsView, Station: a.current.Key})
+		a.viewStats()
+	case "stats_folder":
+		a.openDataDir() // like the menu item: plumbing, no kind
+	case "stats_clear":
+		// The page already ran its own two-click confirm (arm with a visual
+		// warning, then confirm), so this lands on the confirmed action.
+		a.clearStatsData()
+	case "prefs_clear":
+		a.clearPrefsData() // records KindPrefsClear at source
+	case "update_check":
+		a.rec.Record(events.Event{Kind: events.KindUpdateCheck, Station: a.current.Key})
+		a.checkUpdates()
+	case "open_fip":
+		a.rec.Record(events.Event{Kind: events.KindOpenFip, Station: a.current.Key})
+		open.URL(fipURL)
+	case "open_github":
+		a.rec.Record(events.Event{Kind: events.KindOpenAbout, Station: a.current.Key})
+		open.URL(repoURL)
+	case "quit":
+		a.rec.Record(events.Event{Kind: events.KindQuit, Station: a.current.Key})
+		systray.Quit()
+		return // no state push into teardown
+	default:
+		log.Printf("ui: panneau: commande inconnue %q", c.Action)
+	}
+	a.pushDrawerState()
+}
+
+// castPause pauses the media ON the cast device (the session stays up), the
+// panel's transport while casting. Recorded at source as cast_pause
+// (behaviour only, never a device identity).
+func (a *App) castPause(sess *cast.Session) {
+	if err := sess.PauseMedia(); err != nil {
+		log.Printf("ui: cast pause: %v", err)
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindCastPause, Station: a.current.Key})
+}
+
+// castResume resumes the paused media on the cast device (cast_resume).
+func (a *App) castResume(sess *cast.Session) {
+	if err := sess.PlayMedia(); err != nil {
+		log.Printf("ui: cast resume: %v", err)
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindCastResume, Station: a.current.Key})
+}
+
+// setCastVolume drives the DEVICE's volume (quantized to its stepInterval by
+// the session; on a "master" device this is the amplifier's master volume, so
+// only user-chosen levels are ever sent). Recorded at source with the same
+// kind and Value convention as local volume changes; the device identity
+// never reaches the log. The device's RECEIVER_STATUS answer refreshes the
+// panel via onCastStatus.
+func (a *App) setCastVolume(sess *cast.Session, pct int) {
+	pct = clampPct(pct)
+	if err := sess.SetVolume(float64(pct) / 100); err != nil {
+		log.Printf("ui: cast volume: %v", err)
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+}
+
+// toggleCastMuted flips the device-side mute (the level is preserved
+// device-side). Same event convention as the local mute toggle.
+func (a *App) toggleCastMuted(sess *cast.Session) {
+	v, _ := sess.ReceiverVolume()
+	muted := !v.Muted
+	if err := sess.SetMuted(muted); err != nil {
+		log.Printf("ui: cast mute: %v", err)
+		return
+	}
+	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.current.Key, Value: b2i(muted)})
+}
+
 // --- statistics (opt-in listening analytics) ---
 
 // toggleStats flips the opt-in and starts/stops the recorder at runtime. The
@@ -1750,6 +2066,13 @@ func (a *App) clearStatsConfirm() {
 	}
 
 	a.mStatsClear.SetTitle("Effacer les statistiques…")
+	a.clearStatsData()
+}
+
+// clearStatsData is the CONFIRMED "Effacer les statistiques" action: it
+// deletes only events.jsonl, never history.jsonl. Shared by the menu's
+// two-click confirm and the panel's (the page arms and confirms on its side).
+func (a *App) clearStatsData() {
 	if err := a.rec.Clear(); err != nil {
 		log.Printf("ui: stats clear: %v", err)
 		return
@@ -1788,7 +2111,15 @@ func (a *App) clearPrefsConfirm() {
 	}
 
 	a.mPrefsClear.SetTitle("Effacer mes goûts…")
+	a.clearPrefsData()
+}
 
+// clearPrefsData is the CONFIRMED "Effacer mes goûts" action: it deletes only
+// prefs.jsonl, never events.jsonl or history.jsonl, and records the single
+// KindPrefsClear behaviour event at source (into events.jsonl, a different
+// file, so it never resurrects the taste log just deleted). Shared by the
+// menu's two-click confirm and the panel's.
+func (a *App) clearPrefsData() {
 	if a.prefsPath == "" {
 		p, err := prefs.DefaultPath()
 		if err != nil {
@@ -1976,6 +2307,11 @@ func (a *App) save() {
 	if err := a.cfg.Save(); err != nil {
 		log.Printf("ui: save config: %v", err)
 	}
+	// Every persisted setting is visible in the panel's settings view: saving
+	// config is the one chokepoint all toggles pass through, so pushing here
+	// keeps the two skins in sync whichever one was clicked (a cheap no-op
+	// before the panel is first opened).
+	a.pushDrawerState()
 }
 
 // --- mpris.Controller ---

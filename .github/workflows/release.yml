@@ -84,8 +84,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install libmpv
-        run: sudo apt-get update && sudo apt-get install -y libmpv-dev
+      - name: Install libmpv and webkit2gtk
+        run: sudo apt-get update && sudo apt-get install -y libmpv-dev libwebkit2gtk-4.1-dev
       - name: Build binary
         run: go build -ldflags "-X github.com/PLNech/fipindicateur/internal/version.Version=${GITHUB_REF_NAME}" -o fipindicateur ./cmd/fipindicateur
       - name: Package tarball

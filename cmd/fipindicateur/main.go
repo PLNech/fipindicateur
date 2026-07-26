@@ -41,6 +41,8 @@ func main() {
 		os.Exit(ui.RunControlClient(d.args))
 	case actCastScan:
 		os.Exit(runCastScan())
+	case actDrawer:
+		os.Exit(runDrawer())
 	case actLaunchTray:
 		// Fall through to the tray setup below.
 	}

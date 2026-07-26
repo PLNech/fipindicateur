@@ -113,7 +113,7 @@ it for the menu. Your last station and settings are remembered in
 - **Launch at login:** toggle *Réglages, Lancer au démarrage* (writes
   `~/.config/autostart/fipindicateur.desktop`). Autostart is not autoplay: by
   default launch just tunes and indicates the antenna, paused. Toggle
-  *Réglages, Lecture au démarrage* to have it start playing on launch instead.
+  *Réglages, Lecture au lancement* to have it start playing on launch instead.
 - **Statistiques:** enable *Réglages, Statistiques d'écoute (local)*, then
   `fipindicateur stats` (or *Voir le rapport*) opens your listening report.
   `fipindicateur stats --out report.html --no-open` just writes the file.

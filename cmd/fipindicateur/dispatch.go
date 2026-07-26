@@ -13,6 +13,7 @@ const (
 	actVersion                      // print the stamped version
 	actControl                      // talk to the running instance over the socket
 	actCastScan                     // scan the LAN for Chromecast devices, standalone
+	actDrawer                       // open « le panneau » standalone with mock state (design iteration)
 	actHelp                         // print usage to stdout, exit 0
 	actUsageErr                     // print usage to stderr, exit 2 (unknown command)
 )
@@ -70,6 +71,8 @@ func decide(base string, args []string) decision {
 			return decision{kind: actCastScan}
 		}
 		return decision{kind: actUsageErr}
+	case args[0] == "drawer":
+		return decision{kind: actDrawer}
 	case args[0] == "version" || args[0] == "--version" || args[0] == "-v":
 		return decision{kind: actVersion}
 	case controlVerbs[args[0]]:
@@ -108,6 +111,9 @@ Commandes:
   cast [scan]         Cherche les appareils Chromecast sur le réseau local
                       (mDNS) et les liste, un par ligne. Ne requiert pas
                       d'instance lancée.
+  drawer              Ouvre « le panneau » (le tiroir de contrôle rapide) seul,
+                      avec un état factice, pour itérer sur son design (Linux).
+                      Échap ou perte de focus ferme la fenêtre.
   version             Affiche la version
   help, -h, --help    Affiche cette aide
 

@@ -57,16 +57,28 @@ type Session struct {
 	sessionID   string // receiver session id, needed to STOP the app
 	transportID string // the media channel peer for this session
 
-	onError func(error) // surfaced at most once, on unexpected connection death
-	closed  chan struct{}
-	once    sync.Once
+	// Device-side state gleaned from the read loop. The volume block feeds the
+	// panel's cast-aware slider; the media session id scopes PLAY/PAUSE. All
+	// guarded by smu (the read loop writes, UI goroutines read).
+	smu            sync.Mutex
+	vol            VolumeStatus
+	volKnown       bool
+	mediaSessionID int
+	playerState    string
+
+	onError  func(error) // surfaced at most once, on unexpected connection death
+	onStatus func()      // optional: fired after any device status update (read-loop goroutine)
+	closed   chan struct{}
+	once     sync.Once
 }
 
 // Dial connects to the device, launches the Default Media Receiver and joins
 // its session. onError (optional) is called at most once, from an internal
 // goroutine, if the connection later dies unexpectedly; a deliberate
-// Stop/Close never triggers it.
-func Dial(dev Device, onError func(error)) (*Session, error) {
+// Stop/Close never triggers it. onStatus (optional) is called from the read
+// goroutine after each device status update (volume, media state), so a UI
+// can refresh what it displays; it must not block.
+func Dial(dev Device, onError func(error), onStatus func()) (*Session, error) {
 	dialer := &net.Dialer{Timeout: dialTimeout}
 	// Chromecasts present self-signed device certificates: there is no CA to
 	// verify against, so skipping verification is the protocol's normal mode.
@@ -76,7 +88,7 @@ func Dial(dev Device, onError func(error)) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Session{dev: dev, conn: conn, onError: onError, closed: make(chan struct{})}
+	s := &Session{dev: dev, conn: conn, onError: onError, onStatus: onStatus, closed: make(chan struct{})}
 	if err := s.handshake(); err != nil {
 		conn.Close()
 		return nil, err
@@ -121,6 +133,10 @@ func (s *Session) handshake() error {
 			case "LAUNCH_ERROR":
 				return errors.New("cast: receiver refused the launch")
 			case "RECEIVER_STATUS":
+				// The LAUNCH answer usually carries the device's current
+				// volume: read it now so the UI can display the real level.
+				// We never SET a volume on start; the device's level rules.
+				s.storeReceiverVolume(m.payload)
 				sess, transport, ok := findDefaultReceiver(m.payload)
 				if !ok {
 					continue // a status for something else; keep waiting
@@ -138,6 +154,94 @@ func (s *Session) handshake() error {
 // error on a healthy connection is the device's problem to display.
 func (s *Session) Load(url, contentType, title string) error {
 	return s.send(nsMedia, s.transportID, loadPayload(s.nextReq(), url, contentType, title))
+}
+
+// ReceiverVolume returns the device-side volume as last reported by the
+// device (RECEIVER_STATUS). ok is false until the first report arrives.
+func (s *Session) ReceiverVolume() (VolumeStatus, bool) {
+	s.smu.Lock()
+	defer s.smu.Unlock()
+	return s.vol, s.volKnown
+}
+
+// SetVolume sets the device's volume level (0..1), quantized to the device's
+// stepInterval. On a controlType "master" device (an AV receiver) this drives
+// the amplifier's MASTER volume: the caller sends only user-chosen levels,
+// never a default. The device answers with a RECEIVER_STATUS that refreshes
+// ReceiverVolume via the read loop.
+func (s *Session) SetVolume(level float64) error {
+	s.smu.Lock()
+	step := s.vol.StepInterval
+	s.smu.Unlock()
+	return s.send(nsReceiver, receiverID, setVolumeLevelPayload(s.nextReq(), quantizeLevel(level, step)))
+}
+
+// SetMuted mutes or unmutes the device (the level is preserved device-side).
+func (s *Session) SetMuted(muted bool) error {
+	return s.send(nsReceiver, receiverID, setVolumeMutedPayload(s.nextReq(), muted))
+}
+
+// MediaSessionID returns the media session learned from MEDIA_STATUS, or 0
+// when none was seen yet (LOAD not yet answered).
+func (s *Session) MediaSessionID() int {
+	s.smu.Lock()
+	defer s.smu.Unlock()
+	return s.mediaSessionID
+}
+
+// MediaPlaying reports whether the device says its media is playing. Before
+// the first MEDIA_STATUS it assumes true: LOADs are sent with autoplay.
+func (s *Session) MediaPlaying() bool {
+	s.smu.Lock()
+	defer s.smu.Unlock()
+	switch s.playerState {
+	case "PAUSED", "IDLE":
+		return false
+	default: // "", "PLAYING", "BUFFERING": sound is (about to be) on
+		return true
+	}
+}
+
+// PauseMedia pauses the media on the device (the cast session stays up).
+// Needs a media session id from MEDIA_STATUS; errors until one arrived.
+func (s *Session) PauseMedia() error {
+	return s.mediaCommand("PAUSE")
+}
+
+// PlayMedia resumes the paused media on the device.
+func (s *Session) PlayMedia() error {
+	return s.mediaCommand("PLAY")
+}
+
+func (s *Session) mediaCommand(typ string) error {
+	s.smu.Lock()
+	id := s.mediaSessionID
+	s.smu.Unlock()
+	if id == 0 {
+		return errors.New("cast: no media session yet (LOAD not answered)")
+	}
+	return s.send(nsMedia, s.transportID, mediaCommandPayload(s.nextReq(), typ, id))
+}
+
+// storeReceiverVolume records the volume block of a RECEIVER_STATUS, if it
+// carries one, and reports whether anything was stored.
+func (s *Session) storeReceiverVolume(payload string) bool {
+	v, ok := parseReceiverVolume(payload)
+	if !ok {
+		return false
+	}
+	s.smu.Lock()
+	s.vol = v
+	s.volKnown = true
+	s.smu.Unlock()
+	return true
+}
+
+// notifyStatus fires the optional status callback (read-loop goroutine).
+func (s *Session) notifyStatus() {
+	if s.onStatus != nil {
+		s.onStatus()
+	}
 }
 
 // Stop quits the receiver app on the device and closes the connection. All
@@ -183,9 +287,9 @@ func (s *Session) send(namespace, destination, payload string) error {
 func (s *Session) nextReq() int { return int(atomic.AddInt64(&s.reqID, 1)) }
 
 // readLoop consumes frames until the connection dies: it answers heartbeat
-// PINGs and detects the peer closing a channel. Media status messages are
-// deliberately ignored (LOADs are fire-and-forget; the tray has no per-track
-// device UI to feed).
+// PINGs, detects the peer closing a channel, and keeps the device-side state
+// fresh (RECEIVER_STATUS volume, MEDIA_STATUS session id + player state) so
+// the panel can display and drive the device.
 func (s *Session) readLoop() {
 	for {
 		_ = s.conn.SetReadDeadline(time.Now().Add(readIdleTimeout))
@@ -202,6 +306,22 @@ func (s *Session) readLoop() {
 					dest = receiverID
 				}
 				_ = s.send(nsHeartbeat, dest, `{"type":"PONG"}`)
+			}
+		case nsReceiver:
+			// Volume changes (ours, another sender's, or the amp's own knob)
+			// broadcast as RECEIVER_STATUS: mirror them.
+			if payloadType(m.payload) == "RECEIVER_STATUS" && s.storeReceiverVolume(m.payload) {
+				s.notifyStatus()
+			}
+		case nsMedia:
+			if payloadType(m.payload) == "MEDIA_STATUS" {
+				if id, state, ok := parseMediaStatus(m.payload); ok {
+					s.smu.Lock()
+					s.mediaSessionID = id
+					s.playerState = state
+					s.smu.Unlock()
+					s.notifyStatus()
+				}
 			}
 		case nsConnection:
 			// The platform or the app closed our virtual connection: either

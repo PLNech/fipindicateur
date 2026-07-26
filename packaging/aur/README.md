@@ -68,7 +68,7 @@ version from `git describe` at build time.
 
 ## Notes
 
-- `depends=('mpv' 'hicolor-icon-theme')`; `optdepends` cover `zenity` (the
+- `depends=('mpv' 'webkit2gtk-4.1' 'hicolor-icon-theme')`; `optdepends` cover `zenity` (the
   volume/crossfade slider dialogs) and `libappindicator-gtk3` (the GNOME tray
   via the AppIndicator extension).
 - These packages install the binary, the `.desktop` launcher, and the hicolor

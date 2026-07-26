@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased · Le panneau
+
+### Added
+- **« Le panneau »**, a branded quick-control drawer (Linux/GNOME): a
+  transient undecorated popup at the top-left of the screen, rendered by
+  webkit2gtk from our own embedded HTML/CSS/JS (self-contained, system fonts,
+  light/dark following the desktop). Now playing with the station's brand
+  color and artwork, play/pause, a real 0-100 volume slider with mute, a
+  « Sortie » picker (this computer + Chromecast devices, rescan), and the 13
+  stations as colored chips. Opened from the menu (« Panneau de contrôle »);
+  Escape or a click elsewhere hides it, and it stays resident for an instant
+  reopen. The old volume preset submenu is gone on Linux (macOS/Windows keep
+  it); every panel action flows through the same measurable chokepoints as
+  the menu.
+- **Cast-aware volume and transport.** While casting, the panel's slider and
+  mute drive the DEVICE's own volume, quantized to its stepInterval and
+  displayed from RECEIVER_STATUS, never invented: on an AV receiver
+  (controlType "master") that is the amp's master level, so we read first and
+  only ever send user-chosen values. Play/pause controls the active sink:
+  PAUSE/PLAY on the device's media session while casting (new events
+  cast_pause/cast_resume), the local player otherwise. The menu and media-key
+  semantics are unchanged (play while casting still brings the music home).
+- `fipindicateur drawer`: open the panel standalone with mock state, for
+  design iteration.
+
+### Packaging
+- The .deb now depends on libwebkit2gtk-4.1-0; the AUR packages on
+  webkit2gtk-4.1. macOS/Windows builds are untouched (a no-op stub keeps them
+  webkit-free).
+
 ## Correctif · 2026-07-26 · L'oreille qui traîne
 
 ### Fixed

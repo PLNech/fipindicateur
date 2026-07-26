@@ -1,0 +1,617 @@
+<!doctype html>
+<!-- « Le panneau » : the full control page. Self-contained by design: no CDN,
+     no remote fonts, everything inline. It renders exclusively from the State
+     JSON pushed by Go via window.fipState(json); user actions go back through
+     window.webkit.messageHandlers.fip. Three views (main / réglages /
+     historique) navigated in-page; every action lands on the same App handler
+     its tray-menu twin uses, so telemetry records exactly once. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>le panneau · FIP</title>
+<style>
+  :root {
+    /* paper (light): keeps its warm character, harmonized with the dark skin */
+    --bg: oklch(.99 .004 356);
+    --surface: oklch(.965 .006 40);
+    --surface2: oklch(.945 .008 40);
+    --ink: oklch(.24 .02 40);
+    --ink-muted: oklch(.45 .02 40);
+    --hairline: oklch(.86 .01 40);
+    --hover: oklch(.24 .02 40 / .05);
+    --fip: #e2007a;
+    --danger: oklch(.52 .19 25);
+    --shadow: 0 12px 32px oklch(.2 .02 40 / .28);
+    color-scheme: light;
+  }
+  :root.dark {
+    /* night: neutral Spotify-like darks, no brown tint */
+    --bg: #121212;
+    --surface: #1e1e1e;
+    --surface2: #242424;
+    --ink: #ffffff;
+    --ink-muted: #b3b3b3;
+    --hairline: rgba(255,255,255,.08);
+    --hover: rgba(255,255,255,.06);
+    --fip: #e2007a;
+    --danger: #f06a6a;
+    --shadow: 0 12px 32px rgba(0,0,0,.55);
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    /* fallback when Go pushed no class yet */
+    :root:not(.light):not(.dark) {
+      --bg: #121212;
+      --surface: #1e1e1e;
+      --surface2: #242424;
+      --ink: #ffffff;
+      --ink-muted: #b3b3b3;
+      --hairline: rgba(255,255,255,.08);
+      --hover: rgba(255,255,255,.06);
+      --fip: #e2007a;
+      --danger: #f06a6a;
+      --shadow: 0 12px 32px rgba(0,0,0,.55);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; }
+  body {
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    padding: 10px; /* breathing room for the panel shadow */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .panel {
+    --accent: var(--fip);
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 14px 20px 20px;
+    overflow: hidden;
+  }
+  button {
+    font: inherit; color: inherit; background: none; border: none;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+
+  /* header bar: view title + navigation (history, settings) + close */
+  .bar { display: flex; align-items: center; gap: 4px; margin-bottom: 12px; }
+  .bar-title {
+    font-size: 11px; font-weight: 700; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-muted); flex: 1;
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+  }
+  .iconbtn {
+    width: 30px; height: 30px; border-radius: 999px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-muted); transition: background .12s ease, color .12s ease;
+  }
+  .iconbtn:hover { background: var(--hover); color: var(--ink); }
+  .iconbtn.active { color: var(--accent); background: var(--hover); }
+  .iconbtn svg { width: 16px; height: 16px; }
+  #back[hidden] { display: none; }
+
+  /* now playing */
+  .now { display: flex; gap: 12px; align-items: center; }
+  .art {
+    width: 64px; height: 64px; border-radius: 12px; flex: none;
+    background: var(--accent); position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .art svg { width: 28px; height: 28px; }
+  .meta { min-width: 0; flex: 1; }
+  .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--accent);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .eyebrow::before {
+    content: ""; width: 18px; height: 3px; border-radius: 2px;
+    background: var(--accent);
+  }
+  .title { font-size: 15px; font-weight: 650; margin-top: 3px;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artist { font-size: 13px; color: var(--ink-muted);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* taste (like / dislike): same consent model as the menu, the click IS it */
+  .taste { display: flex; gap: 6px; margin-top: 10px; }
+  .taste button {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--hairline); color: var(--ink-muted);
+    background: var(--surface); transition: background .12s ease, color .12s ease;
+  }
+  .taste button:hover:not(:disabled) { background: var(--hover); color: var(--ink); border-color: var(--ink-muted); }
+  .taste button:disabled { opacity: .4; cursor: default; }
+  .taste button svg { width: 13px; height: 13px; }
+  .taste button.flash { color: var(--accent); border-color: var(--accent); }
+
+  /* transport + volume */
+  .transport { display: flex; gap: 14px; align-items: center; margin-top: 16px; }
+  .play {
+    width: 48px; height: 48px; border-radius: 999px; flex: none;
+    background: var(--accent); color: var(--accent-ink, #fff);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .12s ease;
+  }
+  .play:hover { transform: scale(1.04); }
+  .play:active { transform: scale(.94); }
+  .play svg { width: 20px; height: 20px; }
+  .vol { flex: 1; min-width: 0; }
+  .vol-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .vol-label { font-size: 11px; font-weight: 700; letter-spacing: .1em;
+               text-transform: uppercase; color: var(--ink-muted); }
+  .vol-pct { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+  input[type=range] {
+    width: 100%; margin: 8px 0 0; accent-color: var(--accent);
+    height: 18px;
+  }
+  .muted-look input[type=range] { opacity: .35; }
+  .mute {
+    width: 36px; height: 36px; border-radius: 999px; flex: none;
+    border: 1px solid var(--hairline); color: var(--ink-muted);
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s ease;
+  }
+  .mute:hover { background: var(--hover); }
+  .mute.on { color: var(--accent); border-color: var(--accent); }
+  .mute svg { width: 17px; height: 17px; }
+  .vol-note { font-size: 11px; color: var(--ink-muted); margin-top: 4px; min-height: 0; }
+
+  /* sections */
+  .section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+  .section-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-muted); margin-bottom: 8px;
+  }
+
+  /* output + station chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--hairline); color: var(--ink);
+    background: var(--surface); transition: background .12s ease;
+  }
+  .chip:hover { background: var(--hover); border-color: var(--ink-muted); }
+  /* A chip without its own --c (the Sortie pills) falls back to the panel's
+     dynamic station accent, NOT the fixed FIP pink: exactly one "selected"
+     hue across the UI; FIP pink stays reserved for the FIP chip's own --c
+     and fixed branding. */
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--c, var(--accent)); }
+  .chip.active {
+    border-color: var(--c, var(--accent));
+    background: color-mix(in oklab, var(--c, var(--accent)) 18%, transparent);
+    font-weight: 650;
+  }
+  .chip.ghost { color: var(--ink-muted); }
+  .chip:disabled { opacity: .5; cursor: default; }
+
+  /* settings + history rows */
+  .rows { display: flex; flex-direction: column; }
+  .row {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    text-align: left; padding: 9px 10px; border-radius: 10px;
+    font-size: 13.5px; transition: background .12s ease;
+  }
+  button.row:hover { background: var(--hover); }
+  .row .grow { flex: 1; min-width: 0; }
+  .row .hint { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .row.danger { color: var(--danger); }
+  .row.armed {
+    color: var(--danger); font-weight: 650;
+    background: color-mix(in oklab, var(--danger) 14%, transparent);
+  }
+  .row svg { width: 15px; height: 15px; flex: none; color: var(--ink-muted); }
+  .row.danger svg, .row.armed svg { color: var(--danger); }
+
+  /* pill switch */
+  .switch {
+    width: 36px; height: 20px; border-radius: 999px; flex: none;
+    background: var(--surface2); border: 1px solid var(--hairline);
+    position: relative; transition: background .15s ease, border-color .15s ease;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; border-radius: 999px;
+    background: var(--ink-muted); transition: left .15s ease, background .15s ease;
+  }
+  .row[aria-checked="true"] .switch { background: var(--accent); border-color: var(--accent); }
+  .row[aria-checked="true"] .switch::after { left: 18px; background: #fff; }
+
+  /* history list */
+  .hist-row { display: block; padding: 8px 10px; border-radius: 10px; }
+  .hist-row + .hist-row { border-top: 1px solid var(--hairline); border-radius: 0 0 10px 10px; }
+  .hist-title { font-size: 13.5px; font-weight: 600;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist-artist { font-size: 12px; color: var(--ink-muted);
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { font-size: 13px; color: var(--ink-muted); padding: 14px 10px; text-align: center; }
+
+  footer {
+    margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--hairline);
+    font-size: 11px; color: var(--ink-muted); display: flex; justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+<div class="panel" id="panel">
+  <header class="bar">
+    <button class="iconbtn" id="back" hidden title="Retour" aria-label="Retour"></button>
+    <div class="bar-title" id="barTitle">le panneau</div>
+    <button class="iconbtn" id="navHistory" title="Historique" aria-label="Historique"></button>
+    <button class="iconbtn" id="navSettings" title="Réglages" aria-label="Réglages"></button>
+    <button class="iconbtn" id="close" title="Fermer (Échap)" aria-label="Fermer"></button>
+  </header>
+
+  <section id="view-main">
+    <div class="now">
+      <div class="art" id="art"></div>
+      <div class="meta">
+        <div class="eyebrow" id="stationName">FIP</div>
+        <div class="title" id="trackTitle">En direct</div>
+        <div class="artist" id="trackArtist"></div>
+      </div>
+    </div>
+    <div class="taste">
+      <button id="like" title="Mémoriser que vous aimez ce titre (prefs.jsonl)"></button>
+      <button id="dislike" title="Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)"></button>
+    </div>
+
+    <div class="transport">
+      <button class="play" id="play" title="Lecture / pause" aria-label="Lecture / pause"></button>
+      <div class="vol" id="volWrap">
+        <div class="vol-row">
+          <span class="vol-label" id="volLabel">Volume</span>
+          <span class="vol-pct" id="volPct">·</span>
+        </div>
+        <input type="range" id="vol" min="0" max="100" step="1" value="50" aria-label="Volume">
+        <div class="vol-note" id="volNote"></div>
+      </div>
+      <button class="mute" id="mute" title="Muet" aria-label="Muet"></button>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Sortie</div>
+      <div class="chips" id="outputs"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Stations</div>
+      <div class="chips" id="stations"></div>
+    </div>
+  </section>
+
+  <section id="view-history" hidden>
+    <div class="rows" id="histList"></div>
+  </section>
+
+  <section id="view-settings" hidden>
+    <div class="rows" id="settingToggles"></div>
+    <div class="section">
+      <div class="section-label">Statistiques</div>
+      <div class="rows">
+        <button class="row" id="statsView"><span class="grow">Voir le rapport</span></button>
+        <button class="row" id="statsFolder"><span class="grow">Ouvrir le dossier de données</span></button>
+        <button class="row danger" id="statsClear"><span class="grow">Effacer les statistiques…</span></button>
+        <button class="row danger" id="prefsClear"><span class="grow">Effacer mes goûts…</span></button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-label">Application</div>
+      <div class="rows">
+        <button class="row" id="updateCheck"><span class="grow">Vérifier les mises à jour</span><span class="hint" id="verHint"></span></button>
+        <button class="row" id="openFip"><span class="grow">FIP sur radiofrance.fr</span></button>
+        <button class="row" id="openGithub"><span class="grow">GitHub · le fipindicateur</span></button>
+        <button class="row danger" id="quit"><span class="grow">Quitter</span></button>
+      </div>
+    </div>
+  </section>
+
+  <footer><span>le fipindicateur</span><span id="version"></span></footer>
+</div>
+
+<script>
+'use strict';
+let S = null;         // last state pushed by Go
+let dragging = false; // true while the finger owns the volume slider
+let view = 'main';    // 'main' | 'history' | 'settings'
+
+function send(cmd) {
+  try { window.webkit.messageHandlers.fip.postMessage(JSON.stringify(cmd)); }
+  catch (e) { console.log('cmd', JSON.stringify(cmd)); } // standalone browser preview
+}
+
+const svgPlay  = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
+const svgPause = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 4.5h4v15h-4zM13.5 4.5h4v15h-4z"/></svg>';
+const svgNote  = '<svg viewBox="0 0 24 24" fill="rgba(255,255,255,.85)"><path d="M9 4v10.6a3.5 3.5 0 1 0 2 3.15V8h7V4z"/></svg>';
+const svgVol   = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4.5v-15L8 9zM16.5 8.6a4.6 4.6 0 0 1 0 6.8l-1.2-1.3a2.8 2.8 0 0 0 0-4.2z"/></svg>';
+const svgVolOff= '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9v6h4l5 4.5v-15L8 9zM16 9.8l1.6 1.6 1.6-1.6 1.2 1.2-1.6 1.6 1.6 1.6-1.2 1.2-1.6-1.6-1.6 1.6-1.2-1.2 1.6-1.6-1.6-1.6z"/></svg>';
+const svgScan  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>';
+const svgClose = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const svgBack  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>';
+const svgGear  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.08A1.7 1.7 0 0 0 10.1 3.1V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.08a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.03z"/></svg>';
+const svgClock = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.5V12l3 2"/></svg>';
+const svgHeart = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 20.3l-1.3-1.2C6 14.9 3 12.2 3 8.9 3 6.2 5.1 4 7.8 4c1.5 0 3 .7 4.2 1.9C13.2 4.7 14.7 4 16.2 4 18.9 4 21 6.2 21 8.9c0 3.3-3 6-7.7 10.2z"/></svg>';
+const svgNope  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.2"/><path d="M6.5 6.5l11 11"/></svg>';
+
+// glyphInk picks a legible icon color over a station's brand color.
+function glyphInk(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? '#121212' : '#fff';
+}
+
+function chip(label, opts) {
+  const b = document.createElement('button');
+  b.className = 'chip' + (opts.active ? ' active' : '') + (opts.ghost ? ' ghost' : '');
+  if (opts.color) {
+    b.style.setProperty('--c', opts.color);
+    const d = document.createElement('span');
+    d.className = 'dot';
+    b.appendChild(d);
+  }
+  b.appendChild(document.createTextNode(label));
+  if (opts.title) b.title = opts.title;
+  if (opts.disabled) b.disabled = true; else b.addEventListener('click', opts.onclick);
+  return b;
+}
+
+// --- views -------------------------------------------------------------
+const viewTitles = { main: 'le panneau', history: 'Historique', settings: 'Réglages' };
+
+function setView(v) {
+  view = v;
+  render();
+}
+
+function renderBar() {
+  document.getElementById('barTitle').textContent = viewTitles[view];
+  document.getElementById('back').hidden = view === 'main';
+  document.getElementById('navHistory').classList.toggle('active', view === 'history');
+  document.getElementById('navSettings').classList.toggle('active', view === 'settings');
+  document.getElementById('view-main').hidden = view !== 'main';
+  document.getElementById('view-history').hidden = view !== 'history';
+  document.getElementById('view-settings').hidden = view !== 'settings';
+}
+
+// --- two-click confirm for the destructive rows ------------------------
+// First click arms the row with a visual warning; a second click within 5s
+// posts the command (the tray menu's confirm semantics, adapted to a page).
+const armState = {}; // id -> timeout handle
+function armThenSend(id, action, label) {
+  const btn = document.getElementById(id);
+  if (armState[id]) {
+    clearTimeout(armState[id]);
+    delete armState[id];
+    btn.classList.remove('armed');
+    btn.firstElementChild.textContent = label;
+    send({ action });
+    return;
+  }
+  btn.classList.add('armed');
+  btn.firstElementChild.textContent = 'Confirmer l’effacement ?';
+  armState[id] = setTimeout(() => {
+    delete armState[id];
+    btn.classList.remove('armed');
+    btn.firstElementChild.textContent = label;
+  }, 5000);
+}
+
+// --- settings ----------------------------------------------------------
+// Each toggle posts its toggle_* command; Go flips the setting through the
+// SAME handler the menu checkbox uses (single recording path) and pushes the
+// new state back, which re-renders the switch.
+const toggleDefs = [
+  { key: 'stats', label: "Statistiques d'écoute (local)", action: 'toggle_stats' },
+  { key: 'hifi', label: 'Haute qualité (AAC 192k)', action: 'toggle_hifi' },
+  { key: 'notifications', label: 'Notifications', action: 'toggle_notif' },
+  { key: 'playOnStart', label: 'Lecture au lancement', action: 'toggle_play_on_start' },
+  { key: 'autostart', label: 'Lancer au démarrage', action: 'toggle_autostart', gate: 'autostartSupported' },
+];
+
+function renderSettings() {
+  const box = document.getElementById('settingToggles');
+  const st = S.settings || {};
+  box.replaceChildren(...toggleDefs
+    .filter(d => !d.gate || st[d.gate])
+    .map(d => {
+      const b = document.createElement('button');
+      b.className = 'row';
+      b.setAttribute('role', 'switch');
+      b.setAttribute('aria-checked', st[d.key] ? 'true' : 'false');
+      const lbl = document.createElement('span');
+      lbl.className = 'grow';
+      lbl.textContent = d.label;
+      const sw = document.createElement('span');
+      sw.className = 'switch';
+      b.append(lbl, sw);
+      b.addEventListener('click', () => send({ action: d.action }));
+      return b;
+    }));
+  document.getElementById('verHint').textContent = S.version || '';
+}
+
+// --- history -----------------------------------------------------------
+function renderHistory() {
+  const box = document.getElementById('histList');
+  const rows = S.history || [];
+  if (rows.length === 0) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = 'Aucun titre récent';
+    box.replaceChildren(d);
+    return;
+  }
+  box.replaceChildren(...rows.map(h => {
+    const d = document.createElement('div');
+    d.className = 'hist-row';
+    const t = document.createElement('div');
+    t.className = 'hist-title';
+    t.textContent = h.title || '';
+    const a = document.createElement('div');
+    a.className = 'hist-artist';
+    a.textContent = h.artist || '';
+    d.append(t, a);
+    return d;
+  }));
+}
+
+// --- main render -------------------------------------------------------
+function render() {
+  if (!S) return;
+  document.documentElement.classList.toggle('dark', !!S.dark);
+  document.documentElement.classList.toggle('light', !S.dark);
+
+  const st = (S.stations || []).find(x => x.key === S.station) || { display: 'FIP', color: '#e2007a' };
+  const panel = document.getElementById('panel');
+  panel.style.setProperty('--accent', st.color);
+  panel.style.setProperty('--accent-ink', glyphInk(st.color));
+
+  renderBar();
+
+  // now playing
+  document.getElementById('stationName').textContent = st.display;
+  document.getElementById('trackTitle').textContent = (S.track && S.track.title) || 'En direct';
+  document.getElementById('trackArtist').textContent = (S.track && S.track.artist) || '';
+  const art = document.getElementById('art');
+  if (S.track && S.track.artwork) {
+    art.innerHTML = '<img alt="" src="' + S.track.artwork.replace(/"/g, '&quot;') + '">';
+    art.firstChild.addEventListener('error', () => { art.innerHTML = svgNote; });
+  } else {
+    art.innerHTML = svgNote;
+  }
+
+  // taste verdicts need a known track, like the menu items
+  const hasTrack = !!(S.track && S.track.title);
+  document.getElementById('like').disabled = !hasTrack;
+  document.getElementById('dislike').disabled = !hasTrack;
+
+  // transport: the button drives the ACTIVE sink (device when casting)
+  const playing = S.cast && S.cast.active ? S.cast.playing : S.playing;
+  document.getElementById('play').innerHTML = playing ? svgPause : svgPlay;
+
+  // volume: the device's own level while casting, mpv's otherwise
+  const casting = S.cast && S.cast.active;
+  const vol = casting ? S.cast.volume : S.volume;
+  const muted = casting ? S.cast.muted : S.muted;
+  const known = !casting || S.cast.volumeKnown;
+  const slider = document.getElementById('vol');
+  if (!dragging) slider.value = known ? vol : 50;
+  slider.disabled = !known;
+  document.getElementById('volPct').textContent = known ? vol + ' %' : '· %';
+  document.getElementById('volLabel').textContent = casting ? 'Volume (appareil)' : 'Volume';
+  document.getElementById('volNote').textContent =
+    casting && S.cast.controlType === 'master' ? 'Pilote le volume général de l’appareil' : '';
+  const mute = document.getElementById('mute');
+  mute.innerHTML = muted ? svgVolOff : svgVol;
+  mute.classList.toggle('on', !!muted);
+  document.getElementById('volWrap').classList.toggle('muted-look', !!muted);
+
+  // outputs
+  const outputs = document.getElementById('outputs');
+  outputs.replaceChildren(
+    chip('Cet ordinateur', { active: !casting, onclick: () => send({ action: 'output', value: -1 }) })
+  );
+  (S.devices || []).forEach((name, i) => {
+    outputs.appendChild(chip(name, {
+      active: casting && name === S.cast.deviceName,
+      onclick: () => send({ action: 'output', value: i }),
+    }));
+  });
+  const scan = chip(S.scanning ? 'Recherche…' : 'Rechercher', {
+    ghost: true, disabled: !!S.scanning,
+    title: 'Chercher les appareils Chromecast (mDNS)',
+    onclick: () => send({ action: 'rescan' }),
+  });
+  scan.insertAdjacentHTML('afterbegin', svgScan);
+  scan.firstChild.style.cssText = 'width:12px;height:12px;margin-right:5px';
+  outputs.appendChild(scan);
+
+  // station strip
+  const stations = document.getElementById('stations');
+  stations.replaceChildren(...(S.stations || []).map(x => chip(x.display, {
+    color: x.color, active: x.key === S.station,
+    onclick: () => send({ action: 'station', key: x.key }),
+  })));
+
+  renderSettings();
+  renderHistory();
+
+  document.getElementById('version').textContent = S.version || '';
+  reportHeight();
+}
+
+function reportHeight() {
+  send({ action: 'height', value: Math.ceil(document.body.scrollHeight) });
+}
+
+window.fipState = function (s) { S = (typeof s === 'string') ? JSON.parse(s) : s; render(); };
+
+// --- static wiring -----------------------------------------------------
+document.getElementById('back').innerHTML = svgBack;
+document.getElementById('navHistory').innerHTML = svgClock;
+document.getElementById('navSettings').innerHTML = svgGear;
+document.getElementById('close').innerHTML = svgClose;
+document.getElementById('like').innerHTML = svgHeart + '<span>J’aime</span>';
+document.getElementById('dislike').innerHTML = svgNope + '<span>Pas pour moi</span>';
+
+function hidePanel() {
+  view = 'main'; // next open lands on the main view
+  send({ action: 'hide' });
+}
+
+document.getElementById('close').addEventListener('click', hidePanel);
+document.getElementById('back').addEventListener('click', () => setView('main'));
+document.getElementById('navHistory').addEventListener('click', () => setView(view === 'history' ? 'main' : 'history'));
+document.getElementById('navSettings').addEventListener('click', () => setView(view === 'settings' ? 'main' : 'settings'));
+
+function tasteFlash(id) {
+  const b = document.getElementById(id);
+  b.classList.add('flash');
+  setTimeout(() => b.classList.remove('flash'), 900);
+}
+document.getElementById('like').addEventListener('click', () => { send({ action: 'like' }); tasteFlash('like'); });
+document.getElementById('dislike').addEventListener('click', () => { send({ action: 'dislike' }); tasteFlash('dislike'); });
+
+document.getElementById('play').addEventListener('click', () => send({ action: 'toggle_play' }));
+document.getElementById('mute').addEventListener('click', () => send({ action: 'toggle_mute' }));
+
+document.getElementById('statsView').addEventListener('click', () => send({ action: 'stats_view' }));
+document.getElementById('statsFolder').addEventListener('click', () => send({ action: 'stats_folder' }));
+document.getElementById('statsClear').addEventListener('click', () =>
+  armThenSend('statsClear', 'stats_clear', 'Effacer les statistiques…'));
+document.getElementById('prefsClear').addEventListener('click', () =>
+  armThenSend('prefsClear', 'prefs_clear', 'Effacer mes goûts…'));
+document.getElementById('updateCheck').addEventListener('click', () => send({ action: 'update_check' }));
+document.getElementById('openFip').addEventListener('click', () => send({ action: 'open_fip' }));
+document.getElementById('openGithub').addEventListener('click', () => send({ action: 'open_github' }));
+document.getElementById('quit').addEventListener('click', () => send({ action: 'quit' }));
+
+// The slider applies live but throttled (trailing edge), so a drag is a stream
+// of a few commands, not hundreds; Go records one event per applied value at
+// its usual chokepoints.
+let volTimer = 0;
+const slider = document.getElementById('vol');
+slider.addEventListener('pointerdown', () => { dragging = true; });
+window.addEventListener('pointerup', () => { dragging = false; });
+slider.addEventListener('input', () => {
+  document.getElementById('volPct').textContent = slider.value + ' %';
+  clearTimeout(volTimer);
+  volTimer = setTimeout(() => send({ action: 'volume', value: +slider.value }), 120);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hidePanel();
+});
+
+send({ action: 'ready' });
+</script>
+</body>
+</html>

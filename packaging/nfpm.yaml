@@ -28,10 +28,12 @@ description: |
   history, with desktop notifications and MPRIS media-key control. The binary
   links libmpv (from the libmpv2 package) via cgo and mpv plays the streams.
 
-# libmpv.so.2 (the only non-libc shared library the binary links directly) is
-# provided by libmpv2 in Debian/Ubuntu; apt resolves it from the standard repos.
+# libmpv.so.2 is provided by libmpv2 in Debian/Ubuntu; libwebkit2gtk-4.1-0
+# carries the webkit2gtk + gtk3 runtime « le panneau » (the quick-control
+# drawer) links against. Both resolve from the standard repos.
 depends:
   - libmpv2
+  - libwebkit2gtk-4.1-0
 recommends:
   - zenity
 suggests:

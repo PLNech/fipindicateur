@@ -6,7 +6,7 @@ pkgdesc="Tiny system-tray client for the FIP (Radio France) webradios"
 arch=('x86_64')
 url="https://github.com/PLNech/fipindicateur"
 license=('GPL-3.0-or-later')
-depends=('mpv' 'hicolor-icon-theme')
+depends=('mpv' 'webkit2gtk-4.1' 'hicolor-icon-theme')
 makedepends=('go' 'pkgconf')
 optdepends=('zenity: volume and crossfade slider dialogs'
             'libappindicator-gtk3: tray icon on GNOME (via the AppIndicator extension)')

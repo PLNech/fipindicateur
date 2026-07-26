@@ -9,6 +9,7 @@ pkgbase = fipindicateur-git
 	makedepends = pkgconf
 	makedepends = git
 	depends = mpv
+	depends = webkit2gtk-4.1
 	depends = hicolor-icon-theme
 	optdepends = zenity: volume and crossfade slider dialogs
 	optdepends = libappindicator-gtk3: tray icon on GNOME (via the AppIndicator extension)
