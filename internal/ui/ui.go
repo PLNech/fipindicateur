@@ -104,14 +104,16 @@ type App struct {
 	castScanning bool // one discovery at a time
 
 	// « le panneau »: the quick-control drawer (Linux only; a stub elsewhere).
-	// Built lazily on first open, then resident. drawerDark caches the desktop
-	// color-scheme probe, refreshed at each open. drawerShown tracks visibility
-	// so the menu entry toggles (show when hidden, hide when shown); it flips
-	// false through onDrawerHidden whenever the panel hides (Escape, the page's
+	// Built lazily on first open (or by the startup prewarm), then resident.
+	// drawerDark caches the desktop color-scheme probe, refreshed at each
+	// open. drawerPhase tracks visibility so the tray Activate toggles (show
+	// when hidden, hide when shown, and ignores clicks while the first Show is
+	// still initializing; see decideDrawerToggle). It falls back to hidden
+	// through onDrawerHidden whenever the panel hides (Escape, the page's
 	// close button, or the toggle itself). Guarded by a.mu.
 	drawer      *drawer.Drawer
 	drawerDark  bool
-	drawerShown bool
+	drawerPhase drawerPhase
 
 	// audioDevs is mpv's output-device enumeration, cached once at startup:
 	// the menu's "Sortie audio" submenu and the panel's « Sur cet appareil »
@@ -182,6 +184,7 @@ func New() *App {
 // Run at the head of the platform main loop (systray's onReady callback off
 // Linux; directly on Linux).
 func (a *App) OnReady() {
+	readyT0 := time.Now()
 	a.current = stations.ByKey(a.cfg.Station)
 
 	// Set a valid icon as the very first thing, before building the menu: the
@@ -271,6 +274,27 @@ func (a *App) OnReady() {
 	// Opt-in: one quiet update check at launch. Off by default.
 	if a.cfg.UpdateStartup {
 		go a.runUpdateCheck(true)
+	}
+
+	timingf("app: OnReady terminé en %v (tray prêt, station lancée)", time.Since(readyT0))
+
+	// Pre-warm « le panneau »: build the hidden webkit window a moment after
+	// startup, so the first click only pays a present instead of the whole
+	// gtk_init + WebKit spin-up. Delayed to never compete with startup and
+	// playback; one-shot; never presents or steals focus. Headless failures
+	// stay silent here (Prewarm swallows them) and the real open keeps its
+	// error path. toggleDrawer works identically whether this won the race.
+	if drawer.Available {
+		go func() {
+			time.Sleep(2 * time.Second)
+			a.mu.Lock()
+			if a.drawer == nil {
+				a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+			}
+			d := a.drawer
+			a.mu.Unlock()
+			d.Prewarm()
+		}()
 	}
 }
 
@@ -1312,6 +1336,52 @@ func (a *App) onCastError(err error) {
 
 // --- le panneau (quick-control drawer) ---
 
+// drawerPhase is the panel's visibility lifecycle, guarded by a.mu.
+type drawerPhase int
+
+const (
+	drawerHidden  drawerPhase = iota
+	drawerOpening             // Show dispatched, GTK still building/presenting
+	drawerVisible
+)
+
+// drawerToggleAction is what one tray Activate should do given the phase.
+type drawerToggleAction int
+
+const (
+	drawerActOpen drawerToggleAction = iota
+	drawerActHide
+	drawerActIgnore
+)
+
+// decideDrawerToggle maps the panel's phase to the toggle's effect. A
+// double-click must not double-open; and while the first Show is still
+// initializing (opening), a second click must be a no-op rather than a Hide,
+// because a Hide queued at that moment can reach the GTK thread BEFORE the
+// pending present (Show is still waiting in ensureStarted) and leave the flag
+// and the window inconsistent. Pure function, unit-tested.
+func decideDrawerToggle(p drawerPhase) drawerToggleAction {
+	switch p {
+	case drawerHidden:
+		return drawerActOpen
+	case drawerOpening:
+		return drawerActIgnore
+	default:
+		return drawerActHide
+	}
+}
+
+// timingsOn gates the FIP_TIMINGS=1 instrumentation logs (prefix "timing:",
+// greppable), shared convention with internal/drawer.
+var timingsOn = os.Getenv("FIP_TIMINGS") == "1"
+
+func timingf(format string, args ...any) {
+	if !timingsOn {
+		return
+	}
+	log.Printf("timing: "+format, args...)
+}
+
 // toggleDrawer shows « le panneau » when hidden and hides it when shown; on
 // Linux it is the tray icon's Activate (left click). The drawer is built
 // lazily on first open and stays resident afterwards (hidden, instant to
@@ -1325,26 +1395,42 @@ func (a *App) toggleDrawer() {
 		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
 	}
 	d := a.drawer
-	shown := a.drawerShown
-	if !shown {
-		a.drawerShown = true // optimistic: a double-click must not double-open
+	act := decideDrawerToggle(a.drawerPhase)
+	if act == drawerActOpen {
+		a.drawerPhase = drawerOpening // a double-click must not double-open
 		a.drawerDark = dark
 	}
 	a.mu.Unlock()
 
-	if shown {
-		d.Hide() // onDrawerHidden resets the flag
+	switch act {
+	case drawerActIgnore:
+		return // impatient second click during the first open: hold steady
+	case drawerActHide:
+		d.Hide() // onDrawerHidden resets the phase
 		return
 	}
 	a.rec.Record(events.Event{Kind: events.KindDrawerOpen, Station: a.current.Key})
 	// Show waits for the GTK thread to build the window on first open: keep
 	// it off the tray goroutine.
-	go func() {
-		if err := d.Show(a.drawerState()); err != nil {
-			log.Printf("ui: panneau: %v", err)
-			a.onDrawerHidden()
-		}
-	}()
+	go a.showDrawer(d)
+}
+
+// showDrawer runs one Show and settles the phase: visible once the present
+// is queued on the GTK thread (from then on a Hide queues after it, FIFO), or
+// back to hidden if the drawer cannot start (headless, gtk_init failure).
+func (a *App) showDrawer(d *drawer.Drawer) {
+	t0 := time.Now()
+	if err := d.Show(a.drawerState()); err != nil {
+		log.Printf("ui: panneau: %v", err)
+		a.onDrawerHidden()
+		return
+	}
+	timingf("panneau: Show revenu %v après le clic (present en file)", time.Since(t0))
+	a.mu.Lock()
+	if a.drawerPhase == drawerOpening {
+		a.drawerPhase = drawerVisible
+	}
+	a.mu.Unlock()
 }
 
 // onDrawerHidden is the drawer's onHide callback: whatever hid the panel
@@ -1352,7 +1438,7 @@ func (a *App) toggleDrawer() {
 // know it now opens again.
 func (a *App) onDrawerHidden() {
 	a.mu.Lock()
-	a.drawerShown = false
+	a.drawerPhase = drawerHidden
 	a.mu.Unlock()
 }
 
@@ -1367,26 +1453,22 @@ func (a *App) openDrawerSettings() {
 		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
 	}
 	d := a.drawer
-	shown := a.drawerShown
-	if !shown {
-		a.drawerShown = true
+	act := decideDrawerToggle(a.drawerPhase)
+	if act == drawerActOpen {
+		a.drawerPhase = drawerOpening
 		a.drawerDark = dark
 	}
 	a.mu.Unlock()
 
 	// SetView is sticky until the page is ready, so ordering with Show is
-	// safe on the very first open.
+	// safe on the very first open; when the panel is already open (or still
+	// opening), it just lands on Réglages without a re-Show.
 	d.SetView("settings")
-	if shown {
+	if act != drawerActOpen {
 		return
 	}
 	a.rec.Record(events.Event{Kind: events.KindDrawerOpen, Station: a.current.Key})
-	go func() {
-		if err := d.Show(a.drawerState()); err != nil {
-			log.Printf("ui: panneau: %v", err)
-			a.onDrawerHidden()
-		}
-	}()
+	go a.showDrawer(d)
 }
 
 // scrollVolume is the tray icon's Scroll: a vertical wheel notch steps the

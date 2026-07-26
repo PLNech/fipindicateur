@@ -116,10 +116,23 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
 )
+
+// timingsOn gates the FIP_TIMINGS=1 instrumentation. All timing logs share
+// the greppable "timing:" prefix; off by default so normal runs stay quiet.
+var timingsOn = os.Getenv("FIP_TIMINGS") == "1"
+
+func timing(format string, args ...any) {
+	if !timingsOn {
+		return
+	}
+	log.Printf("timing: "+format, args...)
+}
 
 // Available reports whether this build carries the real panel. True here
 // (linux && cgo); the stub is false, and the tray keeps its volume submenu.
@@ -160,8 +173,10 @@ type Drawer struct {
 	mu          sync.Mutex
 	lastState   State
 	hasState    bool
-	pendingView string // view requested before the page could take it
-	started     bool   // GTK goroutine launched (protects reading ready/initErr)
+	pendingView string    // view requested before the page could take it
+	started     bool      // GTK goroutine launched (protects reading ready/initErr)
+	firstShowT  time.Time // first Show call, to time click → page interactive
+	builtT      time.Time // window built, to time prewarm → page interactive
 
 	startOnce sync.Once
 	ready     chan struct{}
@@ -194,16 +209,21 @@ func (d *Drawer) ensureStarted() error {
 		go func() {
 			// GTK requires all its calls on one OS thread, forever.
 			runtime.LockOSThread()
+			t0 := time.Now()
 			if C.gtk_init_check(nil, nil) == 0 {
 				d.initErr = errors.New("drawer: gtk_init a échoué (pas d'affichage ?)")
 				close(d.ready)
 				return
 			}
+			tInit := time.Now()
 			html := C.CString(pageHTML)
 			var view *C.WebKitWebView
 			d.win = C.fip_build(&view, html, panelWidth, 520)
 			C.free(unsafe.Pointer(html)) // load_html copied it
 			d.view = view
+			d.builtT = time.Now()
+			timing("panneau: gtk_init %v + fip_build %v = fenêtre construite en %v (cachée)",
+				tInit.Sub(t0), d.builtT.Sub(tInit), d.builtT.Sub(t0))
 			close(d.ready)
 			C.gtk_main()
 		}()
@@ -215,18 +235,43 @@ func (d *Drawer) ensureStarted() error {
 // Show builds the window on first use, pushes the given state and presents
 // the panel at the top-right of the primary monitor's work area.
 func (d *Drawer) Show(state State) error {
+	t0 := time.Now()
 	d.mu.Lock()
 	d.lastState = state
 	d.hasState = true
+	if d.firstShowT.IsZero() {
+		d.firstShowT = t0
+	}
 	d.mu.Unlock()
 	if err := d.ensureStarted(); err != nil {
 		return err
 	}
+	tStarted := time.Now()
 	d.runOnGTK(func() {
 		d.evalStateLocked()
 		C.fip_present(d.win, panelWidth, panelMargin)
+		mode := "froid"
+		if d.pageReady {
+			mode = "chaud"
+		}
+		timing("panneau: present (%s) %v après Show (dont init/attente %v)",
+			mode, time.Since(t0), tStarted.Sub(t0))
 	})
 	return nil
+}
+
+// Prewarm builds the hidden window ahead of the first click (gtk_init, the
+// WebKit view, the page load), so the first Show only pays a present. It
+// never presents and never takes focus. Errors are deliberately silent
+// (headless, no DISPLAY): ensureStarted memoizes them, and the real open
+// replays the same error through Show's normal reporting path.
+func (d *Drawer) Prewarm() {
+	t0 := time.Now()
+	if err := d.ensureStarted(); err != nil {
+		timing("panneau: préchauffage abandonné: %v", err)
+		return
+	}
+	timing("panneau: préchauffage terminé en %v (fenêtre prête, cachée)", time.Since(t0))
 }
 
 // Push updates the page's state (visible or not) so the next look is always
@@ -404,6 +449,16 @@ func (d *Drawer) dispatch(cmd Command) {
 	switch cmd.Action {
 	case "ready":
 		d.pageReady = true
+		d.mu.Lock()
+		firstShow := d.firstShowT
+		d.mu.Unlock()
+		if !d.builtT.IsZero() {
+			timing("panneau: page interactive %v après la construction", time.Since(d.builtT))
+		}
+		if !firstShow.IsZero() {
+			timing("panneau: page interactive %v après le premier Show (clic → interactif)",
+				time.Since(firstShow))
+		}
 		d.evalStateLocked()
 		d.evalViewLocked()
 	case "height":

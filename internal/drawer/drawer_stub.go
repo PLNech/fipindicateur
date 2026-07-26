@@ -34,5 +34,8 @@ func (d *Drawer) Eval(script string) {}
 // SetWindowTitle is a no-op.
 func (d *Drawer) SetWindowTitle(title string) {}
 
+// Prewarm is a no-op.
+func (d *Drawer) Prewarm() {}
+
 // Hide is a no-op.
 func (d *Drawer) Hide() {}

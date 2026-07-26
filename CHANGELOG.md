@@ -1,5 +1,20 @@
 # Changelog
 
+## Non publié · Le panneau sans attente
+
+### Added
+- Préchauffage du panneau : la fenêtre webkit se construit en arrière-plan
+  quelques secondes après le démarrage (cachée, sans voler le focus), donc le
+  premier clic ne paie plus tout le démarrage de WebKit (#14, partie
+  ouverture)
+- Instrumentation `FIP_TIMINGS=1` : logs `timing:` sur le chemin froid du
+  panneau (gtk_init, fip_build, Show → present, clic → page interactive),
+  l'ouverture chaude et la fin d'OnReady
+### Fixed
+- Clic impatient pendant la première ouverture : le second Activate est
+  désormais ignoré tant que le Show initial s'initialise, au lieu d'un Hide
+  qui pouvait doubler le present sur le thread GTK et désynchroniser l'état
+
 ## Sprint 5 · 2026-07-26 · L'antenne dans les enceintes, le panneau dans la barre
 
 Three releases in one day: v0.4.0 (Chromecast), v0.4.1 (hardware fixes), v0.5.0
