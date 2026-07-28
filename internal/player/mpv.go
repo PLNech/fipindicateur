@@ -128,7 +128,13 @@ func (m *MPV) Initialize() error {
 	// astats filter: exposes per-window audio levels as filter metadata, used
 	// by the animated tray icon. Labeled @astats so the property path is
 	// stable. Negligible DSP cost (it runs on Android radios).
-	m.setOptionString("af", "@astats:lavfi=[astats=metadata=1:reset=6]")
+	//
+	// It measures ONLY the overall RMS level, the single number the VU glyph
+	// reads: the default measures ~79 stats per window (parsed 6x/second by
+	// RMSLevelDB) and dumps every one of them to the log when a handle is
+	// destroyed, which a crossfade now does on every zap.
+	m.setOptionString("af",
+		"@astats:lavfi=[astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level]")
 
 	m.setOptionFlag("terminal", false)
 	m.setOptionFlag("input-terminal", false)

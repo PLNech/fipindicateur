@@ -18,6 +18,11 @@
   le relâchement ; côté cast, une valeur déjà affichée par l'appareil n'est
   pas renvoyée
 ### Changed
+- Le filtre astats ne mesure plus que le niveau RMS global, le seul chiffre que
+  lit le glyphe VU : la configuration par défaut calculait ~79 statistiques par
+  fenêtre (analysées 6 fois par seconde) et les déversait toutes dans le
+  journal à la destruction d'un handle, ce que le fondu fait maintenant à
+  chaque zap (75 lignes de bruit pour trois zaps)
 - Le popup GNOME du simple clic n'a plus rien à dire : l'entrée unique du
   DBusMenu devient un séparateur (l'extension AppIndicator exige un menu non
   vide pour réagir au simple clic, et rien dans le protocole ne permet de
