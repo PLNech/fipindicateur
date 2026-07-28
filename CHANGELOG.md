@@ -18,6 +18,11 @@
   le relâchement ; côté cast, une valeur déjà affichée par l'appareil n'est
   pas renvoyée
 ### Changed
+- Les couleurs suivent le fondu : la teinte du glyphe dans la barre et l'accent
+  du panneau transitionnent désormais sur la durée du fondu audio configurée
+  (au lieu de 10 s fixes pour l'icône et 0,8 s pour le panneau), plancher à
+  0,3 s quand le fondu vaut 0. Un seul curseur règle ce qu'on entend et ce
+  qu'on voit ; `drawer --selftest` vérifie que la page reçoit la durée
 - Les événements `volume` du journal d'écoute sont regroupés par geste
   (premier niveau immédiat, niveau final en fin de fenêtre de 500 ms) : un
   glissement ne journalise plus des dizaines de lignes ; toujours enregistrés
@@ -29,13 +34,6 @@
 - Instrumentation `FIP_TIMINGS=1` : logs `timing:` sur le chemin froid du
   panneau (gtk_init, fip_build, Show → present, clic → page interactive),
   l'ouverture chaude et la fin d'OnReady
-### Changed
-- Les couleurs suivent le fondu : la teinte du glyphe dans la barre et l'accent
-  du panneau transitionnent désormais sur la durée du fondu audio configurée
-  (au lieu de 10 s fixes pour l'icône et 0,8 s pour le panneau), plancher à
-  0,3 s quand le fondu vaut 0. Un seul curseur règle ce qu'on entend et ce
-  qu'on voit ; `drawer --selftest` vérifie que la page reçoit la durée
-
 ### Fixed
 - Le fondu enchaîné remarche : `gtk_init` (donc le préchauffage du panneau)
   appelle `setlocale(LC_ALL, "")` pour tout le processus, et libmpv REFUSE de
