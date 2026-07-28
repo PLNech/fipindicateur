@@ -78,9 +78,22 @@ func menuRootProps() map[string]dbus.Variant {
 	}
 }
 
+// menuEntryProps describes the single entry whose only job is to EXIST. Read
+// the GNOME AppIndicator extension's own click path (indicatorStatusIcon.js,
+// vfunc_button_press_event): a primary click toggles the shell popup only when
+// `this.menu.numMenuItems` is non-zero, and that popup opening is the one signal
+// telling us the icon was single-clicked. So the menu cannot be empty, and the
+// popup cannot be suppressed from our side: the shell owns it, and nothing on
+// the DBusMenu protocol closes a menu the client opened.
+//
+// What we CAN do is give it nothing to say. The entry is a separator (the
+// extension maps type=separator to a PopupSeparatorMenuItem, dbusMenu.js), so
+// the click still registers while the popup shows a bare rule instead of a
+// command that duplicates what the panel is already doing. The panel opens from
+// the root's "opened" event, never from a click on this entry.
 func menuEntryProps() map[string]dbus.Variant {
 	return map[string]dbus.Variant{
-		"label":   dbus.MakeVariant("Ouvrir le panneau"),
+		"type":    dbus.MakeVariant("separator"),
 		"enabled": dbus.MakeVariant(true),
 		"visible": dbus.MakeVariant(true),
 	}

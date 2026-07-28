@@ -18,6 +18,13 @@
   le relâchement ; côté cast, une valeur déjà affichée par l'appareil n'est
   pas renvoyée
 ### Changed
+- Le popup GNOME du simple clic n'a plus rien à dire : l'entrée unique du
+  DBusMenu devient un séparateur (l'extension AppIndicator exige un menu non
+  vide pour réagir au simple clic, et rien dans le protocole ne permet de
+  refermer un menu que le shell a ouvert : c'est lui qui le possède). Le clic
+  reste détecté via l'événement « opened » de la racine, mais le popup affiche
+  un simple filet au lieu d'un « Ouvrir le panneau » qui doublait le panneau en
+  train de s'ouvrir
 - Les couleurs suivent le fondu : la teinte du glyphe dans la barre et l'accent
   du panneau transitionnent désormais sur la durée du fondu audio configurée
   (au lieu de 10 s fixes pour l'icône et 0,8 s pour le panneau), plancher à
