@@ -86,14 +86,18 @@ func menuRootProps() map[string]dbus.Variant {
 // popup cannot be suppressed from our side: the shell owns it, and nothing on
 // the DBusMenu protocol closes a menu the client opened.
 //
-// What we CAN do is give it nothing to say. The entry is a separator (the
-// extension maps type=separator to a PopupSeparatorMenuItem, dbusMenu.js), so
-// the click still registers while the popup shows a bare rule instead of a
-// command that duplicates what the panel is already doing. The panel opens from
-// the root's "opened" event, never from a click on this entry.
+// Making it a SEPARATOR to shut it up was tried and reverted (field-tested
+// 2026-07-28: single click went dead, only the double click still opened the
+// panel). GNOME hides a separator sitting at a menu's edge, and a menu with
+// nothing visible in it never opens, so the "opened" event we listen for never
+// fires. The entry must therefore be a real, visible, labelled item.
+//
+// So it carries the app's name rather than an order: the popup reads as a title
+// card for the panel appearing under it, instead of « Ouvrir le panneau »
+// duplicating what is already happening. Clicking it opens the panel too.
 func menuEntryProps() map[string]dbus.Variant {
 	return map[string]dbus.Variant{
-		"type":    dbus.MakeVariant("separator"),
+		"label":   dbus.MakeVariant("le FIPindicateur"),
 		"enabled": dbus.MakeVariant(true),
 		"visible": dbus.MakeVariant(true),
 	}

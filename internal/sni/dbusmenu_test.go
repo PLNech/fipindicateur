@@ -16,7 +16,7 @@ func TestMenuOpenEvent(t *testing.T) {
 		want    bool
 	}{
 		{0, "opened", true},           // shell popup opened: the single click
-		{menuItemID, "clicked", true}, // the entry activated (a separator cannot be, kept as a belt)
+		{menuItemID, "clicked", true}, // « le FIPindicateur » activated
 		{0, "closed", false},          // popup dismissed: not an open request
 		{0, "clicked", false},         // root is never clicked as an entry
 		{menuItemID, "opened", false},
@@ -31,11 +31,11 @@ func TestMenuOpenEvent(t *testing.T) {
 }
 
 // TestMenuLayout checks the static layout: a root marked as submenu holding
-// exactly one visible, enabled entry, which is a separator (no label to read:
-// the popup the shell insists on showing says nothing rather than duplicating
-// the panel). The GNOME extension only reacts to a single left click when the
-// menu has at least one entry, so an empty layout would silently reintroduce
-// issue #18.
+// exactly one visible, enabled, LABELLED entry. The GNOME extension only reacts
+// to a single left click when the menu has at least one entry, and the shell
+// only opens a menu that has something visible to show, so neither an empty
+// layout nor a label-less separator will do: both silently reintroduce issue #18
+// (field-tested 2026-07-28, the separator killed the single click).
 func TestMenuLayout(t *testing.T) {
 	root := menuRoot()
 	if root.ID != 0 {
@@ -54,11 +54,12 @@ func TestMenuLayout(t *testing.T) {
 	if entry.ID != menuItemID {
 		t.Errorf("entry id = %d, want %d", entry.ID, menuItemID)
 	}
-	if got := entry.Props["type"].Value(); got != "separator" {
-		t.Errorf("entry type = %v, want separator (a labelled entry duplicates the panel)", got)
+	label, labelled := entry.Props["label"]
+	if !labelled {
+		t.Fatal("entry has no label: GNOME hides an edge separator and never opens an empty menu, killing the single click")
 	}
-	if _, labelled := entry.Props["label"]; labelled {
-		t.Error("entry carries a label: the popup should say nothing, the panel speaks")
+	if got := label.Value(); got != "le FIPindicateur" {
+		t.Errorf("entry label = %v, want « le FIPindicateur »", got)
 	}
 	for _, p := range []string{"enabled", "visible"} {
 		if got := entry.Props[p].Value(); got != true {

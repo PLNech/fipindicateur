@@ -28,13 +28,15 @@
   fenêtre (analysées 6 fois par seconde) et les déversait toutes dans le
   journal à la destruction d'un handle, ce que le fondu fait maintenant à
   chaque zap (75 lignes de bruit pour trois zaps)
-- Le popup GNOME du simple clic n'a plus rien à dire : l'entrée unique du
-  DBusMenu devient un séparateur (l'extension AppIndicator exige un menu non
-  vide pour réagir au simple clic, et rien dans le protocole ne permet de
-  refermer un menu que le shell a ouvert : c'est lui qui le possède). Le clic
-  reste détecté via l'événement « opened » de la racine, mais le popup affiche
-  un simple filet au lieu d'un « Ouvrir le panneau » qui doublait le panneau en
-  train de s'ouvrir
+- Le popup GNOME du simple clic porte le nom de l'app (« le FIPindicateur »)
+  au lieu de « Ouvrir le panneau » : il se lit comme un cartouche de titre pour
+  le panneau qui apparaît dessous, plutôt qu'un ordre qui répète ce qui est déjà
+  en train de se produire. Le popup lui-même est irréductible : l'extension
+  AppIndicator n'ouvre le menu au clic simple que s'il n'est pas vide, et c'est
+  cette ouverture qui nous sert de signal ; rien dans le protocole ne referme un
+  menu que le shell a ouvert. Le rendre muet (un séparateur) a été essayé et
+  annulé : GNOME masque un séparateur en bord de menu et n'ouvre jamais un menu
+  sans rien à montrer, donc le clic simple mourait
 - Les couleurs suivent le fondu : la teinte du glyphe dans la barre et l'accent
   du panneau transitionnent désormais sur la durée du fondu audio configurée
   (au lieu de 10 s fixes pour l'icône et 0,8 s pour le panneau), plancher à
