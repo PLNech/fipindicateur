@@ -30,6 +30,22 @@
   panneau (gtk_init, fip_build, Show → present, clic → page interactive),
   l'ouverture chaude et la fin d'OnReady
 ### Fixed
+- Le fondu enchaîné remarche : `gtk_init` (donc le préchauffage du panneau)
+  appelle `setlocale(LC_ALL, "")` pour tout le processus, et libmpv REFUSE de
+  créer un handle quand `LC_NUMERIC` n'est pas « C » (mpv écrit « Non-C locale
+  detected »). Depuis que le panneau se préchauffe au démarrage, chaque flux
+  entrant échouait donc à s'initialiser et le zap retombait en coupure sèche.
+  La catégorie `LC_NUMERIC` est ramenée à « C » juste après `gtk_init` puis
+  après la construction de la vue WebKit (le reste de la locale utilisateur est
+  préservé), `drawer --selftest` le vérifie, et l'échec d'initialisation
+  journalise désormais la valeur fautive
+- Diagnostic de l'icône animée : « astats levels unavailable » nomme enfin
+  l'étape qui a échoué (propriété absente, JSON illisible, clé manquante,
+  valeur non numérique) au lieu de laisser chercher. Quand l'animation
+  s'éteint, la teinte de station cesse de fondre : le glyphe reprenait la
+  couleur d'un coup, ce qui se lisait comme un bug du fondu
+- La fenêtre du panneau s'appelle « le FIPindicateur » (ce que montrent alt-tab
+  et la liste des fenêtres) ; les maquettes gardent leurs titres marqués
 - Le fondu enchaîné s'entend enfin : le `volume` interne de mpv applique un
   gain cubique (`(v/100)³`, vérifié dans mpv 0.37), donc la courbe équal-power
   envoyée telle quelle laissait la station entrante sous -30 dB pendant le

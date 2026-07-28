@@ -270,7 +270,8 @@ func (f *Fader) startCrossfade(outgoing *MPV, url string, dur time.Duration) {
 	zero := 0
 	incoming := f.newHandle(&zero)
 	if err := incoming.Initialize(); err != nil {
-		log.Printf("player: crossfade: incoming init failed (%v), hard cut", err)
+		log.Printf("player: crossfade: incoming init failed (%v, LC_NUMERIC=%q, libmpv exige « C »), hard cut",
+			err, numericLocale())
 		outgoing.Play(url)
 		return
 	}
@@ -476,6 +477,16 @@ func (f *Fader) RMSLevelDB() (float64, bool) {
 		return 0, false
 	}
 	return cur.RMSLevelDB()
+}
+
+// AudioLevelDiag explains why the current handle's level is unreadable, or ""
+// when it reads fine (see MPV.AudioLevelDiag).
+func (f *Fader) AudioLevelDiag() string {
+	cur := f.cur()
+	if cur == nil {
+		return "aucun handle mpv courant"
+	}
+	return cur.AudioLevelDiag()
 }
 
 // AudioDeviceList enumerates output devices via the current handle.

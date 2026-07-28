@@ -231,6 +231,16 @@ func runSelftest() int {
 	}
 	t.d.SetWindowTitle("le panneau · FIP (autotest)")
 
+	// The panel's gtk_init adopts the user's locale process-wide; libmpv refuses
+	// mpv_create unless LC_NUMERIC is "C", which is exactly how the audio fondu
+	// died once the panel started pre-warming at startup. Assert the repair here:
+	// the window is built, so whatever GTK and WebKit were going to do is done.
+	if loc := drawer.NumericLocale(); loc != "C" {
+		t.failf("LC_NUMERIC = %q après construction du panneau: libmpv refusera le second flux (fondu = coupure sèche)", loc)
+	} else {
+		fmt.Println("LC_NUMERIC = « C » après gtk_init (le fondu survit au panneau)")
+	}
+
 	// Wait for the page, then inject the helpers (Eval drops scripts until
 	// the page is ready, so ping until the pong comes back).
 	ready := false

@@ -183,7 +183,8 @@ func (an *animator) loop(stop chan struct{}) {
 				an.broken = true
 				an.stopCh = nil
 				an.mu.Unlock()
-				log.Printf("ui: astats levels unavailable, animated icon disabled for this run")
+				log.Printf("ui: astats levels unavailable (%s), animated icon disabled for this run",
+					an.app.player.AudioLevelDiag())
 				an.app.applyIconState(false)
 				return
 			}

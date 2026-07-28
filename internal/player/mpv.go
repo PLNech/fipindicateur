@@ -9,6 +9,13 @@ package player
 
 // #include <mpv/client.h>
 // #include <stdlib.h>
+// #include <locale.h>
+//
+// /* Read-only: libmpv refuses mpv_create unless LC_NUMERIC is "C". Never write
+//    the locale from here: this runs on arbitrary goroutines while the panel's
+//    GTK thread reads it. The panel restores the category itself
+//    (drawer_linux.go); this only names the culprit in the log. */
+// static const char *lcNumeric(void) { return setlocale(LC_NUMERIC, NULL); }
 //
 // /* helper functions for building C string arrays */
 // char** makeCharArray(int size) {
@@ -35,6 +42,12 @@ const (
 	propAoVolume   C.uint64_t = 3
 	propAoMute     C.uint64_t = 4
 )
+
+// numericLocale reports the process LC_NUMERIC category. libmpv only creates a
+// handle when it is "C", so a crossfade that cannot bring up its incoming
+// stream logs this value: a GUI toolkit calling setlocale(LC_ALL, "") behind our
+// back is the one cause worth naming out loud.
+func numericLocale() string { return C.GoString(C.lcNumeric()) }
 
 // AudioDevice is one entry of mpv's audio-device-list: Name is the identifier
 // passed to the audio-device property, Description is the human-readable label.
@@ -283,38 +296,54 @@ func (m *MPV) URL() string {
 // libmpv for the sub-key path ("af-metadata/astats/lavfi.astats...") segfaults
 // libmpv 2.2 (verified on Ubuntu 24.04). Never use sub-key access here.
 func (m *MPV) RMSLevelDB() (float64, bool) {
+	db, reason := m.rmsLevelDB()
+	return db, reason == ""
+}
+
+// AudioLevelDiag names why RMSLevelDB is unavailable right now, or "" when the
+// level reads fine. Used for the single log line the animated icon prints
+// before giving up on a run: "unavailable" alone sent us hunting the wrong
+// suspect once (a locale bug that turned out to be the crossfade's, not this).
+func (m *MPV) AudioLevelDiag() string {
+	_, reason := m.rmsLevelDB()
+	return reason
+}
+
+// rmsLevelDB is the shared read: it returns the level, or a human reason (in
+// French, it lands in the app log) naming the step that failed.
+func (m *MPV) rmsLevelDB() (float64, string) {
 	m.mu.Lock()
 	handle := m.handle
 	running := m.running
 	m.mu.Unlock()
 	if handle == nil || !running {
-		return 0, false
+		return 0, "aucun flux (handle mpv absent ou arrêté)"
 	}
 
 	cn := C.CString("af-metadata/astats")
 	defer C.free(unsafe.Pointer(cn))
 	cs := C.mpv_get_property_string(handle, cn)
 	if cs == nil {
-		return 0, false
+		return 0, "propriété af-metadata/astats indisponible (filtre astats absent ou aucun audio en vol)"
 	}
 	defer C.mpv_free(unsafe.Pointer(cs))
 
 	var meta map[string]string
 	if err := json.Unmarshal([]byte(C.GoString(cs)), &meta); err != nil {
-		return 0, false
+		return 0, fmt.Sprintf("af-metadata/astats illisible: %v", err)
 	}
 	raw, ok := meta["lavfi.astats.Overall.RMS_level"]
 	if !ok {
-		return 0, false
+		return 0, fmt.Sprintf("lavfi.astats.Overall.RMS_level absent (%d clés présentes)", len(meta))
 	}
 	if raw == "-inf" { // digital silence
-		return -60, true
+		return -60, ""
 	}
 	db, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		return 0, false
+		return 0, fmt.Sprintf("niveau %q non numérique: %v", raw, err)
 	}
-	return db, true
+	return db, ""
 }
 
 // AudioDeviceList enumerates the output devices mpv sees on this platform
