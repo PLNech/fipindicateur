@@ -79,6 +79,16 @@ const stHelpers = `(function () {
   post({ ev: 'pong' });
 })();`
 
+// accentDurWant is the --accent-dur the page must compute for a given fondu:
+// the same 0.3s floor the page applies, so a mock with the fondu at 0 fails the
+// guard only for a real reason (see the accent check in runSelftest).
+func accentDurWant(crossfadeSecs int) string {
+	if crossfadeSecs < 1 {
+		return "0.3s"
+	}
+	return fmt.Sprintf("%ds", crossfadeSecs)
+}
+
 // localOnly are page-local controls: their click must not raise a JS error
 // but is not expected to post a command (view navigation, the Sortie fold).
 var localOnly = map[string]bool{
@@ -275,7 +285,7 @@ func runSelftest() int {
 	})();`)
 	if m, ok := t.nextMsg(); !ok || m.Ev != "accentdur" {
 		t.failf("pas de réponse sur --accent-dur")
-	} else if want := fmt.Sprintf("%ds", mockState().Settings.CrossfadeSecs); m.ID != want {
+	} else if want := accentDurWant(mockState().Settings.CrossfadeSecs); m.ID != want {
 		t.failf("--accent-dur = %q, attendu %q (l'accent doit suivre la durée du fondu)", m.ID, want)
 	} else {
 		fmt.Printf("--accent-dur = %s (l'accent du panneau suit le fondu audio)\n", m.ID)
