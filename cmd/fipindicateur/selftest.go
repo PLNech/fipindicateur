@@ -259,6 +259,23 @@ func runSelftest() int {
 		return 1
 	}
 
+	// The panel's colour identity must travel over the AUDIO fondu's duration:
+	// the page reads settings.crossfadeSecs into --accent-dur, which the accent
+	// transition uses. Assert the plumbing here (the timing itself is CSS).
+	t.d.Push(mockState())
+	t.d.Eval(`(function(){
+	  var d = getComputedStyle(document.getElementById('panel')).getPropertyValue('--accent-dur').trim();
+	  window.webkit.messageHandlers.fip.postMessage(JSON.stringify({action:'selftest', key: JSON.stringify({ev:'accentdur', id:d})}));
+	})();`)
+	if m, ok := t.nextMsg(); !ok || m.Ev != "accentdur" {
+		t.failf("pas de réponse sur --accent-dur")
+	} else if want := fmt.Sprintf("%ds", mockState().Settings.CrossfadeSecs); m.ID != want {
+		t.failf("--accent-dur = %q, attendu %q (l'accent doit suivre la durée du fondu)", m.ID, want)
+	} else {
+		fmt.Printf("--accent-dur = %s (l'accent du panneau suit le fondu audio)\n", m.ID)
+	}
+	t.drain()
+
 	views := []string{"main", "history", "settings"}
 	clicks := 0
 	for _, sc := range stScenarios() {

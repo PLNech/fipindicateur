@@ -81,7 +81,11 @@
   }
   .panel {
     --accent: var(--fip);
-    transition: --accent .8s ease, --accent-ink .8s ease;
+    /* --accent-dur is set from the state at each render: the panel's colour
+       identity travels over exactly the audio fondu's duration, so one slider
+       moves what you hear and what you see. */
+    --accent-dur: .8s;
+    transition: --accent var(--accent-dur) ease, --accent-ink var(--accent-dur) ease;
     background: var(--bg);
     border: 1px solid var(--hairline);
     border-radius: 16px;
@@ -617,6 +621,11 @@ function render() {
 
   const st = (S.stations || []).find(x => x.key === S.station) || { display: 'FIP', color: '#e2007a' };
   const panel = document.getElementById('panel');
+  // The accent travels over the audio fondu's duration (floored at .3s so a
+  // hard cut still eases): set the duration BEFORE the colour, same JS turn, so
+  // the engine resolves this transition with the new timing.
+  const fadeSecs = Math.max(0.3, (S.settings && S.settings.crossfadeSecs) || 0);
+  panel.style.setProperty('--accent-dur', fadeSecs + 's');
   panel.style.setProperty('--accent', st.color);
   panel.style.setProperty('--accent-ink', glyphInk(st.color));
 

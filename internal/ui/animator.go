@@ -23,11 +23,15 @@ const (
 	// ~5s of consecutive astats failures while audio flows: assume the filter
 	// this libmpv and auto-disable for the rest of the run.
 	animMaxErrs = 5 * animFPS
-	// A station zap crossfades the bar ink over tintDur, quantized to tintSteps
-	// discrete values so the frame cache stays bounded and at most tintSteps
-	// extra SetIcon calls happen per change (when VU heights alone would dedup).
-	tintDur   = 10 * time.Second
+	// A station zap crossfades the bar ink over the AUDIO fondu's duration (see
+	// App.tintDuration), quantized to tintSteps discrete values so the frame
+	// cache stays bounded and at most tintSteps extra SetIcon calls happen per
+	// change (when VU heights alone would dedup).
 	tintSteps = 16
+	// minTintDur floors the ink fade: with the fondu set to 0 (hard cut) the
+	// colour still eases over a blink instead of snapping, and it keeps the
+	// division in currentTintLocked safe.
+	minTintDur = 300 * time.Millisecond
 )
 
 type animator struct {
@@ -42,7 +46,16 @@ type animator struct {
 	tintFrom  color.NRGBA
 	tintTo    color.NRGBA
 	tintStart time.Time
+	tintDur   time.Duration // this transition's length, given by the caller
 	tintSet   bool
+}
+
+// dur is the current transition's length, floored (caller holds mu).
+func (an *animator) durLocked() time.Duration {
+	if an.tintDur < minTintDur {
+		return minTintDur
+	}
+	return an.tintDur
 }
 
 // smoothstep eases 0..1 with a symmetric ease-in-out.
@@ -56,11 +69,14 @@ func smoothstep(t float64) float64 {
 	return t * t * (3 - 2*t)
 }
 
-// setTintTarget starts a crossfade toward c. A zap mid-transition starts from
-// the currently displayed (interpolated) tint, not the old endpoint, so the
-// motion never snaps. The first-ever target eases in from the neutral theme
-// ink, turning app start into a fade rather than a jump.
-func (an *animator) setTintTarget(c color.NRGBA) {
+// setTintTarget starts a crossfade toward c over dur. A zap mid-transition
+// starts from the currently displayed (interpolated) tint, not the old endpoint,
+// so the motion never snaps. The first-ever target eases in from the neutral
+// theme ink, turning app start into a fade rather than a jump.
+//
+// dur comes from the caller (App.tintDuration: the configured audio fondu), so
+// the ink transition IS the audible transition, seen instead of heard.
+func (an *animator) setTintTarget(c color.NRGBA, dur time.Duration) {
 	an.mu.Lock()
 	defer an.mu.Unlock()
 	now := time.Now()
@@ -71,13 +87,14 @@ func (an *animator) setTintTarget(c color.NRGBA) {
 	}
 	an.tintTo = c
 	an.tintStart = now
+	an.tintDur = dur
 	an.tintSet = true
 }
 
 // currentTintLocked is the un-quantized eased tint at now. Used only to seed a
 // new crossfade's starting point; the displayed frame uses the quantized value.
 func (an *animator) currentTintLocked(now time.Time) color.NRGBA {
-	t := float64(now.Sub(an.tintStart)) / float64(tintDur)
+	t := float64(now.Sub(an.tintStart)) / float64(an.durLocked())
 	return icon.Lerp(an.tintFrom, an.tintTo, smoothstep(t))
 }
 
@@ -90,7 +107,7 @@ func (an *animator) quantizedTint(now time.Time) color.NRGBA {
 	if !an.tintSet {
 		return color.NRGBA{}
 	}
-	t := float64(now.Sub(an.tintStart)) / float64(tintDur)
+	t := float64(now.Sub(an.tintStart)) / float64(an.durLocked())
 	if t < 0 {
 		t = 0
 	}

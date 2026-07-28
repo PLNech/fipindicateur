@@ -378,11 +378,12 @@ func (a *App) startStation(s stations.Station, play bool) {
 	a.setPlayingUI(play)
 
 	// Crossfade the animated glyph's ink toward this station's legible brand
-	// color. Color only while music plays: paused/stopped falls back to the
-	// static neutral icon (Active) via setPlayingUI. The gsettings panel probe
-	// is cached (icon.PanelIsDark), never per frame.
+	// color, over the SAME duration as the audio fondu: the tray shows what the
+	// speakers are doing. Color only while music plays: paused/stopped falls back
+	// to the static neutral icon (Active) via setPlayingUI. The gsettings panel
+	// probe is cached (icon.PanelIsDark), never per frame.
 	if play {
-		a.anim.setTintTarget(icon.Legible(s.Color, icon.PanelIsDark()))
+		a.anim.setTintTarget(icon.Legible(s.Color, icon.PanelIsDark()), a.tintDuration())
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -393,6 +394,18 @@ func (a *App) startStation(s stations.Station, play bool) {
 			a.onNowPlaying(np)
 		}
 	}()
+}
+
+// tintDuration is how long a colour identity takes to change, in the tray and
+// in the panel alike: the configured audio fondu, floored by minTintDur so a
+// hard cut (fondu 0) still eases the eye over a blink. One knob moves the
+// sound and the sight together.
+func (a *App) tintDuration() time.Duration {
+	d := time.Duration(a.cfg.CrossfadeSecs) * time.Second
+	if d < minTintDur {
+		return minTintDur
+	}
+	return d
 }
 
 func (a *App) quality() stations.Quality {
