@@ -66,9 +66,15 @@ const stHelpers = `(function () {
   window.__stRange = function (id, v) {
     var el = document.getElementById(id);
     post({ ev: 'mark', id: id });
+    // A real drag is pointerdown, moves, pointerup: the volume slider resets
+    // its "already sent" memory on pointerdown, so a harness that skips it has
+    // the SECOND scenario's identical value suppressed as a duplicate and reads
+    // the slider as mute. Simulate the whole gesture, not just the value.
+    el.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     el.value = v;
     el.dispatchEvent(new Event('input'));
     el.dispatchEvent(new Event('change'));
+    window.dispatchEvent(new Event('pointerup', { bubbles: true }));
   };
   post({ ev: 'pong' });
 })();`

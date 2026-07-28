@@ -18,6 +18,11 @@
   le relâchement ; côté cast, une valeur déjà affichée par l'appareil n'est
   pas renvoyée
 ### Changed
+- `drawer --selftest` simule le geste complet sur les curseurs (pointerdown,
+  valeur, input/change, pointerup) : sans pointerdown, le curseur de volume
+  gardait en mémoire la valeur déjà envoyée d'un scénario à l'autre et cinq
+  scénarios sur six lisaient un curseur muet. Le vrai glissement, lui, n'a
+  jamais été cassé (350 interactions, 0 échec)
 - Le filtre astats ne mesure plus que le niveau RMS global, le seul chiffre que
   lit le glyphe VU : la configuration par défaut calculait ~79 statistiques par
   fenêtre (analysées 6 fois par seconde) et les déversait toutes dans le
