@@ -108,16 +108,18 @@ func (a *App) buildMenu() {
 	a.on(a.mPlay, "", a.togglePlay)
 
 	// Volume submenu. Volume stays measurable through the same setters the
-	// Linux panel drives.
+	// Linux panel drives, and every item drives the ACTIVE sink: the cast
+	// device while casting, mpv otherwise (setActiveVolume / toggleActiveMute).
+	// The submenu's own title says which one it is talking to (applyVolumeUI).
 	a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
 	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
-	a.on(a.mMute, "", a.toggleMute) // toggleMute records the resulting state
+	a.on(a.mMute, "", a.toggleActiveMute) // records the resulting state at source
 	a.volMI = map[int]*menuItem{}
 	for _, pct := range volumePresets {
 		it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
 		a.volMI[pct] = it
 		p := pct
-		a.on(it, "", func() { a.setVolume(p) }) // setVolume records the level
+		a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
 	}
 	// A real slider, when zenity is present. Absent on macOS/Windows and
 	// minimal installs, so the item is only added when the binary exists (no
@@ -358,13 +360,21 @@ func (a *App) releaseDialog() {
 }
 
 // openVolumeSlider launches the zenity volume slider off the tray goroutine.
-// A second click while one is open is ignored (single dialog at a time).
+// A second click while one is open is ignored (single dialog at a time). The
+// dialog opens on the ACTIVE sink's level: the device's own while casting (so
+// the handle does not jump), the local one otherwise.
 func (a *App) openVolumeSlider() {
 	if !a.acquireDialog() {
 		log.Printf("ui: a zenity dialog is already open, ignoring volume slider")
 		return
 	}
-	start := a.cfg.Volume
+	start, known := a.activeVolume()
+	if !known {
+		// Casting to a device that has not reported its level yet: the dialog
+		// still opens, at mid-scale, because whatever the user releases on IS
+		// a user-chosen level. Only invented ones are forbidden.
+		start = 50
+	}
 	go func() {
 		defer a.releaseDialog()
 		a.runVolumeSlider(start)
@@ -378,6 +388,13 @@ func (a *App) openVolumeSlider() {
 // close (non-zero exit) it reverts to the volume that was current when the
 // dialog opened (apply + UI sync, no event, no save). External pavucontrol
 // changes during the drag flow through onExternalVolume; last writer wins.
+//
+// While casting, the drag ticks are NOT applied live: --print-partial emits one
+// line per pixel of travel, and each tick would be a request on the wire to the
+// receiver. The device gets exactly one level, on OK, through setCastVolume
+// (which records it); Cancel then has nothing to revert, since nothing was ever
+// sent. The local sink is left alone: it is paused while casting, so applying
+// there would move a volume nobody can hear.
 func (a *App) runVolumeSlider(start int) {
 	cmd := exec.Command("zenity", "--scale",
 		"--title", "FIP · Volume",
@@ -407,10 +424,20 @@ func (a *App) runVolumeSlider(start int) {
 		}
 		v = clampPct(v)
 		last = v
-		a.applyVolumeLive(v) // player + menu + MPRIS, no event, no save
+		if a.castSession() == nil {
+			a.applyVolumeLive(v) // player + menu + MPRIS, no event, no save
+		}
 	}
 
-	if err := cmd.Wait(); err == nil {
+	ok := cmd.Wait() == nil
+	if sess := a.castSession(); sess != nil {
+		// Casting: one level on OK, nothing at all on Cancel.
+		if ok {
+			a.setCastVolume(sess, clampPct(last)) // records at source
+		}
+		return
+	}
+	if ok {
 		// OK: state is already applied live; record exactly one event and persist.
 		a.cfg.Volume = clampPct(last)
 		a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: a.cfg.Volume})

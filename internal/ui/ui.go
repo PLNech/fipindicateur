@@ -939,11 +939,75 @@ func (a *App) flushVolumeRecord() {
 	}
 }
 
+// setActiveVolume routes a user-chosen level to the ACTIVE sink: the cast
+// device while casting, the local player otherwise. Every user volume entry
+// point (tray presets, the panel slider, MPRIS, the zenity slider) goes
+// through here or through scrollVolume, which resolves the same way from a
+// delta; the tray wheel needs the sink's current level first, so it branches
+// itself. Both branches record KindVolume at their own source with the same
+// convention (recordVolume): the events log measures behaviour, and says
+// nothing about which sink the sound came out of.
+func (a *App) setActiveVolume(pct int) {
+	if sess := a.castSession(); sess != nil {
+		a.setCastVolume(sess, pct)
+		return
+	}
+	a.setVolume(pct)
+}
+
+// activeVolume is the ACTIVE sink's current level in percent: the device's own
+// reported level while casting, the local level otherwise. The bool is false
+// only while casting to a device that has not reported a level yet, i.e. when
+// there is no base to step from: callers that need one (the tray wheel) must
+// then do nothing rather than invent a starting point, since on a controlType
+// "master" receiver an invented level is the amplifier's master volume.
+func (a *App) activeVolume() (int, bool) {
+	if sess := a.castSession(); sess != nil {
+		v, ok := sess.ReceiverVolume()
+		if !ok {
+			return 0, false
+		}
+		return clampPct(int(math.Round(v.Level * 100))), true
+	}
+	return a.cfg.Volume, true
+}
+
+// toggleActiveMute is setActiveVolume's sibling for the mute switch: the
+// device's own mute while casting (the level is preserved device-side), mpv's
+// otherwise. Same KindMute record either way.
+func (a *App) toggleActiveMute() {
+	if sess := a.castSession(); sess != nil {
+		a.toggleCastMuted(sess)
+		return
+	}
+	a.toggleMute()
+}
+
 // applyVolumeUI syncs the volume submenu (title, preset checkmarks, mute)
 // with the current config, and mirrors the level into the panel. On Linux the
 // submenu does not exist (the panel replaced it): only the push happens.
+//
+// While casting, the submenu describes the DEVICE, because that is what its
+// items now drive (setActiveVolume): the title carries the device's reported
+// level and no preset is checked, since the local config level is not what is
+// audible. An unreported level shows as « Volume (appareil) », never as an
+// invented number.
 func (a *App) applyVolumeUI() {
 	if a.mVolume != nil {
+		if sess := a.castSession(); sess != nil {
+			v, ok := sess.ReceiverVolume()
+			a.mVolume.SetTitle(castVolumeLabel(v, ok))
+			for _, it := range a.volMI {
+				it.Uncheck()
+			}
+			if ok && v.Muted {
+				a.mMute.Check()
+			} else {
+				a.mMute.Uncheck()
+			}
+			a.pushDrawerState()
+			return
+		}
 		a.mVolume.SetTitle(volumeLabel(a.cfg.Volume))
 		for pct, it := range a.volMI {
 			if pct == a.cfg.Volume {
@@ -961,14 +1025,27 @@ func (a *App) applyVolumeUI() {
 	a.pushDrawerState()
 }
 
-// setVolume applies a menu-selected volume preset.
-func (a *App) setVolume(pct int) {
-	if pct < 0 {
-		pct = 0
+// castVolumeLabel titles the volume submenu while casting: the device's own
+// level when it has reported one, the bare mention otherwise.
+func castVolumeLabel(v cast.VolumeStatus, known bool) string {
+	if !known {
+		return "Volume (appareil)"
 	}
-	if pct > 100 {
-		pct = 100
-	}
+	return fmt.Sprintf("Volume (appareil · %d %%)", clampPct(int(math.Round(v.Level*100))))
+}
+
+// setVolume applies a user-chosen level to the LOCAL sink (a menu preset, a
+// wheel step, the panel slider when nothing is casting). Callers that may be
+// casting go through setActiveVolume instead.
+func (a *App) setVolume(pct int) { a.setLocalVolume(clampPct(pct), true) }
+
+// setLocalVolume is the ONE place a user action writes the local stream's
+// volume (TestLocalSinkWriteChokepoints allows only this and applyVolumeLive,
+// the event-less zenity drag tick): every routing decision happens above it, so
+// no path can quietly move mpv's volume while the sound comes out of a cast
+// device. publish is false when the change CAME from MPRIS: re-publishing the
+// value the client just wrote is pointless and invites an echo.
+func (a *App) setLocalVolume(pct int, publish bool) {
 	if pct != a.cfg.Volume {
 		a.cfg.Volume = pct
 		a.recordVolume(pct)
@@ -977,7 +1054,7 @@ func (a *App) setVolume(pct int) {
 		// paused), the persisted value is applied on the next playback
 		// restart. Either way the menu reflects the chosen level now.
 		a.player.SetVolume(float64(pct))
-		if a.mpris != nil {
+		if publish && a.mpris != nil {
 			a.mpris.SetVolume(float64(pct) / 100)
 		}
 	}
@@ -1036,18 +1113,26 @@ func (a *App) onExternalMute(mute bool) {
 }
 
 // SetVolumeFrac implements mpris.Controller: an external client (playerctl,
-// GNOME) wrote the Volume property. Reflect it in player, config and menu.
-// The equal-value early return breaks any publish/callback echo loop.
+// GNOME, the desktop's volume slider for this player) wrote the Volume
+// property. Reflect it in player, config and menu.
+//
+// The cast branch comes FIRST, before the equal-value guard: while casting the
+// user's intent is the device's level, which has nothing to do with
+// a.cfg.Volume, so comparing against the local level could swallow a real
+// change. It deliberately does not publish back over MPRIS (the property
+// already holds what the client wrote, and re-publishing invites an echo
+// loop): MPRIS keeps exposing the local level, the panel and the submenu are
+// where the device's own level is shown.
 func (a *App) SetVolumeFrac(v float64) {
 	pct := clampPct(int(math.Round(v * 100)))
+	if sess := a.castSession(); sess != nil {
+		a.setCastVolume(sess, pct)
+		return
+	}
 	if pct == a.cfg.Volume {
 		return
 	}
-	a.cfg.Volume = pct
-	a.recordVolume(pct)
-	a.save()
-	a.player.SetVolume(float64(pct))
-	a.applyVolumeUI()
+	a.setLocalVolume(pct, false) // no publish back: the client already holds this value
 }
 
 func clampPct(pct int) int {
@@ -1282,7 +1367,9 @@ func (a *App) refreshCastMenu() {
 	} else {
 		a.mCastLocal.Check()
 	}
-	a.pushDrawerState()
+	// The volume UI describes whichever sink is active, so a cast that starts
+	// or ends re-describes it; applyVolumeUI pushes the panel state as well.
+	a.applyVolumeUI()
 }
 
 // castToDevice starts casting the current station to the i-th discovered
@@ -1689,7 +1776,9 @@ func (a *App) openDrawerSettings() {
 // delta; only the sign is trusted (hosts scale deltas differently). The
 // resulting change is recorded at its usual source (setVolume /
 // setCastVolume), and an equal-value step (already at 0 or 100) records
-// nothing.
+// nothing. A step needs a base level, so a device that has not reported one
+// yet is left alone (activeVolume's false): a wheel notch must not become an
+// invented level on an amplifier's master volume.
 func (a *App) scrollVolume(delta int, orientation string) {
 	if orientation != "vertical" || delta == 0 {
 		return
@@ -1698,13 +1787,11 @@ func (a *App) scrollVolume(delta int, orientation string) {
 	if delta > 0 {
 		step = -scrollVolumeStep
 	}
-	if sess := a.castSession(); sess != nil {
-		if v, ok := sess.ReceiverVolume(); ok {
-			a.setCastVolume(sess, clampPct(int(math.Round(v.Level*100))+step))
-		}
+	cur, known := a.activeVolume()
+	if !known {
 		return
 	}
-	a.setVolume(clampPct(a.cfg.Volume + step))
+	a.setActiveVolume(clampPct(cur + step))
 }
 
 // scrollVolumeStep is the volume change (percent) per wheel notch on the tray
@@ -1875,9 +1962,11 @@ func (a *App) pushDrawerState() {
 	d.Push(a.drawerState())
 }
 
-// onCastStatus mirrors a device-side status update (its volume knob turned,
-// its media paused) into the panel. Called from the session's read goroutine.
-func (a *App) onCastStatus() { a.pushDrawerState() }
+// onCastStatus mirrors a device-side status update (its volume knob turned, its
+// media paused) into the UI: applyVolumeUI re-describes the active sink for the
+// tray submenu and pushes the panel state. Called from the session's read
+// goroutine, like the rest of the cast callbacks.
+func (a *App) onCastStatus() { a.applyVolumeUI() }
 
 // onDrawerCommand routes a panel action. Every branch lands on an EXISTING
 // measurable chokepoint (togglePlay/setPlayingUI, setVolume, toggleMute,
@@ -1902,17 +1991,9 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 			a.togglePlay()
 		}
 	case "volume":
-		if sess := a.castSession(); sess != nil {
-			a.setCastVolume(sess, c.Value)
-		} else {
-			a.setVolume(c.Value)
-		}
+		a.setActiveVolume(c.Value) // device while casting, mpv otherwise
 	case "toggle_mute":
-		if sess := a.castSession(); sess != nil {
-			a.toggleCastMuted(sess)
-		} else {
-			a.toggleMute()
-		}
+		a.toggleActiveMute()
 	case "station":
 		if stations.Exists(c.Key) {
 			a.setStation(c.Key) // startStation records the Markov edge

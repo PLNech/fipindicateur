@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"os"
+	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/PLNech/fipindicateur/internal/cast"
@@ -79,5 +82,48 @@ func TestCastDialDoneKeepsNewerPending(t *testing.T) {
 	a.castDialDone(a.castDialGen) // the current dial finishing
 	if a.castDialing != "" {
 		t.Errorf("castDialing = %q; the owning dial failed to release the guard", a.castDialing)
+	}
+}
+
+// TestActiveVolumeLocal pins the local branch of the active-sink resolver: with
+// no cast session the level is the config one, and it is always known (mpv
+// needs no round trip to tell us where it is).
+func TestActiveVolumeLocal(t *testing.T) {
+	a := &App{}
+	a.cfg.Volume = 42
+	pct, known := a.activeVolume()
+	if !known || pct != 42 {
+		t.Errorf("activeVolume() = (%d, %v), want (42, true)", pct, known)
+	}
+}
+
+// TestLocalSinkWriteChokepoints is the volume-routing invariant, guarded the
+// way the package guards its other seams (see TestSingleOnClickCallSite): the
+// LOCAL player's volume is written in exactly two places, setLocalVolume (the
+// recorded setter) and applyVolumeLive (the event-less zenity drag ticks). Any
+// other path that changes the volume must go through setActiveVolume, which
+// sends it to the cast device while casting; writing a.player.SetVolume
+// directly would move a sink nobody is listening to.
+func TestLocalSinkWriteChokepoints(t *testing.T) {
+	allowed := map[string]bool{"setLocalVolume": true, "applyVolumeLive": true}
+	fnHead := regexp.MustCompile(`^func \(a \*App\) ([A-Za-z]+)\(`)
+
+	for _, f := range []string{"ui.go", "ui_menu.go", "ui_sni_linux.go"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fn := ""
+		for _, line := range strings.Split(string(src), "\n") {
+			if m := fnHead.FindStringSubmatch(line); m != nil {
+				fn = m[1]
+			}
+			if !strings.Contains(line, "a.player.SetVolume(") {
+				continue
+			}
+			if !allowed[fn] {
+				t.Errorf("%s: %s writes the local sink directly (a.player.SetVolume); route it through setActiveVolume", f, fn)
+			}
+		}
 	}
 }
