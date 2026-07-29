@@ -173,6 +173,19 @@ func payloadType(payload string) string {
 	return t.Type
 }
 
+// launchErrorReason extracts the "reason" a LAUNCH_ERROR payload gives for
+// refusing the launch (the protocol's own vocabulary: NOT_FOUND, CANCELLED,
+// NOT_ALLOWED, INVALID_REQUEST...). Empty when the device sent no reason or
+// the payload is unparsable: the refusal stands either way, only its stated
+// cause is missing.
+func launchErrorReason(payload string) string {
+	var e struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.Unmarshal([]byte(payload), &e)
+	return e.Reason
+}
+
 // findDefaultReceiver extracts the Default Media Receiver's session and
 // transport ids from a RECEIVER_STATUS payload, if the app is running.
 func findDefaultReceiver(payload string) (sessionID, transportID string, ok bool) {

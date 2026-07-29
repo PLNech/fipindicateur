@@ -2,6 +2,8 @@ package cast
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +59,33 @@ func TestPayloadType(t *testing.T) {
 	}
 	if got := payloadType(`not json at all`); got != "" {
 		t.Errorf("payloadType on garbage = %q, want empty", got)
+	}
+}
+
+func TestLaunchErrorReason(t *testing.T) {
+	if got := launchErrorReason(`{"type":"LAUNCH_ERROR","requestId":1,"reason":"CANCELLED"}`); got != "CANCELLED" {
+		t.Errorf("launchErrorReason = %q, want CANCELLED", got)
+	}
+	// A reasonless refusal and a garbled frame both mean "cause unknown".
+	if got := launchErrorReason(`{"type":"LAUNCH_ERROR","requestId":1}`); got != "" {
+		t.Errorf("launchErrorReason without a reason = %q, want empty", got)
+	}
+	if got := launchErrorReason(`not json at all`); got != "" {
+		t.Errorf("launchErrorReason on garbage = %q, want empty", got)
+	}
+}
+
+func TestLaunchRefused(t *testing.T) {
+	err := launchRefused(`{"type":"LAUNCH_ERROR","reason":"NOT_ALLOWED"}`)
+	if !errors.Is(err, ErrLaunchRefused) {
+		t.Fatalf("launchRefused(%v) no longer matches ErrLaunchRefused: the retry path would miss it", err)
+	}
+	if !strings.Contains(err.Error(), "NOT_ALLOWED") {
+		t.Errorf("error = %q, want the device's reason in the message", err)
+	}
+	// No reason sent: the bare sentinel, no empty parenthetical noise.
+	if err := launchRefused(`{"type":"LAUNCH_ERROR"}`); err != ErrLaunchRefused {
+		t.Errorf("reasonless refusal = %q, want the bare sentinel", err)
 	}
 }
 

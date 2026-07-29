@@ -42,6 +42,25 @@ const (
 	heartbeatEvery = 5 * time.Second
 )
 
+// ErrLaunchRefused is returned by Dial when the device answers LAUNCH with a
+// LAUNCH_ERROR. Observed twice within the same second on a Pioneer VSX-933;
+// the suspected cause is two concurrent dials racing (GNOME fires Activate
+// twice on one click), which the in-flight guard in the ui package now
+// prevents. Why the receiver refuses is otherwise unknown, so a short-backoff
+// retry stays in place as a backstop (see castLaunchRetries in ui.go). Errors
+// wrapping this one carry the device's stated reason, when it sends one.
+var ErrLaunchRefused = errors.New("cast: receiver refused the launch")
+
+// launchRefused builds the error for a LAUNCH_ERROR frame. The device's stated
+// reason (see launchErrorReason) rides in the message so it reaches the log,
+// while errors.Is(err, ErrLaunchRefused) keeps matching for the retry path.
+func launchRefused(payload string) error {
+	if reason := launchErrorReason(payload); reason != "" {
+		return fmt.Errorf("%w (reason %s)", ErrLaunchRefused, reason)
+	}
+	return ErrLaunchRefused
+}
+
 // Session is a live connection to a Chromecast running the Default Media
 // Receiver. All exported methods are safe to call from the UI goroutine:
 // writes are serialized and time-bounded, reads happen on an internal
@@ -131,7 +150,7 @@ func (s *Session) handshake() error {
 		case nsReceiver:
 			switch payloadType(m.payload) {
 			case "LAUNCH_ERROR":
-				return errors.New("cast: receiver refused the launch")
+				return launchRefused(m.payload)
 			case "RECEIVER_STATUS":
 				// The LAUNCH answer usually carries the device's current
 				// volume: read it now so the UI can display the real level.
