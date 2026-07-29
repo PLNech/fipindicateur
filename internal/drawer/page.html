@@ -238,6 +238,18 @@
   }
   .chip.ghost { color: var(--ink-muted); }
   .chip:disabled { opacity: .5; cursor: default; }
+  /* A dial in flight: an AV receiver can take half a minute to answer, so the
+     chip you clicked says « Connexion… » and breathes until it resolves. The
+     dashed outline reads as "not settled yet" without borrowing the solid
+     accent of an established output. */
+  .chip.pending {
+    border-style: dashed; border-color: var(--c, var(--accent));
+    animation: chip-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes chip-pulse { 50% { opacity: .55; } }
+  @media (prefers-reduced-motion: reduce) {
+    .chip.pending { animation: none; }
+  }
 
   /* settings + history rows */
   .rows { display: flex; flex-direction: column; }
@@ -470,6 +482,7 @@ function chip(label, opts) {
     b.appendChild(d);
   }
   b.appendChild(document.createTextNode(label));
+  if (opts.pending) b.classList.add('pending');
   if (opts.title) b.title = opts.title;
   if (opts.disabled) b.disabled = true; else b.addEventListener('click', opts.onclick);
   return b;
@@ -676,23 +689,37 @@ function render() {
   // groups. « Sur cet appareil »: the local sinks (picking one while casting
   // also brings playback home). « Sur le réseau »: the Chromecast devices
   // from the last scan.
+  // A dial in flight (cast.dialing): the clicked device answers this instant,
+  // « Connexion… », rather than looking inert for the ten to thirty seconds an
+  // AV receiver can take. An established session wins over it, so the moment
+  // the dial lands the chip becomes the plain active output.
+  const dialing = (!casting && S.cast && S.cast.dialing) || '';
   const curDev = (S.audioDevices || []).find(d => d.name === S.audioDevice);
-  document.getElementById('outCurrent').textContent =
-    casting ? S.cast.deviceName : ((curDev && curDev.label) || 'Automatique');
+  document.getElementById('outCurrent').textContent = casting ? S.cast.deviceName
+    : dialing ? dialing + ' · Connexion…'
+    : ((curDev && curDev.label) || 'Automatique');
   document.getElementById('outToggle').setAttribute('aria-expanded', outputsOpen ? 'true' : 'false');
   document.getElementById('outBody').hidden = !outputsOpen;
   const local = document.getElementById('outputsLocal');
   local.replaceChildren(...(S.audioDevices || []).map(d =>
     chip(d.label || d.name, {
-      active: !casting && d.name === S.audioDevice,
+      // While a dial is in flight the sound is still local, but no local chip
+      // is marked active: the panel shows one output being aimed at, and
+      // clicking a local sink is how you cancel the dial.
+      active: !casting && !dialing && d.name === S.audioDevice,
       onclick: () => send({ action: 'audio_device', key: d.name }),
     })));
 
   const net = document.getElementById('outputsNet');
   net.replaceChildren();
   (S.devices || []).forEach((name, i) => {
-    net.appendChild(chip(name, {
-      active: casting && name === S.cast.deviceName,
+    const pending = name === dialing;
+    net.appendChild(chip(pending ? name + ' · Connexion…' : name, {
+      active: (casting && name === S.cast.deviceName) || pending,
+      pending: pending,
+      title: pending ? 'Connexion à l’appareil en cours…' : '',
+      // Still clickable: a click on the device already being dialed is a
+      // logged no-op on the Go side, and a disabled chip would read as broken.
       onclick: () => send({ action: 'output', value: i }),
     }));
   });

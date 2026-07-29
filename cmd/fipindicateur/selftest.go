@@ -116,6 +116,11 @@ func stScenarios() []stScenario {
 		Active: true, DeviceName: base.Devices[0], Playing: true,
 		Volume: 34, Muted: false, VolumeKnown: true, ControlType: "master",
 	}
+	// The in-between state: a dial in flight on the first device, nothing
+	// active yet (an AV receiver can take half a minute to answer). The chip
+	// says « Connexion… » and stays clickable, so the click-walk covers it.
+	dialing := base
+	dialing.Cast = drawer.Cast{Dialing: base.Devices[0]}
 
 	return []stScenario{
 		{"diffusion inactive", base}, // base IS the not-casting case, kept explicit
@@ -123,6 +128,7 @@ func stScenarios() []stScenario {
 		{"historique vide", noHist},
 		{"à venir vide", noUp},
 		{"aucun appareil", noDevs},
+		{"connexion en cours", dialing},
 		{"diffusion active", casting},
 	}
 }

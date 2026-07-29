@@ -6,11 +6,17 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/PLNech/fipindicateur/internal/drawer"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/version"
 )
+
+// mockDialDelay is how long the harness pretends a device takes to answer a
+// dial, so the « Connexion… » state is visible in design QA instead of being
+// skipped. Real receivers take from a couple of seconds to half a minute.
+const mockDialDelay = 4 * time.Second
 
 // mockUpcoming is the harness's « À venir » fixture, restored when the mock's
 // calendar toggle comes back on (mirroring the app's gating).
@@ -130,11 +136,27 @@ func runDrawer(theme string) int {
 			state.Station = c.Key
 		case "output":
 			if c.Value >= 0 && c.Value < len(state.Devices) {
-				// Mock a Pioneer-style device: master control, its own level.
-				state.Cast = drawer.Cast{
-					Active: true, DeviceName: state.Devices[c.Value], Playing: true,
-					Volume: 34, VolumeKnown: true, ControlType: "master",
-				}
+				// Two phases, like the real thing: the dial is pending first
+				// (an AV receiver takes ten to thirty seconds to answer, and
+				// the chip says « Connexion… » throughout), then the session
+				// lands. Mocked at mockDialDelay so the pending state can be
+				// looked at; the device itself is Pioneer-style, master
+				// control with its own level.
+				name := state.Devices[c.Value]
+				state.Cast = drawer.Cast{Dialing: name}
+				go func() {
+					time.Sleep(mockDialDelay)
+					mu.Lock()
+					defer mu.Unlock()
+					if state.Cast.Dialing != name {
+						return // cancelled or superseded meanwhile
+					}
+					state.Cast = drawer.Cast{
+						Active: true, DeviceName: name, Playing: true,
+						Volume: 34, VolumeKnown: true, ControlType: "master",
+					}
+					d.Push(state)
+				}()
 			} else {
 				state.Cast = drawer.Cast{}
 			}

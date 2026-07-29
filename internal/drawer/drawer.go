@@ -120,8 +120,14 @@ type Upcoming struct {
 // as reported by RECEIVER_STATUS (never a value we invented); VolumeKnown is
 // false until the device reported once. ControlType "master" means the slider
 // drives an amplifier's master volume: the page labels it accordingly.
+// Dialing is the name of the device a connection is being opened on ("" =
+// none): an AV receiver can take ten to thirty seconds to answer, so the page
+// marks that device « Connexion… » from the click onwards. Active is still
+// false then (the sound is local until the dial lands), and the two are
+// mutually exclusive: on success Dialing clears as Active turns on.
 type Cast struct {
 	Active      bool   `json:"active"`
+	Dialing     string `json:"dialing"`
 	DeviceName  string `json:"deviceName"`
 	Playing     bool   `json:"playing"`
 	Volume      int    `json:"volume"`

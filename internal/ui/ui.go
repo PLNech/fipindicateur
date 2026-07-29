@@ -105,8 +105,16 @@ type App struct {
 	// locally) and the devices from the last mDNS scan. All guarded by a.mu.
 	// castName is the active target's friendly name, used only for menu
 	// checkmarks: device identity never reaches the events log.
+	// castDialing is the name of the device a startCast goroutine is currently
+	// dialing ("" = none): the in-flight guard, one dial at a time, and what
+	// the UI paints as « Connexion… ». castDialGen is bumped whenever a dial
+	// in flight is cancelled (the user picked local playback while an AV
+	// receiver was still taking its ten-odd seconds to answer), so the dialing
+	// goroutine can tell its result is no longer wanted.
 	castSess     *cast.Session
 	castName     string
+	castDialing  string
+	castDialGen  int
 	castDevices  []cast.Device
 	castScanning bool // one discovery at a time
 
@@ -1221,20 +1229,35 @@ func (a *App) scanCast() {
 	a.refreshCastMenu()
 }
 
+// castPendingSuffix marks the device a dial is in flight on. Dialing an AV
+// receiver can take ten to thirty seconds, so the clicked item says so at once
+// instead of looking inert; systray gives us a label and a checkmark, and that
+// is enough (U+2026, never an em dash: see the house style).
+const castPendingSuffix = " · Connexion…"
+
 // refreshCastMenu syncs the device slots, the placeholder and the checkmarks
-// with the last scan and the active target.
+// with the last scan, the active target and the dial in flight. The three
+// states are mutually exclusive by precedence: an established session wins
+// over a pending dial on the same device (the last repaint of a successful
+// dial happens while castDialing is still set), and everything else is local.
 func (a *App) refreshCastMenu() {
 	a.mu.Lock()
 	devs := make([]cast.Device, len(a.castDevices))
 	copy(devs, a.castDevices)
 	active := a.castName
 	casting := a.castSess != nil
+	dialing := a.castDialing
 	a.mu.Unlock()
 
 	for i, it := range a.castMI {
 		if i < len(devs) {
-			it.SetTitle(devs[i].Name)
-			if casting && devs[i].Name == active {
+			pending := dialing != "" && devs[i].Name == dialing && !(casting && devs[i].Name == active)
+			if pending {
+				it.SetTitle(devs[i].Name + castPendingSuffix)
+			} else {
+				it.SetTitle(devs[i].Name)
+			}
+			if pending || (casting && devs[i].Name == active) {
 				it.Check()
 			} else {
 				it.Uncheck()
@@ -1250,7 +1273,11 @@ func (a *App) refreshCastMenu() {
 	} else {
 		a.mCastNone.Hide()
 	}
-	if casting {
+	// One target marked at a time: a pending dial takes the checkmark off
+	// « Cet ordinateur » too, so the submenu never shows two checked outputs.
+	// The sound is still local until the dial lands, which is exactly what the
+	// « Connexion… » label says; clicking « Cet ordinateur » cancels the dial.
+	if casting || dialing != "" {
 		a.mCastLocal.Uncheck()
 	} else {
 		a.mCastLocal.Check()
@@ -1260,6 +1287,14 @@ func (a *App) refreshCastMenu() {
 
 // castToDevice starts casting the current station to the i-th discovered
 // device. The handshake and LOAD run off the tray goroutine.
+//
+// Only one dial at a time: the `already` check sees established sessions, and
+// castDialing covers the seconds before one exists. Two launch refusals landed
+// in the same second on one receiver (see cast.ErrLaunchRefused); two
+// concurrent dials racing is the suspected cause, GNOME's SNI being known to
+// fire Activate twice for a single click. Test-and-set happens in one critical
+// section because the tray and the drawer's command channel do not share a
+// goroutine.
 func (a *App) castToDevice(i int) {
 	a.mu.Lock()
 	if i >= len(a.castDevices) {
@@ -1268,34 +1303,108 @@ func (a *App) castToDevice(i int) {
 	}
 	dev := a.castDevices[i]
 	already := a.castSess != nil && a.castName == dev.Name
+	dialing := a.castDialing
+	gen := a.castDialGen
+	if !already && dialing == "" {
+		a.castDialing = dev.Name
+	}
 	a.mu.Unlock()
 	if already {
 		return // clicking the active target changes nothing
 	}
-	go a.startCast(dev)
+	if dialing != "" {
+		log.Printf("ui: cast: dial already in flight, ignoring %q (dialing %q)", dev.Name, dialing)
+		return
+	}
+	// Paint « Connexion… » before the dial starts: on this goroutine, so the
+	// feedback is on screen by the time the click returns rather than after a
+	// receiver has finished thinking about it.
+	a.refreshCastMenu()
+	go a.startCast(dev, gen)
 }
+
+// castDialDone releases the in-flight guard castToDevice set and repaints, so
+// the « Connexion… » state clears on every exit path (session up, refusal,
+// cancellation). It only releases the guard when the dial still owns it: a
+// cancelled dial (stopCasting bumped castDialGen) must not clear the pending
+// state of whatever the user asked for since. Idempotent, so callers may
+// release early AND keep a deferred call as a backstop.
+func (a *App) castDialDone(gen int) {
+	a.mu.Lock()
+	if a.castDialGen == gen {
+		a.castDialing = ""
+	}
+	a.mu.Unlock()
+	a.refreshCastMenu()
+}
+
+// castDialSuperseded reports whether the dial that started at generation gen
+// has been cancelled meanwhile (see stopCasting). Checked at the gates where
+// the dial would otherwise take over the audio, never mid-network: a socket
+// read cannot be un-started, it can only be dropped on arrival.
+func (a *App) castDialSuperseded(gen int) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.castDialGen != gen
+}
+
+// castLaunchRetries bounds retries of a LAUNCH_ERROR-refused Dial (see
+// cast.ErrLaunchRefused). A Pioneer VSX-933 refused twice in the same second,
+// which the in-flight guard above should now prevent; the retry stays as a
+// backstop in case a receiver refuses for its own reasons. Other Dial failures
+// (unreachable, timeout) are not retried: nothing says they are transient.
+const castLaunchRetries = 2
+
+// castLaunchRetryDelay is the backoff between retries: a refusal comes back
+// immediately, so this is the whole pause the user waits through, and three
+// attempts stay within a few seconds.
+const castLaunchRetryDelay = 2 * time.Second
 
 // startCast dials the device, LOADs the current stream and, on success,
 // pauses local playback and flips the menu state. Any failure surfaces as a
 // notification and the menu resets to local: casting never crashes or blocks
-// the tray. Runs off the tray goroutine (see castToDevice).
-func (a *App) startCast(dev cast.Device) {
+// the tray. Runs off the tray goroutine (see castToDevice). gen is the dial
+// generation at click time: if it goes stale the user cancelled meanwhile and
+// this dial drops its result instead of grabbing the audio late.
+func (a *App) startCast(dev cast.Device, gen int) {
+	defer a.castDialDone(gen) // one dial at a time, whichever way this returns
 	station := a.current
 	url := station.StreamURL(a.quality())
 	ctype := a.castContentType()
 
-	sess, err := cast.Dial(dev, a.onCastError, a.onCastStatus)
+	sess, err := a.dialCast(dev)
 	if err != nil {
-		a.castFailed(err)
+		// Clear the pending state BEFORE the notification: Notify goes over
+		// D-Bus and can take a beat, and « Diffusion impossible » next to a
+		// chip still reading « Connexion… » is a contradiction on screen.
+		a.castDialDone(gen)
+		a.castFailed(dev, err)
+		return
+	}
+	if a.castDialSuperseded(gen) {
+		// « Cet ordinateur » was clicked while this dial was in flight: quit
+		// the receiver app (Stop, not Close: the launch already happened, and
+		// a bare Close would leave the device playing FIP) and record nothing.
+		log.Printf("ui: cast: %s: dial cancelled before it landed", dev.Name)
+		go sess.Stop()
 		return
 	}
 	if err := sess.Load(url, ctype, castTitle(station)); err != nil {
 		sess.Close()
-		a.castFailed(err)
+		a.castDialDone(gen)
+		a.castFailed(dev, err)
 		return
 	}
 
 	a.mu.Lock()
+	if a.castDialGen != gen {
+		// Cancelled during the LOAD: same treatment, checked under the lock
+		// that publishes the session so the two cannot interleave.
+		a.mu.Unlock()
+		log.Printf("ui: cast: %s: dial cancelled during the load", dev.Name)
+		go sess.Stop()
+		return
+	}
 	old := a.castSess
 	a.castSess = sess
 	a.castName = dev.Name
@@ -1321,17 +1430,49 @@ func (a *App) startCast(dev cast.Device) {
 	}
 }
 
+// dialCast attempts cast.Dial, retrying only cast.ErrLaunchRefused (see
+// castLaunchRetries) with a fixed backoff. Any other error returns
+// immediately: it is not the transient case a retry helps with.
+func (a *App) dialCast(dev cast.Device) (*cast.Session, error) {
+	var err error
+	for attempt := 0; ; attempt++ {
+		var sess *cast.Session
+		sess, err = cast.Dial(dev, a.onCastError, a.onCastStatus)
+		if err == nil {
+			return sess, nil
+		}
+		if !errors.Is(err, cast.ErrLaunchRefused) || attempt >= castLaunchRetries {
+			return nil, err
+		}
+		log.Printf("ui: cast: %s (%s:%d): refused, retrying in %s (attempt %d/%d)",
+			dev.Name, dev.Addr, dev.Port, castLaunchRetryDelay, attempt+1, castLaunchRetries)
+		time.Sleep(castLaunchRetryDelay)
+	}
+}
+
 // stopCasting ends the cast; when resume is true ("Cet ordinateur", the play
 // button, an external play), playback comes back to the local player. No-op
 // when not casting. Records cast_stop at source (behaviour only).
+//
+// It also cancels a dial still in flight (bumping castDialGen): "play here"
+// must not be undone ten seconds later by a receiver that finally answered.
+// A cancelled dial records nothing at all: no cast_start ever happened, and
+// this path records cast_stop only when a session was actually live.
 func (a *App) stopCasting(resume bool) {
 	a.mu.Lock()
 	sess := a.castSess
 	a.castSess = nil
 	a.castName = ""
+	if a.castDialing != "" {
+		a.castDialing = ""
+		a.castDialGen++
+	}
 	a.mu.Unlock()
 	if sess == nil {
-		a.refreshCastMenu() // keep "Cet ordinateur" checked on a redundant click
+		// Nothing was playing on a device: local playback never stopped (it
+		// stops only once a dial lands), so there is nothing to resume. The
+		// repaint clears any « Connexion… » and re-checks « Cet ordinateur ».
+		a.refreshCastMenu()
 		return
 	}
 	go sess.Stop() // the network goodbye is best-effort, off the tray goroutine
@@ -1343,10 +1484,13 @@ func (a *App) stopCasting(resume bool) {
 	}
 }
 
-// castFailed reports a cast that could not start. The menu never left the
-// local state, so refreshing it is enough of a reset.
-func (a *App) castFailed(err error) {
-	log.Printf("ui: cast: %v", err)
+// castFailed reports a cast that could not start. The audio never left this
+// machine, so a repaint is the whole reset (the caller has already released the
+// « Connexion… » guard, see castDialDone). The device is logged
+// alongside the error (name + address, no credentials) so a LAUNCH_ERROR
+// from a specific receiver can be told apart from a network-level failure.
+func (a *App) castFailed(dev cast.Device, err error) {
+	log.Printf("ui: cast: %s (%s:%d): %v", dev.Name, dev.Addr, dev.Port, err)
 	a.refreshCastMenu()
 	if a.notif != nil {
 		a.notif.Notify("Diffusion impossible", "Impossible de diffuser sur cet appareil. L'appareil a peut-être besoin de quelques secondes : réessayez.", "", a.cfg.NotifTimeoutMs)
@@ -1584,6 +1728,7 @@ func (a *App) drawerState() drawer.State {
 	np := a.now
 	sess := a.castSess
 	castName := a.castName
+	dialing := a.castDialing
 	devs := make([]string, len(a.castDevices))
 	for i, d := range a.castDevices {
 		devs[i] = d.Name
@@ -1709,6 +1854,11 @@ func (a *App) drawerState() drawer.State {
 			st.Cast.ControlType = v.ControlType
 		}
 	}
+	// Outside the sess branch on purpose: while a dial is in flight there is
+	// no session yet, and this is precisely the state the panel must show.
+	// A successful dial publishes the session before it clears castDialing, so
+	// the page resolves the overlap by letting Active win (see its render).
+	st.Cast.Dialing = dialing
 	return st
 }
 
@@ -1778,11 +1928,12 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 	case "audio_device":
 		// A local sink pick from « Sur cet appareil »: same kind the menu item
 		// records via a.on. Picking a local output while casting also means
-		// "play here": stop the cast (records cast_stop at source) and resume.
+		// "play here": stopCasting ends a live cast (records cast_stop at
+		// source, resumes locally) AND cancels a dial still in flight, so the
+		// panel's « Connexion… » cannot land on the amplifier after the user
+		// asked for this machine. A no-op when neither applies.
 		a.rec.Record(events.Event{Kind: events.KindAudioDevice, Station: a.current.Key})
-		if a.castSession() != nil {
-			a.stopCasting(true)
-		}
+		a.stopCasting(true)
 		a.setAudioDevice(c.Key)
 	case "crossfade":
 		a.setCrossfade(c.Value) // records KindCrossfade at source
