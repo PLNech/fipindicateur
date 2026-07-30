@@ -46,6 +46,7 @@ const (
 	KindMute          Kind = "mute"                 // Value = 1 muted, 0 unmuted
 	KindHiFi          Kind = "hifi"                 // Value = 1 on, 0 off
 	KindCrossfade     Kind = "crossfade"            // Value = seconds, 0 = off
+	KindTheme         Kind = "theme"                // Value = 0 auto, 1 light, 2 dark (panel colour-scheme)
 	KindNotif         Kind = "notif_toggle"         // Value = 1 on, 0 off
 	KindShowNotif     Kind = "show_notif_toggle"    // Value = 1 on, 0 off (émission notifications)
 	KindShowCalendar  Kind = "show_calendar_toggle" // Value = 1 on, 0 off (émission calendar)

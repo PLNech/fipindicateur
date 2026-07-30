@@ -813,6 +813,52 @@ func b2i(b bool) int {
 	return 0
 }
 
+// panelDark resolves the panel's effective skin: an explicit config override
+// wins, otherwise the desktop is probed (colour-scheme + gtk-theme). The
+// result is cached in a.drawerDark at each open and on a theme change, then
+// reused for mid-open state pushes so we do not exec gsettings on every
+// volume tick.
+func (a *App) panelDark() bool {
+	switch a.cfg.Theme {
+	case "light":
+		return false
+	case "dark":
+		return true
+	default:
+		return drawer.DarkPreferred()
+	}
+}
+
+// themeCode maps the persisted Theme string to the telemetry Value (0 auto,
+// 1 light, 2 dark).
+func themeCode(t string) int {
+	switch t {
+	case "light":
+		return 1
+	case "dark":
+		return 2
+	default:
+		return 0
+	}
+}
+
+// setTheme applies a panel colour-scheme choice ("auto"/"light"/"dark") from
+// the Réglages view: persists it, re-probes the effective skin immediately
+// (so the change lands while the panel is open), records one KindTheme, and
+// pushes fresh state which re-renders the skin live.
+func (a *App) setTheme(choice string) {
+	switch choice {
+	case "light", "dark":
+		a.cfg.Theme = choice
+	default:
+		a.cfg.Theme = "" // "auto" or anything else: follow the desktop
+	}
+	a.drawerDark = a.panelDark()
+	a.rec.Record(events.Event{Kind: events.KindTheme, Value: themeCode(a.cfg.Theme)})
+	a.save()
+	a.pushDrawerState()
+}
+
 func (a *App) toggleAnim() {
 	a.cfg.AnimatedIcon = !a.cfg.AnimatedIcon
 	if a.cfg.AnimatedIcon {
@@ -1661,7 +1707,7 @@ func timingf(format string, args ...any) {
 // (hiding is not an open). The desktop color-scheme is re-probed at each
 // open, so a theme flip lands on the next show.
 func (a *App) toggleDrawer() {
-	dark := drawer.DarkPreferred()
+	dark := a.panelDark()
 	a.mu.Lock()
 	if a.drawer == nil {
 		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
@@ -1712,7 +1758,7 @@ func (a *App) showDrawer(d *drawer.Drawer) {
 // for one interaction: menu opened, then its entry clicked). KindDrawerOpen
 // is recorded once, only on an actual open, exactly like toggleDrawer.
 func (a *App) openDrawer() {
-	dark := drawer.DarkPreferred()
+	dark := a.panelDark()
 	a.mu.Lock()
 	if a.drawer == nil {
 		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
@@ -1746,7 +1792,7 @@ func (a *App) onDrawerHidden() {
 // the old right-click menu. KindDrawerOpen is recorded only on an actual
 // open, like toggleDrawer.
 func (a *App) openDrawerSettings() {
-	dark := drawer.DarkPreferred()
+	dark := a.panelDark()
 	a.mu.Lock()
 	if a.drawer == nil {
 		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
@@ -1925,6 +1971,7 @@ func (a *App) drawerState() drawer.State {
 			Autostart:          a.cfg.Autostart,
 			AutostartSupported: config.AutostartSupported,
 			CrossfadeSecs:      a.cfg.CrossfadeSecs,
+			Theme:              a.cfg.Theme,
 		},
 		History:  hist,
 		Upcoming: upcoming,
@@ -2049,6 +2096,8 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 		a.toggleStats()
 	case "toggle_hifi":
 		a.toggleHiFi()
+	case "theme":
+		a.setTheme(c.Key)
 	case "toggle_notif":
 		a.toggleNotif()
 	case "toggle_show_notif":

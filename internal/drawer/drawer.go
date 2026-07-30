@@ -25,16 +25,30 @@ import (
 //go:embed page.html
 var pageHTML string
 
-// DarkPreferred reads the desktop's color-scheme preference (GNOME gsettings).
-// Called at each Show so a theme flip is honoured on the next open; it is a
-// short exec, never on a hot path. False when gsettings is absent (non-GNOME,
-// non-Linux): the page then falls back to its prefers-color-scheme media query.
+// DarkPreferred reads the desktop's dark preference (GNOME gsettings). The
+// modern color-scheme flag is checked first ("prefer-dark"); on mixed setups
+// where the gtk-theme carries a dark name but color-scheme was left at
+// prefer-light, the gtk-theme leg catches it (a dark GTK theme means the
+// desktop renders dark regardless of the colour-scheme flag). Called at each
+// Show so a theme flip is honoured on the next open; it is a short exec, never
+// on a hot path. False when gsettings is absent (non-GNOME, non-Linux): the
+// page then falls back to its prefers-color-scheme media query.
 func DarkPreferred() bool {
-	out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "color-scheme").Output()
-	if err != nil {
-		return false
+	// color-scheme is the modern GNOME flag ("prefer-dark").
+	if out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "color-scheme").Output(); err == nil {
+		if strings.Contains(string(out), "dark") {
+			return true
+		}
 	}
-	return strings.Contains(string(out), "dark")
+	// gtk-theme name is the de-facto signal on mixed setups (e.g. Yaru-*-dark
+	// with color-scheme left at prefer-light): a dark GTK theme means the
+	// desktop renders dark regardless of the colour-scheme flag.
+	if out, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "gtk-theme").Output(); err == nil {
+		if strings.Contains(string(out), "dark") {
+			return true
+		}
+	}
+	return false
 }
 
 // Command is one user action posted by the page (JS to Go). Actions:
@@ -141,18 +155,19 @@ type Cast struct {
 // which lands on the same App handler the menu item uses (one wiring, two
 // skins), so each records its telemetry kind exactly once.
 type Settings struct {
-	Stats              bool `json:"stats"`             // listening statistics opt-in
-	HiFi               bool `json:"hifi"`              // AAC 192k stream
-	Notifications      bool `json:"notifications"`     // track notifications
-	ShowNotifications  bool `json:"showNotifications"` // émission-start notifications
-	ShowCalendar       bool `json:"showCalendar"`      // upcoming programmes (À venir)
-	AnimatedIcon       bool `json:"animatedIcon"`      // VU bars in the tray icon
-	HistoryFile        bool `json:"historyFile"`       // local track log (history.jsonl)
-	UpdateStartup      bool `json:"updateStartup"`     // quiet update check at launch
-	PlayOnStart        bool `json:"playOnStart"`       // start the stream at launch
-	Autostart          bool `json:"autostart"`         // launch at login (XDG)
-	AutostartSupported bool `json:"autostartSupported"`
-	CrossfadeSecs      int  `json:"crossfadeSecs"` // station-zap fade, 0..10 s
+	Stats              bool   `json:"stats"`             // listening statistics opt-in
+	HiFi               bool   `json:"hifi"`              // AAC 192k stream
+	Notifications      bool   `json:"notifications"`     // track notifications
+	ShowNotifications  bool   `json:"showNotifications"` // émission-start notifications
+	ShowCalendar       bool   `json:"showCalendar"`      // upcoming programmes (À venir)
+	AnimatedIcon       bool   `json:"animatedIcon"`      // VU bars in the tray icon
+	HistoryFile        bool   `json:"historyFile"`       // local track log (history.jsonl)
+	UpdateStartup      bool   `json:"updateStartup"`     // quiet update check at launch
+	PlayOnStart        bool   `json:"playOnStart"`       // start the stream at launch
+	Autostart          bool   `json:"autostart"`         // launch at login (XDG)
+	AutostartSupported bool   `json:"autostartSupported"`
+	CrossfadeSecs      int    `json:"crossfadeSecs"` // station-zap fade, 0..10 s
+	Theme              string `json:"theme"`         // "", "light", "dark" (auto/light/dark override)
 }
 
 // HistoryEntry is one row of the panel's history view: the same recent-tracks

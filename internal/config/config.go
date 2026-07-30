@@ -36,6 +36,9 @@ type Config struct {
 	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
 	// system default output). Persisted so a chosen sink survives restarts.
 	AudioDevice string `json:"audio_device"`
+	// Theme is the panel colour-scheme override: "" (auto, follow desktop),
+	// "light", or "dark". Auto probes gsettings (color-scheme + gtk-theme).
+	Theme string `json:"theme"`
 	// Volume/Mute cache the last-known PulseAudio stream state for
 	// pre-playback DISPLAY only. PulseAudio (module-stream-restore) is the
 	// single source of truth: these values are never written onto the audio

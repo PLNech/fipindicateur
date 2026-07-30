@@ -283,6 +283,23 @@
   .row[aria-checked="true"] .switch { background: var(--accent); border-color: var(--accent); }
   .row[aria-checked="true"] .switch::after { left: 18px; background: #fff; }
 
+  /* segmented control (Thème: Auto / Clair / Sombre) */
+  .seg {
+    display: inline-flex; gap: 0; border: 1px solid var(--hairline);
+    border-radius: 8px; overflow: hidden; background: var(--surface);
+  }
+  .seg-btn {
+    font-size: 12px; padding: 5px 12px; color: var(--ink-muted);
+    border: none; border-right: 1px solid var(--hairline);
+    background: transparent; transition: background .12s ease, color .12s ease;
+  }
+  .seg-btn:last-child { border-right: none; }
+  .seg-btn:hover { background: var(--hover); color: var(--ink); }
+  .seg-btn.active {
+    color: var(--accent-ink, #fff); background: var(--accent);
+    font-weight: 650;
+  }
+
   /* history list (rows are buttons: a click opens the artist page) */
   .hist-row { display: block; width: 100%; text-align: left; padding: 4px 10px; border-radius: 8px; min-height: 28px; }
   .hist-row + .hist-row { border-top: 1px solid var(--hairline); border-radius: 0 0 10px 10px; }
@@ -376,6 +393,11 @@
   </section>
 
   <section id="view-settings" hidden>
+    <div class="section" id="themeSection">
+      <div class="section-label">Thème</div>
+      <div class="seg" id="themeSeg" role="group" aria-label="Thème du panneau"></div>
+      <div class="fade-hint" id="themeHint">Auto suit le bureau (Clair / Sombre)</div>
+    </div>
     <div class="rows" id="settingToggles"></div>
     <div class="section">
       <div class="section-label">Fondu enchaîné</div>
@@ -425,7 +447,7 @@ const ACTIONS = [
   'toggle_play', 'volume', 'toggle_mute', 'station', 'output', 'audio_device',
   'rescan', 'like', 'dislike', 'open_wiki', 'open_link', 'open_history',
   'toggle_stats', 'stats_view', 'stats_folder', 'stats_clear', 'prefs_clear',
-  'toggle_hifi', 'crossfade', 'toggle_notif', 'toggle_show_notif',
+  'toggle_hifi', 'crossfade', 'theme', 'toggle_notif', 'toggle_show_notif',
   'toggle_show_calendar', 'toggle_anim', 'toggle_hist_file',
   'toggle_update_startup', 'toggle_play_on_start', 'toggle_autostart',
   'update_check', 'restart', 'open_fip', 'open_github', 'quit',
@@ -556,6 +578,29 @@ function fadeLabel(secs) {
 function renderSettings() {
   const box = document.getElementById('settingToggles');
   const st = S.settings || {};
+  // Thème: a segmented Auto / Clair / Sombre control. "auto" follows the
+  // desktop probe (colour-scheme + gtk-theme); the two others override it.
+  // Posting 'theme' lands on setTheme, which re-probes and pushes state back,
+  // so the skin flips live without a page reload.
+  const seg = document.getElementById('themeSeg');
+  const cur = st.theme || '';
+  const themeDefs = [
+    { key: 'auto', label: 'Auto' },
+    { key: 'light', label: 'Clair' },
+    { key: 'dark', label: 'Sombre' },
+  ];
+  seg.replaceChildren(...themeDefs.map(d => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-btn' + (cur === d.key ? ' active' : '');
+    b.textContent = d.label;
+    b.setAttribute('aria-pressed', cur === d.key ? 'true' : 'false');
+    b.addEventListener('click', () => send({ action: 'theme', key: d.key }));
+    return b;
+  }));
+  document.getElementById('themeHint').textContent =
+    cur === '' ? 'Auto suit le bureau (Clair / Sombre)' :
+    cur === 'light' ? 'Clair forcé' : 'Sombre forcé';
   box.replaceChildren(...toggleDefs
     .filter(d => !d.gate || st[d.gate])
     .map(d => {
