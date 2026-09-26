@@ -308,7 +308,7 @@ func (a *App) OnReady() {
 			time.Sleep(2 * time.Second)
 			a.mu.Lock()
 			if a.drawer == nil {
-				a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+				a.drawer = a.newDrawer()
 			}
 			d := a.drawer
 			a.mu.Unlock()
@@ -1301,6 +1301,19 @@ func (a *App) setAmp(level int) {
 	a.applyAmpUI()
 }
 
+// setPanelScale persists the panel zoom settled by a corner-grip drag, and
+// records one KindPanelScale event at source (Value = percent, 100..300).
+// Clamped to [100,300] to match config.Load. The live zoom itself was already
+// applied tick by tick through drawer.SetScale.
+func (a *App) setPanelScale(pct int) {
+	if pct < 100 || pct > 300 {
+		pct = 100
+	}
+	a.cfg.PanelScalePct = pct
+	a.rec.Record(events.Event{Kind: events.KindPanelScale, Value: pct})
+	a.save()
+}
+
 func (a *App) toggleHistFile() {
 	a.cfg.HistoryFile = !a.cfg.HistoryFile
 	if a.cfg.HistoryFile {
@@ -1750,6 +1763,16 @@ func timingf(format string, args ...any) {
 	log.Printf("timing: "+format, args...)
 }
 
+// newDrawer builds the panel with the persisted zoom baked in before the
+// first paint. The four construction sites (prewarm, toggle, open,
+// open-settings) funnel through here so the scale can never be forgotten on
+// a lazy rebuild.
+func (a *App) newDrawer() *drawer.Drawer {
+	d := drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+	d.SetScale(a.cfg.PanelScalePct)
+	return d
+}
+
 // toggleDrawer shows « le panneau » when hidden and hides it when shown; on
 // Linux it is the tray icon's Activate (left click). The drawer is built
 // lazily on first open and stays resident afterwards (hidden, instant to
@@ -1760,7 +1783,7 @@ func (a *App) toggleDrawer() {
 	dark := a.panelDark()
 	a.mu.Lock()
 	if a.drawer == nil {
-		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+		a.drawer = a.newDrawer()
 	}
 	d := a.drawer
 	act := decideDrawerToggle(a.drawerPhase)
@@ -1811,7 +1834,7 @@ func (a *App) openDrawer() {
 	dark := a.panelDark()
 	a.mu.Lock()
 	if a.drawer == nil {
-		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+		a.drawer = a.newDrawer()
 	}
 	d := a.drawer
 	act := decideDrawerToggle(a.drawerPhase)
@@ -1845,7 +1868,7 @@ func (a *App) openDrawerSettings() {
 	dark := a.panelDark()
 	a.mu.Lock()
 	if a.drawer == nil {
-		a.drawer = drawer.New(a.onDrawerCommand, a.onDrawerHidden)
+		a.drawer = a.newDrawer()
 	}
 	d := a.drawer
 	act := decideDrawerToggle(a.drawerPhase)
@@ -2027,6 +2050,7 @@ func (a *App) drawerState() drawer.State {
 		History:  hist,
 		Upcoming: upcoming,
 		Version:  version.String(),
+		ScalePct: a.cfg.PanelScalePct,
 	}
 	if sess != nil {
 		st.Cast = drawer.Cast{Active: true, DeviceName: castName, Playing: sess.MediaPlaying()}
@@ -2118,6 +2142,17 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 		a.setCrossfade(c.Value) // records KindCrossfade at source
 	case "amp":
 		a.setAmp(c.Value) // records KindAmp at source
+	case "scale":
+		// Corner grip drag: apply every message (a commit may be the only one
+		// that survived throttling, so it must land too); on the drag-end
+		// commit (Key "commit") also persist and record the settled value,
+		// the same split as the volume slider.
+		if a.drawer != nil {
+			a.drawer.SetScale(c.Value)
+		}
+		if c.Key == "commit" {
+			a.setPanelScale(c.Value)
+		}
 
 	// Links out of the current track and the history rows: same fixed kinds
 	// their menu twins record via a.on.
