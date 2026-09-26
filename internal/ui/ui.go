@@ -2021,6 +2021,7 @@ func (a *App) drawerState() drawer.State {
 			Autostart:          a.cfg.Autostart,
 			AutostartSupported: config.AutostartSupported,
 			CrossfadeSecs:      a.cfg.CrossfadeSecs,
+			Amp:                a.cfg.Amp,
 			Theme:              a.cfg.Theme,
 		},
 		History:  hist,
@@ -2115,6 +2116,8 @@ func (a *App) onDrawerCommand(c drawer.Command) {
 		a.setAudioDevice(c.Key)
 	case "crossfade":
 		a.setCrossfade(c.Value) // records KindCrossfade at source
+	case "amp":
+		a.setAmp(c.Value) // records KindAmp at source
 
 	// Links out of the current track and the history rows: same fixed kinds
 	// their menu twins record via a.on.

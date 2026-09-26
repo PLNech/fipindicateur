@@ -408,6 +408,11 @@
       <div class="fade-hint">Durée du fondu entre stations (0 = coupure sèche)</div>
     </div>
     <div class="section">
+      <div class="section-label">Amplification</div>
+      <div class="seg" id="ampSeg" role="group" aria-label="Amplification du flux"></div>
+      <div class="fade-hint">Les radios FIP jouent plus discret que les plateformes</div>
+    </div>
+    <div class="section">
       <div class="section-label">Statistiques</div>
       <div class="rows">
         <button class="row" id="statsView"><span class="grow">Voir le rapport</span></button>
@@ -447,7 +452,7 @@ const ACTIONS = [
   'toggle_play', 'volume', 'toggle_mute', 'station', 'output', 'audio_device',
   'rescan', 'like', 'dislike', 'open_wiki', 'open_link', 'open_history',
   'toggle_stats', 'stats_view', 'stats_folder', 'stats_clear', 'prefs_clear',
-  'toggle_hifi', 'crossfade', 'theme', 'toggle_notif', 'toggle_show_notif',
+  'toggle_hifi', 'crossfade', 'amp', 'theme', 'toggle_notif', 'toggle_show_notif',
   'toggle_show_calendar', 'toggle_anim', 'toggle_hist_file',
   'toggle_update_startup', 'toggle_play_on_start', 'toggle_autostart',
   'update_check', 'restart', 'open_fip', 'open_github', 'quit',
@@ -601,6 +606,26 @@ function renderSettings() {
   document.getElementById('themeHint').textContent =
     cur === '' ? 'Auto suit le bureau (Clair / Sombre)' :
     cur === 'light' ? 'Clair forcé' : 'Sombre forcé';
+  // Amplification: the same segmented control as the theme, over the three
+  // loudness presets Go pushes in settings.amp (0 off, 1 doux, 2 costaud).
+  // Posting 'amp' lands on setAmp, which rewrites the af chain live and pushes
+  // state back, so the active segment flips without a reload.
+  const ampSeg = document.getElementById('ampSeg');
+  const ampCur = st.amp || 0;
+  const ampDefs = [
+    { v: 0, label: 'Désactivée' },
+    { v: 1, label: 'Doux' },
+    { v: 2, label: 'Costaud' },
+  ];
+  ampSeg.replaceChildren(...ampDefs.map(d => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'seg-btn' + (ampCur === d.v ? ' active' : '');
+    b.textContent = d.label;
+    b.setAttribute('aria-pressed', ampCur === d.v ? 'true' : 'false');
+    b.addEventListener('click', () => send({ action: 'amp', value: d.v }));
+    return b;
+  }));
   box.replaceChildren(...toggleDefs
     .filter(d => !d.gate || st[d.gate])
     .map(d => {

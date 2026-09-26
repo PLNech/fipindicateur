@@ -71,6 +71,7 @@ func DarkPreferred() bool {
 //	prefs_clear          delete prefs.jsonl (the page already confirmed)
 //	toggle_hifi          flip stream quality (AAC 192k)
 //	crossfade            Value = crossfade seconds 0..10 (0 = hard cut)
+//	amp                  Value = 0 off, 1 doux (+4 dB), 2 costaud (+8 dB)
 //	toggle_notif         flip track notifications
 //	toggle_show_notif    flip the émission-start notifications
 //	toggle_show_calendar flip the upcoming-programmes section
@@ -167,6 +168,7 @@ type Settings struct {
 	Autostart          bool   `json:"autostart"`         // launch at login (XDG)
 	AutostartSupported bool   `json:"autostartSupported"`
 	CrossfadeSecs      int    `json:"crossfadeSecs"` // station-zap fade, 0..10 s
+	Amp                int    `json:"amp"`           // loudness preamp: 0 off, 1 doux, 2 costaud
 	Theme              string `json:"theme"`         // "", "light", "dark" (auto/light/dark override)
 }
 
