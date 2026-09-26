@@ -170,6 +170,8 @@ type App struct {
 	volMI          map[int]*menuItem
 	mCrossfade     *menuItem
 	crossfadeMI    map[int]*menuItem // preset checkboxes; nil in zenity-slider mode
+	mAmp           *menuItem
+	ampMI          map[int]*menuItem // preset checkboxes, one per amplification level
 
 	// dialogOpen guards against launching two zenity dialogs at once (the volume
 	// slider and the crossfade slider share it). A click while one is open is
@@ -223,7 +225,9 @@ func (a *App) OnReady() {
 
 	a.player = &player.Fader{
 		// A live station zap crossfades over this duration (0 = hard cut).
-		Crossfade:    time.Duration(a.cfg.CrossfadeSecs) * time.Second,
+		Crossfade: time.Duration(a.cfg.CrossfadeSecs) * time.Second,
+		// The loudness preamp level baked into every handle's af chain.
+		Amp:          a.cfg.Amp,
 		TitleChanged: a.meta.PushTitle,
 		// ao-volume/ao-mute observers: external pavucontrol/GNOME changes
 		// flow back into the menu and MPRIS.
@@ -1249,6 +1253,52 @@ func (a *App) setCrossfade(secs int) {
 	a.save()
 	a.player.SetCrossfade(time.Duration(secs) * time.Second)
 	a.applyCrossfadeUI()
+}
+
+// --- amplification ---
+
+// ampPresets are the amplification levels offered in the menus. Radio presets,
+// no slider: the streams' loudness barely varies (LRA 2.4 LU), there is no knob
+// to turn.
+var ampPresets = []int{0, 1, 2}
+
+// ampPresetLabel labels an amplification preset checkbox: off, gentle (+4 dB,
+// back to streaming loudness) and hot (+8 dB under a limiter).
+func ampPresetLabel(level int) string {
+	switch level {
+	case 1:
+		return "Doux (+4 dB)"
+	case 2:
+		return "Costaud (+8 dB)"
+	default:
+		return "Désactivée"
+	}
+}
+
+// applyAmpUI syncs the amplification preset checkmarks with the current config.
+func (a *App) applyAmpUI() {
+	for level, it := range a.ampMI {
+		if level == a.cfg.Amp {
+			it.Check()
+		} else {
+			it.Uncheck()
+		}
+	}
+}
+
+// setAmp persists an amplification level, applies it LIVE to the player (the
+// af chain is rewritten, no restart needed), records one KindAmp event at
+// source (Value = 0 off, 1 doux, 2 costaud) and refreshes the menu. Clamped
+// to [0,2] to match config.Load.
+func (a *App) setAmp(level int) {
+	if level < 0 || level > 2 {
+		level = 0
+	}
+	a.cfg.Amp = level
+	a.rec.Record(events.Event{Kind: events.KindAmp, Station: a.current.Key, Value: level})
+	a.save()
+	a.player.SetAmp(level)
+	a.applyAmpUI()
 }
 
 func (a *App) toggleHistFile() {

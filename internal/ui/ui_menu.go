@@ -214,6 +214,17 @@ func (a *App) buildMenu() {
 			a.on(it, "", func() { a.setCrossfade(s) }) // setCrossfade records KindCrossfade at source
 		}
 	}
+	// Amplification (loudness preamp in the mpv filter chain): the FIP streams
+	// sit ~4.5 dB below streaming-platform loudness (measured -18.5 LUFS vs
+	// ~-14). Radio presets, no slider: the loudness barely varies.
+	a.mAmp = settings.AddSubMenuItem("Amplification", "Amplification du flux (les radios FIP jouent plus discret que les plateformes)")
+	a.ampMI = map[int]*menuItem{}
+	for _, lvl := range ampPresets {
+		it := a.mAmp.AddSubMenuItemCheckbox(ampPresetLabel(lvl), "", lvl == a.cfg.Amp)
+		a.ampMI[lvl] = it
+		l := lvl
+		a.on(it, "", func() { a.setAmp(l) }) // setAmp records KindAmp at source
+	}
 	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
 	a.on(a.mNotif, "", a.toggleNotif)
 	a.mShowNotif = settings.AddSubMenuItemCheckbox("Notifications d'émission", "Prévenir au début d'une émission sur l'antenne", a.cfg.ShowNotifications)
