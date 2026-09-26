@@ -92,6 +92,7 @@
     box-shadow: var(--shadow);
     padding: 10px 16px 14px;
     overflow: hidden;
+    position: relative; /* anchors the corner grip */
   }
   button {
     font: inherit; color: inherit; background: none; border: none;
@@ -316,6 +317,22 @@
   .fade-val { font-size: 12px; color: var(--ink-muted); font-variant-numeric: tabular-nums; min-width: 74px; text-align: right; }
   .fade-hint { font-size: 10.5px; color: var(--ink-muted); margin: 4px 10px 0; }
 
+  /* corner grip: drag down-right to scale the whole panel (webkit zoom,
+     1x..3x), readable from across the room */
+  .grip {
+    position: absolute; right: 0; bottom: 0; width: 22px; height: 22px;
+    cursor: nwse-resize; border-radius: 0 0 16px 0; touch-action: none;
+  }
+  .grip::before {
+    content: ""; position: absolute; right: 4px; bottom: 4px;
+    width: 9px; height: 9px;
+    border-right: 2px solid var(--ink-muted);
+    border-bottom: 2px solid var(--ink-muted);
+    border-bottom-right-radius: 4px;
+    opacity: .5; transition: opacity .12s ease;
+  }
+  .grip:hover::before, .grip:active::before { opacity: 1; }
+
   /* the now-playing block opens the artist page when a track is known */
   button.now { width: 100%; text-align: left; border-radius: 12px; }
   button.now:not(:disabled):hover { background: var(--hover); }
@@ -434,6 +451,7 @@
   </section>
 
   <footer><span>le fipindicateur</span><span id="version"></span></footer>
+  <div class="grip" id="grip" title="Glisser pour agrandir le panneau" role="separator" aria-label="Redimensionner le panneau"></div>
 </div>
 
 <script>
@@ -452,7 +470,7 @@ const ACTIONS = [
   'toggle_play', 'volume', 'toggle_mute', 'station', 'output', 'audio_device',
   'rescan', 'like', 'dislike', 'open_wiki', 'open_link', 'open_history',
   'toggle_stats', 'stats_view', 'stats_folder', 'stats_clear', 'prefs_clear',
-  'toggle_hifi', 'crossfade', 'amp', 'theme', 'toggle_notif', 'toggle_show_notif',
+  'toggle_hifi', 'crossfade', 'amp', 'scale', 'theme', 'toggle_notif', 'toggle_show_notif',
   'toggle_show_calendar', 'toggle_anim', 'toggle_hist_file',
   'toggle_update_startup', 'toggle_play_on_start', 'toggle_autostart',
   'update_check', 'restart', 'open_fip', 'open_github', 'quit',
@@ -823,7 +841,13 @@ function reportHeight() {
   send({ action: 'height', value: Math.ceil(document.body.scrollHeight) });
 }
 
-window.fipState = function (s) { S = (typeof s === 'string') ? JSON.parse(s) : s; render(); };
+window.fipState = function (s) {
+  S = (typeof s === 'string') ? JSON.parse(s) : s;
+  // Re-seed the grip's drag base from Go's persisted zoom, unless a drag is
+  // mid-flight (its own accumulation wins until release).
+  if (!scaleDragging) scalePct = (S && S.scalePct) || 100;
+  render();
+};
 // fipView lets Go land the panel on a named view (the tray icon's right
 // click opens straight onto Réglages).
 window.fipView = function (v) { if (viewTitles[v]) setView(v); };
@@ -889,6 +913,51 @@ fade.addEventListener('input', () => {
   document.getElementById('fadeVal').textContent = fadeLabel(+fade.value);
 });
 fade.addEventListener('change', () => send({ action: 'crossfade', value: +fade.value }));
+
+// Corner grip: drag down-right to scale the panel. The page keeps its CSS-px
+// layout (the zoom is applied by the engine, the window carries the
+// multiplication), so viewport coords stay stable while the window grows
+// under the pointer (gtk_window_resize anchors the top-left). Diagonal drag:
+// the larger of the two axis deltas drives the zoom, 2 px of travel = 1
+// percent. Live updates ride the same 120 ms throttle as the volume slider;
+// the final value commits on release (Key 'commit') so Go records and
+// persists one settled level per gesture.
+const grip = document.getElementById('grip');
+const scaleSendMinMs = 120;
+let scaleDragging = false, scaleLastX = 0, scaleLastY = 0, scalePct = 100;
+let scaleTimer = 0, scaleLastSentAt = 0, scaleLastSent = null;
+function sendScale(v, commit) {
+  v = Math.max(100, Math.min(300, v));
+  scalePct = v;
+  if (!commit && v === scaleLastSent) return;
+  scaleLastSentAt = Date.now();
+  scaleLastSent = v;
+  send({ action: 'scale', value: v, key: commit ? 'commit' : '' });
+}
+grip.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  grip.setPointerCapture(e.pointerId);
+  scaleDragging = true;
+  scaleLastX = e.clientX;
+  scaleLastY = e.clientY;
+});
+grip.addEventListener('pointermove', (e) => {
+  if (!scaleDragging) return;
+  const d = Math.max(e.clientX - scaleLastX, e.clientY - scaleLastY);
+  scaleLastX = e.clientX;
+  scaleLastY = e.clientY;
+  if (!d) return;
+  clearTimeout(scaleTimer);
+  const elapsed = Date.now() - scaleLastSentAt;
+  if (elapsed >= scaleSendMinMs) sendScale(scalePct + d);
+  else scaleTimer = setTimeout(() => sendScale(scalePct + d), scaleSendMinMs - elapsed);
+});
+['pointerup', 'pointercancel'].forEach((ev) => grip.addEventListener(ev, () => {
+  if (!scaleDragging) return;
+  scaleDragging = false;
+  clearTimeout(scaleTimer);
+  sendScale(scalePct, true);
+}));
 
 // The slider applies LIVE while dragging, throttled: the first move sends
 // immediately (leading edge), then at most one command per volSendMinMs, and

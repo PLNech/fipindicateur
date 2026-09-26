@@ -72,6 +72,7 @@ func DarkPreferred() bool {
 //	toggle_hifi          flip stream quality (AAC 192k)
 //	crossfade            Value = crossfade seconds 0..10 (0 = hard cut)
 //	amp                  Value = 0 off, 1 doux (+4 dB), 2 costaud (+8 dB)
+//	scale                Value = panel zoom percent 100..300 (corner grip drag; Key "commit" = drag end)
 //	toggle_notif         flip track notifications
 //	toggle_show_notif    flip the émission-start notifications
 //	toggle_show_calendar flip the upcoming-programmes section
@@ -200,4 +201,7 @@ type State struct {
 	History      []HistoryEntry `json:"history"`  // most recent first
 	Upcoming     []Upcoming     `json:"upcoming"` // scheduled programmes (À venir)
 	Version      string         `json:"version"`
+	// ScalePct is the panel's UI zoom (100..300), so the corner grip's next
+	// drag starts from the persisted base instead of from 1x.
+	ScalePct int `json:"scalePct"`
 }

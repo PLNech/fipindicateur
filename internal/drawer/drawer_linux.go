@@ -146,6 +146,10 @@ static void fip_resize(GtkWidget *win, int w, int h) {
 	gtk_window_resize(GTK_WINDOW(win), w, h);
 }
 
+static void fip_set_zoom(WebKitWebView *view, double zoom) {
+	webkit_web_view_set_zoom_level(view, zoom);
+}
+
 static void fip_eval(WebKitWebView *view, const char *script) {
 	webkit_web_view_evaluate_javascript(view, script, -1, NULL, NULL, NULL, NULL, NULL);
 }
@@ -179,11 +183,20 @@ func timing(format string, args ...any) {
 const Available = true
 
 const (
+	// panelWidth is the panel's base width in CSS px; the webkit zoom
+	// multiplies it (and the content-driven height) on screen. See scalePct
+	// and scaledWidth.
 	panelWidth  = 380
 	panelMargin = 12 // gap kept from the work area's edges
 	minHeight   = 200
 	maxHeight   = 800
 )
+
+// scaledWidth returns the on-screen width for a zoom percent: the CSS base
+// width times the zoom, rounded.
+func scaledWidth(scalePct int) int {
+	return int(float64(panelWidth)*float64(scalePct)/100 + 0.5)
+}
 
 // gtkCalls carries closures to the GTK thread: fip_idle_add schedules one
 // fipDrawerIdle dispatch per queued closure (g_idle_add is thread-safe, so
@@ -226,13 +239,23 @@ type Drawer struct {
 	win       *C.GtkWidget
 	view      *C.WebKitWebView
 	pageReady bool // the page ran its script and can accept fipState pushes
+
+	// Panel geometry under the zoom. scalePct is written by SetScale (any
+	// goroutine, mu-guarded) and read on the GTK thread; cssHeight is the
+	// page's last reported content height in CSS px (dispatch, and hence
+	// every write, is GTK-thread-only). On screen, device px = css px * zoom:
+	// the page's layout and height reports stay zoom-invariant, the window
+	// carries the multiplication.
+	scalePct  int
+	cssHeight int
 }
 
 // New prepares a drawer. onCommand receives the page's user actions on a
 // fresh goroutine (never the GTK thread); onHide (optional) fires whenever
 // the panel hides (Escape, the page's close button, or an explicit Hide).
 func New(onCommand func(Command), onHide func()) *Drawer {
-	d := &Drawer{onCommand: onCommand, onHide: onHide, ready: make(chan struct{})}
+	d := &Drawer{onCommand: onCommand, onHide: onHide, ready: make(chan struct{}),
+		scalePct: 100, cssHeight: 520}
 	currentMu.Lock()
 	current = d
 	currentMu.Unlock()
@@ -245,6 +268,58 @@ func New(onCommand func(Command), onHide func()) *Drawer {
 // refuses to open a second stream otherwise and the audio fondu silently
 // degrades to a hard cut.
 func NumericLocale() string { return C.GoString(C.fip_lc_numeric()) }
+
+// SetScale stores the panel zoom percent (clamped to [100,300]) and, once the
+// window exists, applies it live: webkit zoom for the page, resize for the
+// window. Before the window exists the value is simply stored: ensureStarted
+// bakes it into the build (width and zoom applied before the first paint, so
+// the panel never flashes at 1x then jumps). Safe from any goroutine.
+func (d *Drawer) SetScale(pct int) {
+	if pct < 100 {
+		pct = 100
+	}
+	if pct > 300 {
+		pct = 300
+	}
+	d.mu.Lock()
+	d.scalePct = pct
+	started := d.started
+	d.mu.Unlock()
+	if !started {
+		return
+	}
+	select {
+	case <-d.ready:
+	default:
+		return // still initializing; the build-time application covers it
+	}
+	if d.initErr != nil {
+		return
+	}
+	d.runOnGTK(func() { d.applyScale() })
+}
+
+// applyScale applies the current zoom on the GTK thread: webkit zoom level on
+// the view, window resized to css * zoom. CSS px stay untouched, so the
+// page's layout and its height reports are zoom-invariant.
+func (d *Drawer) applyScale() {
+	d.mu.Lock()
+	pct := d.scalePct
+	d.mu.Unlock()
+	if d.win == nil || d.view == nil {
+		return
+	}
+	zoom := float64(pct) / 100
+	h := d.cssHeight
+	if h < minHeight {
+		h = minHeight
+	}
+	if h > maxHeight {
+		h = maxHeight
+	}
+	C.fip_set_zoom(d.view, C.double(zoom))
+	C.fip_resize(d.win, C.int(scaledWidth(pct)), C.int(float64(h)*zoom+0.5))
+}
 
 // ensureStarted launches the dedicated GTK goroutine once and waits for the
 // window to be built (or gtk_init to fail: headless, no DISPLAY).
@@ -268,11 +343,18 @@ func (d *Drawer) ensureStarted() error {
 			numericFromGTK := C.GoString(C.fip_lc_numeric())
 			C.fip_keep_c_numeric()
 			tInit := time.Now()
+			d.mu.Lock()
+			pct := d.scalePct // SetScale may have stored it before start
+			d.mu.Unlock()
+			zoom := float64(pct) / 100
 			html := C.CString(pageHTML)
 			var view *C.WebKitWebView
-			d.win = C.fip_build(&view, html, panelWidth, 520)
+			d.win = C.fip_build(&view, html, C.int(scaledWidth(pct)), C.int(520*zoom+0.5))
 			C.free(unsafe.Pointer(html)) // load_html copied it
 			d.view = view
+			// Zoom before the first paint (the window is still hidden): the
+			// page must never flash at 1x then jump to the persisted scale.
+			C.fip_set_zoom(d.view, C.double(zoom))
 			// Re-assert after the WebKit view exists: whoever perturbs the
 			// locale last must not win over the player.
 			numericFromWebKit := C.GoString(C.fip_lc_numeric())
@@ -311,7 +393,10 @@ func (d *Drawer) Show(state State) error {
 	tStarted := time.Now()
 	d.runOnGTK(func() {
 		d.evalStateLocked()
-		C.fip_present(d.win, panelWidth, panelMargin)
+		d.mu.Lock()
+		pct := d.scalePct
+		d.mu.Unlock()
+		C.fip_present(d.win, C.int(scaledWidth(pct)), panelMargin)
 		mode := "froid"
 		if d.pageReady {
 			mode = "chaud"
@@ -524,7 +609,10 @@ func (d *Drawer) dispatch(cmd Command) {
 		d.evalStateLocked()
 		d.evalViewLocked()
 	case "height":
-		// Content-driven height, reported by the page after each render.
+		// Content-driven height, reported by the page after each render, in
+		// CSS px (zoom-invariant). Remember it so a live scale change can
+		// resize without waiting for the next render, then clamp and convert
+		// to device px under the current zoom.
 		h := cmd.Value
 		if h < minHeight {
 			h = minHeight
@@ -532,7 +620,12 @@ func (d *Drawer) dispatch(cmd Command) {
 		if h > maxHeight {
 			h = maxHeight
 		}
-		C.fip_resize(d.win, panelWidth, C.int(h))
+		d.mu.Lock()
+		pct := d.scalePct
+		d.mu.Unlock()
+		d.cssHeight = h
+		zoom := float64(pct) / 100
+		C.fip_resize(d.win, C.int(scaledWidth(pct)), C.int(float64(h)*zoom+0.5))
 	case "hide":
 		d.hideOnGTK()
 	default:
