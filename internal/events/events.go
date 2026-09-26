@@ -47,6 +47,7 @@ const (
 	KindHiFi          Kind = "hifi"                 // Value = 1 on, 0 off
 	KindCrossfade     Kind = "crossfade"            // Value = seconds, 0 = off
 	KindAmp           Kind = "amp_toggle"           // Value = 0 off, 1 doux (+4 dB), 2 costaud (+8 dB)
+	KindPanelScale    Kind = "panel_scale"          // Value = panel zoom percent (100..300)
 	KindTheme         Kind = "theme"                // Value = 0 auto, 1 light, 2 dark (panel colour-scheme)
 	KindNotif         Kind = "notif_toggle"         // Value = 1 on, 0 off
 	KindShowNotif     Kind = "show_notif_toggle"    // Value = 1 on, 0 off (émission notifications)

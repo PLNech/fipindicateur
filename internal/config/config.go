@@ -39,6 +39,11 @@ type Config struct {
 	// player.ampFilter for the measurements. Clamped to [0,2], out of range
 	// means off.
 	Amp int `json:"amp"`
+	// PanelScalePct is « le panneau »'s UI zoom: 100 = normal, up to 300 for
+	// reading across the room. Set by dragging the panel's corner grip; the
+	// webkit zoom multiplies the whole page (fonts included), the window
+	// follows. Clamped to [100,300], out of range means normal.
+	PanelScalePct int `json:"panel_scale_pct"`
 	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
 	// system default output). Persisted so a chosen sink survives restarts.
 	AudioDevice string `json:"audio_device"`
@@ -69,6 +74,7 @@ func Default() Config {
 		UpdateStartup:     false,
 		AnimatedIcon:      true,
 		CrossfadeSecs:     4,
+		PanelScalePct:     100,
 		Volume:            100,
 		Mute:              false,
 	}
@@ -129,6 +135,10 @@ func Load() Config {
 	// value must never turn the preamp on by surprise.
 	if c.Amp < 0 || c.Amp > 2 {
 		c.Amp = 0
+	}
+	// Panel zoom: clamp to [100,300], out of range falls back to normal.
+	if c.PanelScalePct < 100 || c.PanelScalePct > 300 {
+		c.PanelScalePct = 100
 	}
 	return c
 }
