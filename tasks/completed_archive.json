@@ -124,5 +124,11 @@
     "subject": "CI upgrade + v0.5.0 ship",
     "completedAt": "2026-07-26",
     "learnings": "Headless 'light' captures inherit desktop gsettings: determinism needs explicit --light/--dark flags; screenshot artifacts turn design QA into a CI gate."
+  },
+  {
+    "id": "s6-1",
+    "subject": "Amplification DSP (préampli + limiteur) au menu et au panneau",
+    "completedAt": "2026-09-26",
+    "learnings": "FIP streams measure -18.5 LUFS with LRA 2.4 LU (already broadcast-compressed): static preamp + alimiter beats loudnorm, which would only add latency to a constant gain. The gain stage must precede the @astats tap in the af graph or the VU icon reads pre-gain levels; alimiter needs level=disabled or it re-normalizes output toward 0 dBFS and the ceiling disappears."
   }
 ]
