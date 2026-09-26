@@ -75,6 +75,11 @@ type MPV struct {
 	// curve while the outgoing handle ramps down.
 	initialVolume *int
 
+	// amp is the loudness preamp level baked into the af chain (0 = off,
+	// 1 = doux, 2 = costaud, see afChain). Set before Initialize; SetAmp
+	// applies a change to the live handle.
+	amp int
+
 	// Callbacks, all best-effort and invoked from the event goroutine.
 	// Set them before Initialize.
 
@@ -125,16 +130,17 @@ func (m *MPV) Initialize() error {
 
 	m.setOptionInt("cache-secs", 3)
 
-	// astats filter: exposes per-window audio levels as filter metadata, used
-	// by the animated tray icon. Labeled @astats so the property path is
-	// stable. Negligible DSP cost (it runs on Android radios).
+	// The af chain: the optional amplification stage, then the astats filter,
+	// which exposes per-window audio levels as filter metadata, used by the
+	// animated tray icon. Labeled @astats so the property path is stable.
+	// Negligible DSP cost (it runs on Android radios).
 	//
-	// It measures ONLY the overall RMS level, the single number the VU glyph
-	// reads: the default measures ~79 stats per window (parsed 6x/second by
-	// RMSLevelDB) and dumps every one of them to the log when a handle is
-	// destroyed, which a crossfade now does on every zap.
-	m.setOptionString("af",
-		"@astats:lavfi=[astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level]")
+	// astats measures ONLY the overall RMS level, the single number the VU
+	// glyph reads: the default measures ~79 stats per window (parsed 6x/second
+	// by RMSLevelDB) and dumps every one of them to the log when a handle is
+	// destroyed, which a crossfade now does on every zap. It sits AFTER the
+	// preamp stage so the icon dances to what the listener actually hears.
+	m.setOptionString("af", afChain(m.amp))
 
 	m.setOptionFlag("terminal", false)
 	m.setOptionFlag("input-terminal", false)
@@ -151,6 +157,34 @@ func (m *MPV) Initialize() error {
 
 	go m.eventLoop()
 	return nil
+}
+
+// ampFilter returns the lavfi preamp stage for an amplification level, inserted
+// at the head of the af graph (before the astats tap). Measured on the FIP
+// streams (ffmpeg ebur128, 30 s of fip-hifi.aac, 2026-09-26): integrated
+// loudness -18.5 LUFS, true peak -8.5 dBFS, LRA 2.4 LU. The stream is already
+// broadcast-compressed (that LRA), so a static gain beats a dynamic normalizer,
+// which would only add latency to a constant gain: +4 dB reaches streaming
+// parity (platforms normalize around -14 LUFS) with headroom to spare, +8 dB
+// rides the rest of the peak headroom and alimiter holds a true-peak-safe
+// ceiling (level=disabled: without it alimiter re-normalizes the output toward
+// 0 dBFS and the ceiling disappears). An empty stage leaves the chain unchanged.
+func ampFilter(level int) string {
+	switch level {
+	case 1:
+		return "volume=4dB,"
+	case 2:
+		return "volume=8dB,alimiter=limit=0.84:level=disabled,"
+	default:
+		return ""
+	}
+}
+
+// afChain assembles the full af option value: the optional preamp, then the
+// labeled astats tap (see Initialize). Pure function, unit-tested.
+func afChain(amp int) string {
+	return "@astats:lavfi=[" + ampFilter(amp) +
+		"astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level]"
 }
 
 // Play loads the given URL and (re)joins the live edge. For live radio this is
@@ -197,6 +231,20 @@ func (m *MPV) SetMute(mute bool) {
 	if !m.setPropFlag("mute", mute) {
 		log.Printf("player: set mute failed")
 	}
+}
+
+// SetAmp swaps the amplification stage live: rewriting the af property re-chains
+// the filters without a restart, stopped or playing. The next Initialize bakes
+// the level in through afChain either way.
+func (m *MPV) SetAmp(level int) {
+	m.mu.Lock()
+	m.amp = level
+	handle := m.handle
+	m.mu.Unlock()
+	if handle == nil {
+		return
+	}
+	m.setPropString("af", afChain(level))
 }
 
 // Volume reads the current PulseAudio stream volume percent (ao-volume);

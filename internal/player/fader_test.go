@@ -2,6 +2,7 @@ package player
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -157,5 +158,28 @@ func TestZapDecision(t *testing.T) {
 		if reason == "" {
 			t.Errorf("%s: empty reason", c.name)
 		}
+	}
+}
+
+// TestAfChain checks the amplification stages of the af chain. Level 0 must
+// stay byte-for-byte the historical astats-only chain: the VU property path
+// (af-metadata/astats) and its failure message assume the labeled tap exists.
+// Every non-zero level must put the gain BEFORE astats, so the tray icon reads
+// the level the listener hears, not the pre-gain level.
+func TestAfChain(t *testing.T) {
+	off := "@astats:lavfi=[astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level]"
+	if got := afChain(0); got != off {
+		t.Fatalf("afChain(0) = %q, want the historical astats-only chain %q", got, off)
+	}
+	if got := afChain(1); !strings.Contains(got, "volume=4dB,astats=") {
+		t.Errorf("afChain(1) = %q, want the gain before astats", got)
+	}
+	for _, want := range []string{"volume=8dB,", "alimiter", "level=disabled"} {
+		if got := afChain(2); !strings.Contains(got, want) {
+			t.Errorf("afChain(2) = %q, want it to contain %q (gain, limiter, ceiling kept)", got, want)
+		}
+	}
+	if afChain(42) != afChain(0) {
+		t.Error("unknown levels must fall back to the unchanged chain")
 	}
 }

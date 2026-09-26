@@ -38,6 +38,11 @@ type Fader struct {
 	// (hard cut, the old behaviour). Set before Initialize.
 	Crossfade time.Duration
 
+	// Amp is the loudness preamp level stamped onto every handle (0 off,
+	// 1 doux, 2 costaud, see MPV.amp). Set before Initialize; SetAmp applies
+	// a change live.
+	Amp int
+
 	// Facade-level callbacks, mirroring MPV's. Each underlying handle forwards
 	// to these only while it is the current handle, so an outgoing handle's
 	// late events never reach the UI. Set before Initialize.
@@ -155,7 +160,10 @@ func zapDecision(cross time.Duration, playing bool, curURL, url string) (crossfa
 // the event goroutine reads them unlocked. initialVolume is passed straight to
 // the handle (nil => 100).
 func (f *Fader) newHandle(initialVolume *int) *MPV {
-	m := &MPV{initialVolume: initialVolume}
+	f.mu.Lock()
+	amp := f.Amp
+	f.mu.Unlock()
+	m := &MPV{initialVolume: initialVolume, amp: amp}
 	m.TitleChanged = func(title string) {
 		f.mu.Lock()
 		fire := m == f.current
@@ -225,6 +233,22 @@ func (f *Fader) SetCrossfade(d time.Duration) {
 	f.mu.Lock()
 	f.Crossfade = d
 	f.mu.Unlock()
+}
+
+// SetAmp stores the amplification level for every future handle and applies it
+// live to the audible handle (and the incoming one, should a fade be bringing
+// up a second stream right now). Guarded like SetCrossfade.
+func (f *Fader) SetAmp(level int) {
+	f.mu.Lock()
+	f.Amp = level
+	cur, in := f.current, f.incoming
+	f.mu.Unlock()
+	if cur != nil {
+		cur.SetAmp(level)
+	}
+	if in != nil && in != cur {
+		in.SetAmp(level)
+	}
 }
 
 // Play loads url. Decision rule: if the current handle is playing AND url
