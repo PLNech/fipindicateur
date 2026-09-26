@@ -33,6 +33,12 @@ type Config struct {
 	// stations while playing. 0 disables it (hard cut, the old behaviour);
 	// clamped to [0,10]. Absent in an older config means the 4s default.
 	CrossfadeSecs int `json:"crossfade_secs"`
+	// Amp is the loudness preamp applied in the mpv filter chain: 0 off,
+	// 1 doux (+4 dB), 2 costaud (+8 dB + limiter). The FIP streams sit around
+	// -18.5 LUFS, roughly 4.5 dB below streaming-platform loudness; see
+	// player.ampFilter for the measurements. Clamped to [0,2], out of range
+	// means off.
+	Amp int `json:"amp"`
 	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
 	// system default output). Persisted so a chosen sink survives restarts.
 	AudioDevice string `json:"audio_device"`
@@ -118,6 +124,11 @@ func Load() Config {
 	}
 	if c.CrossfadeSecs > 10 {
 		c.CrossfadeSecs = 10
+	}
+	// Amplification: clamp to [0,2], out of range falls back to off. A garbage
+	// value must never turn the preamp on by surprise.
+	if c.Amp < 0 || c.Amp > 2 {
+		c.Amp = 0
 	}
 	return c
 }
