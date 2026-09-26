@@ -1,8 +1,15 @@
 # Changelog
 
-## Non publié · Le panneau sans attente
+## v0.6.0 · 2026-09-26 · Le panneau sans attente
 
 ### Added
+- Amplification du flux : les radios FIP mesurent -18,5 LUFS, soit ~4,5 dB sous
+  la loudness des plateformes (mesuré sur fip-hifi.aac avec ffmpeg ebur128).
+  Trois niveaux au menu Réglages et dans le panneau : Désactivée (défaut),
+  Doux (+4 dB, parité streaming) et Costaud (+8 dB sous limiteur alimiter,
+  crêtes plafonnées à -0,5 dBFS vérifiées). Le gain précède le tap astats dans
+  la chaîne af, donc l'icône VU danse sur ce qu'on entend ; appliqué à chaud,
+  persisté dans la config, chaque changement enregistre un événement amp_toggle
 - Simple clic gauche sur l'icône (GNOME) : l'item SNI exporte désormais un
   DBusMenu minimal (« Ouvrir le panneau ») ; l'extension AppIndicator n'envoie
   Activate qu'au double clic, mais l'ouverture de ce menu (ou le clic sur son
