@@ -101,6 +101,14 @@ type App struct {
 	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
 	prefsClearArmed bool // two-click confirm state for "Effacer mes goûts"
 
+	// volSettleUntil bounds the grace window after a playback restart during
+	// which observed ao-volume/ao-mute reports are distrusted (see
+	// volumeSettleGrace). Guarded by volSettleMu: the reports arrive on the mpv
+	// event goroutine, the mark from the restart, the settled re-read from a
+	// timer of its own.
+	volSettleMu    sync.Mutex
+	volSettleUntil time.Time
+
 	// casting ("Diffuser sur…"): the live Chromecast session (nil = playing
 	// locally) and the devices from the last mDNS scan. All guarded by a.mu.
 	// castName is the active target's friendly name, used only for menu
@@ -1119,25 +1127,69 @@ func (a *App) toggleMute() {
 	a.applyVolumeUI()
 }
 
+// volumeSettleGrace is how long after a playback restart an observed
+// ao-volume/ao-mute report is distrusted. When mpv reopens the audio output
+// (play after pause, a zap's crossfade handle), the sink input exists for a
+// beat before PulseAudio applies the restored per-app level, and ao-volume
+// reads 0 in that window. Trusting the phantom zero wrote 0 over the real
+// level (config, panel slider, MPRIS, `fip status`) on every stream start;
+// the events log showed a value-less volume record trailing each play by
+// 0.4 to 2.3 seconds. Reports during the window are dropped; one settled
+// re-read just past it picks up the true level, whatever it is (including a
+// genuine 0: a real mute still wins, it just arrives late).
+const volumeSettleGrace = 1500 * time.Millisecond
+
+// volumeSettleReadDelay is when the settled re-read fires: just past the
+// window, so it can never race the very gate it is meant to clear.
+const volumeSettleReadDelay = volumeSettleGrace + 100*time.Millisecond
+
+// markVolumeSettle opens the grace window (called on every PLAYBACK_RESTART).
+func (a *App) markVolumeSettle() {
+	a.volSettleMu.Lock()
+	a.volSettleUntil = time.Now().Add(volumeSettleGrace)
+	a.volSettleMu.Unlock()
+}
+
+// volumeSettling reports whether observed stream-state reports are currently
+// inside the grace window (see volumeSettleGrace).
+func (a *App) volumeSettling() bool {
+	a.volSettleMu.Lock()
+	defer a.volSettleMu.Unlock()
+	return time.Now().Before(a.volSettleUntil)
+}
+
 // onPlaybackRestart READS the PulseAudio stream state and syncs the UI to it.
 // PulseAudio (module-stream-restore) is the single source of truth for the
 // per-app volume: it remembers the level across app restarts, including any
 // live pavucontrol adjustment. We never write a stored volume onto the
 // stream here; an earlier version did and stomped the user's duck during a
 // call. Config only caches the last-known level for pre-playback display.
+//
+// The read does NOT happen here: at PLAYBACK_RESTART the restored level has
+// not landed yet and ao-volume reports 0 (see volumeSettleGrace). The stream
+// is asked again once the window has passed; observer events in between are
+// dropped by the same gate.
 func (a *App) onPlaybackRestart() {
-	if v, ok := a.player.Volume(); ok {
-		a.onExternalVolume(v)
-	}
-	if mu, ok := a.player.Mute(); ok {
-		a.onExternalMute(mu)
-	}
+	a.markVolumeSettle()
+	time.AfterFunc(volumeSettleReadDelay, func() {
+		if v, ok := a.player.Volume(); ok {
+			a.onExternalVolume(v)
+		}
+		if mu, ok := a.player.Mute(); ok {
+			a.onExternalMute(mu)
+		}
+	})
 }
 
 // onExternalVolume handles an ao-volume observer event: the PulseAudio stream
 // volume changed, possibly from pavucontrol/GNOME (or as the echo of our own
 // set, which the equal-value guard swallows). Syncs config, menu and MPRIS.
+// Reports inside the settle grace window are dropped: they describe the
+// stream's opening beat, not a user intent (see volumeSettleGrace).
 func (a *App) onExternalVolume(v float64) {
+	if a.volumeSettling() {
+		return
+	}
 	pct := clampPct(int(math.Round(v)))
 	if pct == a.cfg.Volume {
 		return
@@ -1152,7 +1204,12 @@ func (a *App) onExternalVolume(v float64) {
 }
 
 // onExternalMute handles an ao-mute observer event (pavucontrol mute button).
+// Same settle gate as onExternalVolume: the opening beat's report describes
+// the stream, not the user (see volumeSettleGrace).
 func (a *App) onExternalMute(mute bool) {
+	if a.volumeSettling() {
+		return
+	}
 	if mute == a.cfg.Mute {
 		return
 	}
