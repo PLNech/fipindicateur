@@ -130,5 +130,11 @@
     "subject": "Amplification DSP (préampli + limiteur) au menu et au panneau",
     "completedAt": "2026-09-26",
     "learnings": "FIP streams measure -18.5 LUFS with LRA 2.4 LU (already broadcast-compressed): static preamp + alimiter beats loudnorm, which would only add latency to a constant gain. The gain stage must precede the @astats tap in the af graph or the VU icon reads pre-gain levels; alimiter needs level=disabled or it re-normalizes output toward 0 dBFS and the ceiling disappears."
+  },
+  {
+    "id": "23",
+    "subject": "Chasse aux bugs UX/état: volume fantôme, cast invisible, dial en vol, readout du curseur",
+    "completedAt": "2026-09-29",
+    "learnings": "ao-volume rapporte 0 pendant un battement après l'ouverture du flux (avant que PulseAudio n'applique le niveau restauré): ne jamais faire confiance à un rapport lu à PLAYBACK_RESTART, passer par une fenêtre de grâce + relecture posée. Le signal d'écoute doit suivre l'oreille (audible() = flux local OU session cast avec media playing), pas le processus local; la dérivation stats connaît cast_start/stop/pause/resume. Un dial cast en vol est invisible aux tests d'état: toute intention locale de transport doit l'annuler (castDialGen). Vérifier ses propres diagnostics avant de corriger: la ligne « confirmations armées effacées par un push » était fausse (les rows danger sont du HTML statique, jamais reconstruites)."
   }
 ]
