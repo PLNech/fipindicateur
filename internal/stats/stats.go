@@ -204,6 +204,42 @@ func Build(evs []events.Event, hist []histlog.Entry, prf []prefs.Entry, enr *Enr
 				endSession(e.TS)
 				playing = false
 			}
+		case events.KindCastStart:
+			// Casting: the ear moved to the device. setPlayingUI does not
+			// record a local pause while casting (the cast events carry the
+			// truth), so cast_start is the genuine edge that opens the
+			// device-side listening window. Not counted as a play: Plays
+			// counts local interactions, the cast session is counted as time.
+			if !playing {
+				playing = true
+				if e.Station != "" {
+					station = e.Station
+				}
+				segStart = e.TS
+				startSession(e.TS)
+			}
+		case events.KindCastStop:
+			// The cast ended (deliberate stop, device lost, app exit): close
+			// the device-side window. A following play (resume here) reopens
+			// a local one. Not counted as a pause, same symmetry as above.
+			if playing {
+				closeSeg(e.TS)
+				endSession(e.TS)
+				playing = false
+			}
+		case events.KindCastPause:
+			// Device-side transport pause: the ear stopped, the cast session
+			// continues. Close the segment and mark it closed (segStart zero)
+			// so no later close attributes the paused window; cast_resume
+			// reopens.
+			if playing {
+				closeSeg(e.TS)
+				segStart = time.Time{}
+			}
+		case events.KindCastResume:
+			if playing {
+				segStart = e.TS
+			}
 		case events.KindStationChange:
 			// Markov edge, recorded whether or not we are playing.
 			if e.From != "" && e.To != "" && e.From != e.To {

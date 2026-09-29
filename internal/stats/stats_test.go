@@ -220,3 +220,53 @@ func TestEmptyLogIsSafe(t *testing.T) {
 		t.Error("achievements list should still render (all locked)")
 	}
 }
+
+func TestCastSessionAccruesOnDevice(t *testing.T) {
+	// Launched paused, cast starts: the device listens 30min, pauses 5min on
+	// its own transport, resumes 10min, then the cast stops and playback
+	// resumes here for 5min. The paused window must not accrue; the device
+	// windows and the local one must, all attributed to fip.
+	evs := []events.Event{
+		{Kind: events.KindCastStart, Station: "fip", TS: at(0)},
+		{Kind: events.KindCastPause, TS: at(30)},
+		{Kind: events.KindCastResume, TS: at(35)},
+		{Kind: events.KindCastStop, Station: "fip", TS: at(45)},
+		{Kind: events.KindPlay, Station: "fip", TS: at(45)},
+		{Kind: events.KindPause, TS: at(50)},
+	}
+	r := Build(evs, nil, nil, nil, base)
+	if want := int64(45 * 60); r.Totals.ListeningSec != want {
+		t.Errorf("listening: got %d want %d", r.Totals.ListeningSec, want)
+	}
+	if r.Totals.Sessions != 2 {
+		t.Errorf("sessions: got %d want 2 (cast then local resume)", r.Totals.Sessions)
+	}
+	if r.Totals.Plays != 1 || r.Totals.Pauses != 1 {
+		t.Errorf("plays/pauses: got %d/%d want 1/1 (cast edges are not local clicks)", r.Totals.Plays, r.Totals.Pauses)
+	}
+}
+
+func TestCastFromLocalPlayingKeepsSession(t *testing.T) {
+	// Playing locally, cast starts (setPlayingUI no longer records a pause
+	// while casting), the device plays 10min, then the cast stops and local
+	// playback resumes for 10min. One continuous session, no phantom pause.
+	evs := []events.Event{
+		{Kind: events.KindPlay, Station: "fip", TS: at(0)},
+		{Kind: events.KindCastStart, Station: "fip", TS: at(10)},
+		{Kind: events.KindCastStop, Station: "fip", TS: at(20)},
+		{Kind: events.KindPlay, Station: "fip", TS: at(20)},
+		{Kind: events.KindPause, TS: at(30)},
+	}
+	r := Build(evs, nil, nil, nil, base)
+	if want := int64(30 * 60); r.Totals.ListeningSec != want {
+		t.Errorf("listening: got %d want %d", r.Totals.ListeningSec, want)
+	}
+	// The sink handover (cast_stop then play here) is a session boundary:
+	// the device window and the local one are two distinct listening spans.
+	if r.Totals.Sessions != 2 {
+		t.Errorf("sessions: got %d want 2 (device window, then local)", r.Totals.Sessions)
+	}
+	if r.Totals.Plays != 2 || r.Totals.Pauses != 1 {
+		t.Errorf("plays/pauses: got %d/%d want 2/1", r.Totals.Plays, r.Totals.Pauses)
+	}
+}

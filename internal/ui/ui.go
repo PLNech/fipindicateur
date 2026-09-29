@@ -527,10 +527,12 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 
 	// A notification and a history-log line both mean "you heard this". The
 	// watcher keeps polling FIP while paused or stopped, so gate both on actual
-	// playback: when the stream is not playing you are not listening, so we stay
+	// playback: when nothing is audible you are not listening, so we stay
 	// silent and log nothing. The menu still updates above, so resuming shows
-	// what is on air.
-	if !a.player.IsPlaying() {
+	// what is on air. Audibility follows the EAR, not the local process: a
+	// cast session with its media playing is listening too, even though the
+	// local player is stopped.
+	if !a.audible() {
 		return
 	}
 
@@ -784,15 +786,36 @@ func (a *App) togglePlay() {
 	}
 }
 
+// audible reports whether the station is being heard right now: the local
+// stream playing, or a cast session whose media is playing. The listening
+// signal (notifications, history log, show boundaries) follows the ear, not
+// the local process: while the sound comes out of a cast device the local
+// player is stopped, and gating on it made a whole evening on the receiver
+// invisible to the history and the statistics.
+func (a *App) audible() bool {
+	if sess := a.castSession(); sess != nil {
+		return sess.MediaPlaying()
+	}
+	return a.player != nil && a.player.IsPlaying()
+}
+
 func (a *App) setPlayingUI(playing bool) {
 	// The single chokepoint for playback state: menu toggle, MPRIS, media keys
 	// and station switches all pass through here, so recording play/pause here
 	// captures every source. Redundant same-state events are deduplicated in
 	// the stats derivation.
-	if playing {
-		a.rec.Record(events.Event{Kind: events.KindPlay, Station: a.current.Key})
-	} else {
-		a.rec.Record(events.Event{Kind: events.KindPause, Station: a.current.Key})
+	//
+	// EXCEPT while casting: the local player is then stopped by design while
+	// the device plays, so the local state is not the listening state. The
+	// cast session's own events (cast_start/stop, cast_pause/resume) are
+	// recorded at their sources; recording play/pause here too would feed the
+	// stats walk phantom pause/play edges around every zap on the device.
+	if a.castSession() == nil {
+		if playing {
+			a.rec.Record(events.Event{Kind: events.KindPlay, Station: a.current.Key})
+		} else {
+			a.rec.Record(events.Event{Kind: events.KindPause, Station: a.current.Key})
+		}
 	}
 	if playing {
 		a.mPlay.SetTitle("⏸ Pause")
@@ -1766,6 +1789,10 @@ func (a *App) onCastError(err error) {
 	log.Printf("ui: cast session lost: %v", err)
 	sess.Close()
 	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+	// Nothing is audible anywhere now (the device died, local stayed paused):
+	// record the pause so the stats walk closes the session instead of
+	// believing the cast is still going, and paint the paused state.
+	a.setPlayingUI(false)
 	a.refreshCastMenu()
 	if a.notif != nil {
 		a.notif.Notify("Diffusion interrompue", "La connexion avec l'appareil a été perdue.", "", a.cfg.NotifTimeoutMs)
