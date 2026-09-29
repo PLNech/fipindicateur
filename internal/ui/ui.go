@@ -371,6 +371,11 @@ func (a *App) startStation(s stations.Station, play bool) {
 	if a.watchCancel != nil {
 		a.watchCancel()
 	}
+	// A zap is local intent: tune HERE now, and a dial in flight must not land
+	// ten seconds later playing the click-time station over the speakers
+	// (startCast captured its station at dial time). No-op when already
+	// casting: the cast-LOAD branch below re-tunes the device deliberately.
+	a.cancelPendingDial()
 	if a.current.Key != s.Key {
 		a.rec.Record(events.Event{Kind: events.KindStationChange, From: a.current.Key, To: s.Key})
 	}
@@ -777,6 +782,7 @@ func (a *App) togglePlay() {
 		a.stopCasting(true)
 		return
 	}
+	a.cancelPendingDial() // play here: a dial in flight must not answer later
 	if a.player.IsPlaying() {
 		a.player.Stop()
 		a.setPlayingUI(false)
@@ -1559,6 +1565,22 @@ func (a *App) refreshCastMenu() {
 	// The volume UI describes whichever sink is active, so a cast that starts
 	// or ends re-describes it; applyVolumeUI pushes the panel state as well.
 	a.applyVolumeUI()
+}
+
+// cancelPendingDial kills a cast dial still in flight, and only that: any
+// explicit local transport intent (play, pause, zap) calls it before acting.
+// A dial is invisible to the play-state checks (castSession stays nil until
+// it lands), so without this a receiver answering ten seconds later would
+// grab the audio and stomp the very action the user just asked for: play
+// here, then the sound jumps to the speaker. No-op when idle or already
+// casting.
+func (a *App) cancelPendingDial() {
+	a.mu.Lock()
+	pending := a.castSess == nil && a.castDialing != ""
+	a.mu.Unlock()
+	if pending {
+		a.stopCasting(false) // bumps castDialGen, repaints; records nothing
+	}
 }
 
 // castToDevice starts casting the current station to the i-th discovered
@@ -2712,12 +2734,16 @@ func (a *App) Play() {
 		a.stopCasting(true)
 		return
 	}
+	a.cancelPendingDial() // play here: a dial in flight must not answer later
 	a.player.Play(a.current.StreamURL(a.quality()))
 	a.setPlayingUI(true)
 }
 
-// Pause stops playback (full stop for live radio).
+// Pause stops playback (full stop for live radio). A dial in flight is
+// cancelled too: silence requested now must not be undone by a receiver
+// answering ten seconds later.
 func (a *App) Pause() {
+	a.cancelPendingDial()
 	a.player.Stop()
 	a.setPlayingUI(false)
 }
