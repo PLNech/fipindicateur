@@ -762,9 +762,15 @@ function render() {
   const muted = casting ? S.cast.muted : S.muted;
   const known = !casting || S.cast.volumeKnown;
   const slider = document.getElementById('vol');
-  if (!dragging) slider.value = known ? vol : 50;
+  // The thumb AND its readout are the finger's while dragging: pushed state
+  // (each throttled command echoes back, slightly late) must not fight the
+  // drag by snapping the number to the lagging applied value. The input
+  // handler keeps the readout live at the dragged value instead.
+  if (!dragging) {
+    slider.value = known ? vol : 50;
+    document.getElementById('volPct').textContent = known ? vol + ' %' : '· %';
+  }
   slider.disabled = !known;
-  document.getElementById('volPct').textContent = known ? vol + ' %' : '· %';
   document.getElementById('volLabel').textContent = casting ? 'Volume (appareil)' : 'Volume';
   document.getElementById('volNote').textContent =
     casting && S.cast.controlType === 'master' ? 'Pilote le volume général de l’appareil' : '';
