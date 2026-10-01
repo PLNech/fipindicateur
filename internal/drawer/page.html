@@ -933,7 +933,10 @@ const scaleSendMinMs = 120;
 let scaleDragging = false, scaleLastX = 0, scaleLastY = 0, scalePct = 100;
 let scaleTimer = 0, scaleLastSentAt = 0, scaleLastSent = null;
 function sendScale(v, commit) {
-  v = Math.max(100, Math.min(300, v));
+  // Whole percents only: the Go side's Command.Value is an int, and a
+  // fractional drag value (2 px of travel = 1 % yields halves) is rejected
+  // wholesale by the JSON unmarshal, commit included: the zoom never applied.
+  v = Math.round(Math.max(100, Math.min(300, v)));
   scalePct = v;
   if (!commit && v === scaleLastSent) return;
   scaleLastSentAt = Date.now();
