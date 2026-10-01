@@ -9,12 +9,14 @@ package ui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image/color"
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -297,6 +299,19 @@ func (a *App) OnReady() {
 	// running app (and survive the tray dying). Best-effort; the app runs on if
 	// it cannot bind. Unix-only (Windows is a no-op).
 	a.startControlServer()
+
+	// One-shot handoff from a recovery relaunch (panel_recover): pick the
+	// listening back up and re-open the panel the user had just clicked for.
+	// Consumed whatever it did, so it can never loop; a plain Relancer leaves
+	// no marker and starts paused as before.
+	if n, ok := consumeResume(); ok {
+		if n.Play && !a.audible() {
+			a.togglePlay()
+		}
+		if n.Panel {
+			go a.openDrawer()
+		}
+	}
 
 	// Opt-in: one quiet update check at launch. Off by default.
 	if a.cfg.UpdateStartup {
@@ -1879,6 +1894,26 @@ func (a *App) newDrawer() *drawer.Drawer {
 	return d
 }
 
+// liveDrawer returns the panel a click should act on, and triggers the
+// self-recovery relaunch when its GTK stack is found dead: the heartbeat in
+// internal/drawer flags an X link lost across a suspend, or a GTK loop that
+// ended. Returns nil after triggering recovery: the process is on its way
+// out, the caller must do nothing past its early return.
+func (a *App) liveDrawer() *drawer.Drawer {
+	a.mu.Lock()
+	if a.drawer == nil {
+		a.drawer = a.newDrawer()
+	}
+	d := a.drawer
+	stale := !d.Alive()
+	a.mu.Unlock()
+	if stale {
+		a.recoverPanel()
+		return nil
+	}
+	return d
+}
+
 // toggleDrawer shows « le panneau » when hidden and hides it when shown; on
 // Linux it is the tray icon's Activate (left click). The drawer is built
 // lazily on first open and stays resident afterwards (hidden, instant to
@@ -1886,12 +1921,12 @@ func (a *App) newDrawer() *drawer.Drawer {
 // (hiding is not an open). The desktop color-scheme is re-probed at each
 // open, so a theme flip lands on the next show.
 func (a *App) toggleDrawer() {
+	d := a.liveDrawer()
+	if d == nil {
+		return
+	}
 	dark := a.panelDark()
 	a.mu.Lock()
-	if a.drawer == nil {
-		a.drawer = a.newDrawer()
-	}
-	d := a.drawer
 	act := decideDrawerToggle(a.drawerPhase)
 	if act == drawerActOpen {
 		a.drawerPhase = drawerOpening // a double-click must not double-open
@@ -1937,12 +1972,12 @@ func (a *App) showDrawer(d *drawer.Drawer) {
 // for one interaction: menu opened, then its entry clicked). KindDrawerOpen
 // is recorded once, only on an actual open, exactly like toggleDrawer.
 func (a *App) openDrawer() {
+	d := a.liveDrawer()
+	if d == nil {
+		return
+	}
 	dark := a.panelDark()
 	a.mu.Lock()
-	if a.drawer == nil {
-		a.drawer = a.newDrawer()
-	}
-	d := a.drawer
 	act := decideDrawerToggle(a.drawerPhase)
 	if act == drawerActOpen {
 		a.drawerPhase = drawerOpening
@@ -1971,12 +2006,12 @@ func (a *App) onDrawerHidden() {
 // the old right-click menu. KindDrawerOpen is recorded only on an actual
 // open, like toggleDrawer.
 func (a *App) openDrawerSettings() {
+	d := a.liveDrawer()
+	if d == nil {
+		return
+	}
 	dark := a.panelDark()
 	a.mu.Lock()
-	if a.drawer == nil {
-		a.drawer = a.newDrawer()
-	}
-	d := a.drawer
 	act := decideDrawerToggle(a.drawerPhase)
 	if act == drawerActOpen {
 		a.drawerPhase = drawerOpening
@@ -2552,6 +2587,72 @@ func (a *App) clearPrefsData() {
 }
 
 // --- restart & updates ---
+
+// resumeNote is the one-shot handoff a recovery relaunch leaves for its
+// successor: whether to pick the listening back up and re-open the panel the
+// user had just clicked for. Consumed once at OnReady, whatever it did.
+type resumeNote struct {
+	Play  bool `json:"play"`
+	Panel bool `json:"panel"`
+}
+
+// resumePath is ~/.local/share/fipindicateur/resume.json (XDG_DATA_HOME
+// honored), next to the other local logs. Empty when the directory cannot be
+// resolved, which simply means no handoff.
+func resumePath() string {
+	dir, err := events.DataDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "resume.json")
+}
+
+// saveResume writes the recovery handoff. Best-effort: a failure only means
+// the next instance starts paused with no panel, exactly like a plain restart.
+func saveResume(n resumeNote) {
+	p := resumePath()
+	if p == "" {
+		return
+	}
+	b, err := json.Marshal(n)
+	if err == nil {
+		err = os.WriteFile(p, b, 0o600)
+	}
+	if err != nil {
+		log.Printf("ui: reprise: %v", err)
+	}
+}
+
+// consumeResume reads and deletes the recovery handoff. Deleting on read is
+// what keeps a recovery from looping: the marker exists for exactly one
+// launch, whatever it did.
+func consumeResume() (resumeNote, bool) {
+	p := resumePath()
+	if p == "" {
+		return resumeNote{}, false
+	}
+	b, err := os.ReadFile(p)
+	_ = os.Remove(p)
+	if err != nil {
+		return resumeNote{}, false
+	}
+	var n resumeNote
+	if json.Unmarshal(b, &n) != nil {
+		return resumeNote{}, false
+	}
+	return n, true
+}
+
+// recoverPanel reacts to a dead panel: record it, hand the successor the
+// listening state and the panel request, and relaunch the process. The
+// process's own restart plumbing IS the recovery: a fresh GTK stack, mpv and
+// D-Bus, all persisted state on disk, no second gtk_init to gamble on.
+func (a *App) recoverPanel() {
+	log.Printf("ui: panneau: la pile GTK du panneau est morte, relance du fipindicateur")
+	a.rec.Record(events.Event{Kind: events.KindPanelRecover, Station: a.current.Key})
+	saveResume(resumeNote{Play: a.audible(), Panel: true})
+	a.restart()
+}
 
 // restart relaunches the app so a freshly installed binary takes over. It
 // starts a detached helper that waits for this instance to exit (freeing the

@@ -39,6 +39,7 @@ const (
 	KindCastPause     Kind = "cast_pause"           // paused the media on the cast device (drawer transport)
 	KindCastResume    Kind = "cast_resume"          // resumed the media on the cast device (drawer transport)
 	KindDrawerOpen    Kind = "drawer_open"          // opened the quick-control panel (le panneau)
+	KindPanelRecover  Kind = "panel_recover"        // the panel's GTK stack was found dead; the app relaunched itself
 	KindStationChange Kind = "station_change"       // From, To set
 	KindShowChange    Kind = "show_change"          // From, To = programme conceptUuid (ambient, on the antenna)
 	KindAudioDevice   Kind = "audio_device"         // user picked an audio output device
