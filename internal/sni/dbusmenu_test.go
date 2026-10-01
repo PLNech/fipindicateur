@@ -16,7 +16,7 @@ func TestMenuOpenEvent(t *testing.T) {
 		want    bool
 	}{
 		{0, "opened", true},           // shell popup opened: the single click
-		{menuItemID, "clicked", true}, // « le FIPindicateur » activated
+		{menuItemID, "clicked", true}, // the menu entry activated
 		{0, "closed", false},          // popup dismissed: not an open request
 		{0, "clicked", false},         // root is never clicked as an entry
 		{menuItemID, "opened", false},
@@ -58,8 +58,8 @@ func TestMenuLayout(t *testing.T) {
 	if !labelled {
 		t.Fatal("entry has no label: GNOME hides an edge separator and never opens an empty menu, killing the single click")
 	}
-	if got := label.Value(); got != "le FIPindicateur" {
-		t.Errorf("entry label = %v, want « le FIPindicateur »", got)
+	if got := label.Value(); got != "Ouvrir le panneau" {
+		t.Errorf("entry label = %v, want « Ouvrir le panneau »", got)
 	}
 	for _, p := range []string{"enabled", "visible"} {
 		if got := entry.Props[p].Value(); got != true {

@@ -92,12 +92,13 @@ func menuRootProps() map[string]dbus.Variant {
 // nothing visible in it never opens, so the "opened" event we listen for never
 // fires. The entry must therefore be a real, visible, labelled item.
 //
-// So it carries the app's name rather than an order: the popup reads as a title
-// card for the panel appearing under it, instead of « Ouvrir le panneau »
-// duplicating what is already happening. Clicking it opens the panel too.
+// It carries the action it performs: field feedback 2026-10-01 was that an
+// app-name entry reads as a dead end (the user clicks, gets a popup with a
+// bare name, and reasonably asks "why a menu?"). The label now says what the
+// click does: « Ouvrir le panneau ». Clicking it opens the panel too.
 func menuEntryProps() map[string]dbus.Variant {
 	return map[string]dbus.Variant{
-		"label":   dbus.MakeVariant("le FIPindicateur"),
+		"label":   dbus.MakeVariant("Ouvrir le panneau"),
 		"enabled": dbus.MakeVariant(true),
 		"visible": dbus.MakeVariant(true),
 	}
