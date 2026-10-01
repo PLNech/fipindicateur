@@ -13,11 +13,13 @@ package drawer
 // coexist (verified at runtime on GNOME/X11).
 
 /*
-#cgo pkg-config: webkit2gtk-4.1 gtk+-3.0
+#cgo pkg-config: webkit2gtk-4.1 gtk+-3.0 x11
 
 #include <stdlib.h>
 #include <locale.h>
+#include <poll.h>
 #include <gtk/gtk.h>
+#include <gdk/gdkx.h>
 #include <webkit2/webkit2.h>
 
 // fip_lc_numeric reads the process LC_NUMERIC category; fip_keep_c_numeric
@@ -47,6 +49,34 @@ static void fip_idle_add(void) { g_idle_add(fipDrawerIdle, NULL); }
 // undecorated, keep-above utility toplevel holding the webview, with the "fip"
 // script message channel registered and the page loaded from the embedded
 // string. Built hidden; showing is fip_present.
+// fip_win is the built toplevel, kept for the heartbeat below: once the GTK
+// goroutine is gone the Go side cannot reach the window any more.
+static GtkWidget *fip_win = NULL;
+
+// fip_heartbeat probes the X connection every 2 s WITHOUT an X round-trip:
+// poll(2) on the connection fd flags POLLHUP/POLLERR as soon as the server
+// side is gone. Observed in the field (2026-10-01): after a 14 h suspend
+// Xwayland had closed the link, the GTK loop kept pumping, the process was
+// alive and healthy on D-Bus (tray, MPRIS, playback) and every panel open
+// was a silent no-op. On a dead link it reports once and removes itself; on
+// a non-X display (a Wayland-native session) it does nothing: the compositor
+// keeps Wayland clients alive across suspends.
+extern void fipDrawerXDead(void);
+static gboolean fip_heartbeat(gpointer data) {
+	(void)data;
+	if (fip_win == NULL || !gtk_widget_get_realized(fip_win))
+		return G_SOURCE_CONTINUE;
+	GdkDisplay *dpy = gtk_widget_get_display(fip_win);
+	if (dpy == NULL || !GDK_IS_X11_DISPLAY(dpy))
+		return G_SOURCE_CONTINUE;
+	struct pollfd pfd = { XConnectionNumber(gdk_x11_display_get_xdisplay(dpy)), 0, 0 };
+	if (poll(&pfd, 1, 0) < 0 || (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))) {
+		fipDrawerXDead();
+		return G_SOURCE_REMOVE;
+	}
+	return G_SOURCE_CONTINUE;
+}
+
 static GtkWidget *fip_build(WebKitWebView **out_view, const char *html, int width, int height) {
 	GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	// The window title is what the shell shows in alt-tab and the window list:
@@ -101,6 +131,9 @@ static GtkWidget *fip_build(WebKitWebView **out_view, const char *html, int widt
 
 	webkit_web_view_load_html(WEBKIT_WEB_VIEW(view), html, "about:blank");
 	*out_view = WEBKIT_WEB_VIEW(view);
+	fip_win = win;
+	// The dead-link probe rides the GTK loop's own clock from now on.
+	g_timeout_add_seconds(2, fip_heartbeat, NULL);
 	return win;
 }
 
@@ -163,6 +196,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -234,6 +268,13 @@ type Drawer struct {
 	startOnce sync.Once
 	ready     chan struct{}
 	initErr   error
+
+	// dead flips when the panel's GTK stack is gone (the X link lost across a
+	// suspend, the GTK loop ended): the process still answers D-Bus (tray,
+	// MPRIS, playback) but the panel can never present again, so the app
+	// rebuilds instead of clicking into the void. Set by the C heartbeat and
+	// the goroutine tail; read by Alive.
+	dead atomic.Bool
 
 	// GTK-thread-only state after ready closes.
 	win       *C.GtkWidget
@@ -369,6 +410,10 @@ func (d *Drawer) ensureStarted() error {
 				tInit.Sub(t0), d.builtT.Sub(tInit), d.builtT.Sub(t0))
 			close(d.ready)
 			C.gtk_main()
+			// gtk_main only returns if the loop is gone for good (nothing
+			// calls gtk_main_quit, so this is a teardown nobody asked for):
+			// the panel is dead from here on.
+			d.markDead("la boucle GTK s'est terminée")
 		}()
 	})
 	<-d.ready
@@ -419,6 +464,40 @@ func (d *Drawer) Prewarm() {
 		return
 	}
 	timing("panneau: préchauffage terminé en %v (fenêtre prête, cachée)", time.Since(t0))
+}
+
+// markDead flags the panel unusable. Called from the GTK thread (heartbeat)
+// or the tail of the GTK goroutine; logs once, then stays silent. Safe from
+// any goroutine.
+func (d *Drawer) markDead(reason string) {
+	if d.dead.Swap(true) {
+		return
+	}
+	log.Printf("drawer: panneau hors service: %s (le process sera relancé au prochain clic sur l'icône)", reason)
+}
+
+// Alive reports whether the panel can still present. False once the GTK
+// goroutine ended or the heartbeat found the X connection dead. A drawer not
+// started yet counts as alive: its first Show builds the stack. A gtk_init
+// failure also counts as alive on purpose: the Show error path owns it (it
+// logs and resets the phase on every attempt) and headless machines must not
+// trip a recovery restart loop.
+func (d *Drawer) Alive() bool {
+	if d.dead.Load() {
+		return false
+	}
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	if !started {
+		return true
+	}
+	select {
+	case <-d.ready:
+	default:
+		return true // still building: give it the benefit of the doubt
+	}
+	return true
 }
 
 // Push updates the page's state (visible or not) so the next look is always

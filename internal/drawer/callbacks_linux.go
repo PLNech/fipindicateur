@@ -34,6 +34,18 @@ func fipDrawerIdle(data C.gpointer) C.gboolean {
 	return C.gboolean(0) // G_SOURCE_REMOVE
 }
 
+// fipDrawerXDead is the C heartbeat's report: poll(2) found the X connection
+// gone (a suspend had the server close the link while the process slept
+// through it). The panel can never present again; the app reacts to Alive()
+// turning false on the next click (rebuild or recovery relaunch).
+//
+//export fipDrawerXDead
+func fipDrawerXDead() {
+	if d := currentDrawer(); d != nil {
+		d.markDead("le lien X de l'affichage est mort (reprise après suspension ?)")
+	}
+}
+
 // fipDrawerScriptMessage receives the page's postMessage payloads (the "fip"
 // handler): a JSON Command per message.
 //

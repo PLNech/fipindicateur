@@ -40,5 +40,8 @@ func (d *Drawer) Prewarm() {}
 // Hide is a no-op.
 func (d *Drawer) Hide() {}
 
+// Alive is always true: there is no panel here to die.
+func (d *Drawer) Alive() bool { return true }
+
 // NumericLocale is always "C" here: no GTK, so nothing perturbs the locale.
 func NumericLocale() string { return "C" }
