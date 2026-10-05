@@ -15,6 +15,10 @@ import (
 // animates (paused, stopped, animation off or broken).
 var restPose = vu.Heights{3, 7, 4, 9}
 
+// RestPose exposes the frozen rest skyline so other renders (a brand mark, a
+// mock) draw the same glyph the tray shows at rest.
+func RestPose() vu.Heights { return restPose }
+
 // restDimAlpha dims the ink for the paused glyph, carrying the pause
 // affordance the dim static variants used to provide.
 const restDimAlpha = 0x8C

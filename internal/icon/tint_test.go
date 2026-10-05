@@ -1,7 +1,10 @@
 package icon
 
 import (
+	"bytes"
+	"image"
 	"image/color"
+	"image/png"
 	"testing"
 
 	"github.com/PLNech/fipindicateur/internal/stations"
@@ -65,5 +68,44 @@ func TestLegibleContrast(t *testing.T) {
 					s.Key, s.Color, cr, dark)
 			}
 		}
+	}
+}
+
+// TestRetint pins the prototype-branding pass: every non-transparent pixel
+// moves toward the brand hue by the asked fraction (alpha preserved),
+// transparent pixels stay transparent, and a non-PNG input comes back
+// untouched rather than blanked.
+func TestRetint(t *testing.T) {
+	// A 2x1 PNG: one opaque red pixel, one transparent pixel.
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 1))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 0xFF, A: 0xFF})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	src := buf.Bytes()
+
+	out, err := png.Decode(bytes.NewReader(Retint(src, color.NRGBA{G: 0xFF, A: 0xFF}, 0.5)))
+	if err != nil {
+		t.Fatalf("Retint output is not a PNG: %v", err)
+	}
+	if got := out.Bounds(); got.Dx() != 2 || got.Dy() != 1 {
+		t.Fatalf("Retint changed the size: %v", got)
+	}
+	r, g, b, a := out.At(0, 0).RGBA()
+	if uint8(a>>8) != 0xFF {
+		t.Errorf("alpha changed: %d, want 255", uint8(a>>8))
+	}
+	// Red (255,0) mixed 50% toward green (0,255): both channels near 128.
+	if uint8(r>>8) < 120 || uint8(r>>8) > 136 || uint8(g>>8) < 120 || uint8(g>>8) > 136 || uint8(b>>8) != 0 {
+		t.Errorf("pixel did not blend halfway toward the brand hue: r=%d g=%d b=%d", uint8(r>>8), uint8(g>>8), uint8(b>>8))
+	}
+	if _, _, _, a2 := out.At(1, 0).RGBA(); a2 != 0 {
+		t.Errorf("transparent pixel became opaque: %d", uint8(a2>>8))
+	}
+
+	// A broken input is passed through, never blanked.
+	if got := Retint([]byte("not a png"), color.NRGBA{}, 0.5); string(got) != "not a png" {
+		t.Errorf("non-PNG input was mangled: %q", got)
 	}
 }

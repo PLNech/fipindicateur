@@ -1,7 +1,10 @@
 package icon
 
 import (
+	"bytes"
+	"image"
 	"image/color"
+	"image/png"
 	"math"
 )
 
@@ -129,4 +132,34 @@ func Lerp(a, b color.NRGBA, t float64) color.NRGBA {
 		B: mixChan(a.B, b.B, t),
 		A: mixChan(a.A, b.A, t),
 	}
+}
+
+// Retint recolors every non-transparent pixel of a PNG toward c by fraction
+// t, preserving the alpha channel (and leaving fully transparent pixels
+// alone). It is the prototype-branding step: a whole icon family takes the
+// one hue without touching its renderer. On any decode or encode failure the
+// input bytes are returned untouched, so a branding pass can never blank the
+// tray.
+func Retint(b []byte, c color.NRGBA, t float64) []byte {
+	img, err := png.Decode(bytes.NewReader(b))
+	if err != nil {
+		return b
+	}
+	bounds := img.Bounds()
+	out := image.NewNRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, bl, a := img.At(x, y).RGBA()
+			if a == 0 {
+				continue // keep the transparent background transparent
+			}
+			px := color.NRGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(bl >> 8), A: uint8(a >> 8)}
+			out.SetNRGBA(x, y, mix(px, c, t))
+		}
+	}
+	var buf bytes.Buffer
+	if png.Encode(&buf, out) != nil {
+		return b
+	}
+	return buf.Bytes()
 }
