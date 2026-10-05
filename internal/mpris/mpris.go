@@ -11,6 +11,8 @@ package mpris
 
 import (
 	"errors"
+	"os"
+	"strings"
 
 	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/godbus/dbus/v5"
@@ -18,7 +20,32 @@ import (
 	"github.com/godbus/dbus/v5/prop"
 )
 
-const wellKnownName = "org.mpris.MediaPlayer2.fipindicateur"
+// mprisPrefix is the MPRIS2 well-known name convention every player name
+// carries: media-key routing and playerctl pick players up by this prefix.
+const mprisPrefix = "org.mpris.MediaPlayer2."
+
+// defaultWellKnownName is the production name, also the single-instance lock
+// (see ErrAlreadyRunning).
+const defaultWellKnownName = mprisPrefix + "fipindicateur"
+
+// wellKnownName resolves the name this instance claims: FIP_MPRIS_NAME
+// overrides it, so a prototype build can sit next to the live production
+// instance under its own name instead of fighting it (both keep working:
+// the default lock stays default, the override only opts a specific launch
+// out of it). Absent or empty = the default, semantics unchanged. A value
+// without the org.mpris.MediaPlayer2. prefix is prefixed, so a bare
+// "fipindicateur.protoA" and the full name mean the same thing and media-key
+// routing keeps working.
+func wellKnownName() string {
+	v := strings.TrimSpace(os.Getenv("FIP_MPRIS_NAME"))
+	if v == "" {
+		return defaultWellKnownName
+	}
+	if !strings.HasPrefix(v, mprisPrefix) {
+		return mprisPrefix + v
+	}
+	return v
+}
 
 // ErrAlreadyRunning means another instance owns the MPRIS name. The
 // well-known name doubles as the single-instance lock: a second launch (e.g.
@@ -73,7 +100,7 @@ func Connect(ctrl Controller) (*Instance, error) {
 
 	// No ReplaceExisting: failing to own the name IS the single-instance
 	// signal, not something to override.
-	reply, err := conn.RequestName(wellKnownName, 0)
+	reply, err := conn.RequestName(wellKnownName(), 0)
 	if err != nil {
 		return nil, err
 	}
