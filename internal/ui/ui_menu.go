@@ -13,6 +13,7 @@ import (
 	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/events"
+	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
@@ -51,6 +52,11 @@ func setTrayIcon(b []byte) {
 // setTrayNowLabel is a no-op here: the now-playing label lives on the mNow
 // menu item, which the throttle updates directly.
 func (a *App) setTrayNowLabel(string) {}
+
+// setNowArt is a no-op here: systray menu items carry no inline icons on
+// these platforms, so the track cover stays on the notification (FetchCover)
+// like it always was. The Linux menu implements it (ui_sni_linux.go).
+func (a *App) setNowArt(np metadata.NowPlaying) {}
 
 // teardownUI has nothing to release: systray closes its own connection when
 // the main loop ends.

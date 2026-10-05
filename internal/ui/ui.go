@@ -517,6 +517,12 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		// cannot hammer the appindicator extension.
 		a.nowThrottle.update(label)
 
+		// The track's cover as the now-playing item's icon (the panel's old
+		// artwork, reborn on the menu). Platform-split: a no-op where menu
+		// items carry no icons; on Linux it fetches off this goroutine, so a
+		// slow CDN never blocks a metadata update.
+		a.setNowArt(np)
+
 		if np.Link != "" {
 			a.mVoirLink.Enable()
 		} else {
@@ -538,6 +544,7 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		// throttle as the track label, so the anti-churn contract holds.
 		log.Printf("on air [%s]: %s (émission sans titrage)", a.current.Key, np.Show.Title)
 		a.nowThrottle.update(np.Show.Title)
+		a.setNowArt(np)       // trackless: np carries no cover, this clears the icon
 		a.mVoirLink.Disable() // no track, no track link
 	}
 

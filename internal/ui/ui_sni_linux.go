@@ -19,14 +19,19 @@ package ui
 // godbus goroutines, so nothing needs the main goroutine.
 
 import (
+	"context"
 	"fmt"
 	"image/color"
+	"io"
 	"log"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/events"
 	"github.com/PLNech/fipindicateur/internal/icon"
+	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/sni"
@@ -94,6 +99,111 @@ func (m *menuItem) Hide() {
 	if m.live() {
 		m.Entry.Hide()
 	}
+}
+func (m *menuItem) SetIconData(png []byte) {
+	if m.live() {
+		m.Entry.SetIconData(png)
+	}
+}
+
+// --- pochette (the now-playing item's cover icon) ---
+
+// nowArtSize is the cover's menu-icon size in px: the shell scales icons to
+// its own row height, and 32 stays crisp on hidpi without a fat D-Bus payload.
+const nowArtSize = 32
+
+// nowArtClient fetches covers. Short timeout: a wedged CDN must not stack
+// up requests, and the icon is best-effort by design.
+var nowArtClient = &http.Client{Timeout: 8 * time.Second}
+
+// The single cover-fetch loop's state: wanted (the URL the UI last asked
+// for, "" = none) races shown (the URL whose bytes are on the item). One
+// loop at a time; a want landing in the loop's exit race re-kicks it.
+// Package-level like the SNI item: one app per process.
+var (
+	nowArtMu      sync.Mutex
+	nowArtWanted  string
+	nowArtShown   string
+	nowArtRunning bool
+)
+
+// setNowArt is the now-playing cover chokepoint (the shared onNowPlaying
+// calls it; a no-op on the systray platforms). Pure bookkeeping here: it
+// records the want and makes sure exactly one fetch loop is draining.
+func (a *App) setNowArt(np metadata.NowPlaying) {
+	nowArtMu.Lock()
+	nowArtWanted = np.CoverURL
+	idle := !nowArtRunning
+	nowArtMu.Unlock()
+	if idle {
+		go a.runNowArt()
+	}
+}
+
+// runNowArt walks wanted toward shown, one cover at a time: fetch
+// (best-effort, bounded), render through icon.CoverIcon, attach to the
+// now-playing item via SetIconData. A want with no URL clears the icon, and
+// a failed fetch clears it too (absent art beats stale art). The loop only
+// ever fetches the LATEST want, so a track change mid-flight skips the
+// outgoing cover entirely; it ends when shown catches up.
+func (a *App) runNowArt() {
+	nowArtMu.Lock()
+	if nowArtRunning {
+		nowArtMu.Unlock()
+		return
+	}
+	nowArtRunning = true
+	nowArtMu.Unlock()
+	defer func() {
+		nowArtMu.Lock()
+		nowArtRunning = false
+		restart := nowArtWanted != nowArtShown
+		nowArtMu.Unlock()
+		if restart {
+			go a.runNowArt() // a want landed in the exit race: its own turn
+		}
+	}()
+	for {
+		nowArtMu.Lock()
+		want, have := nowArtWanted, nowArtShown
+		nowArtMu.Unlock()
+		if want == have {
+			return
+		}
+		png := fetchCoverPNG(want)
+		nowArtMu.Lock()
+		nowArtShown = want
+		nowArtMu.Unlock()
+		a.mNow.SetIconData(png)
+	}
+}
+
+// fetchCoverPNG downloads one cover and renders it to menu-icon PNG bytes.
+// Nil on any failure or empty URL (see runNowArt for the semantics).
+func fetchCoverPNG(url string) []byte {
+	if url == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := nowArtClient.Do(req)
+	if err != nil {
+		log.Printf("ui: pochette: %v", err)
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil
+	}
+	return icon.CoverIcon(data, nowArtSize)
 }
 
 // mitem wraps a dbusmenu entry as the shared menu-item surface.
