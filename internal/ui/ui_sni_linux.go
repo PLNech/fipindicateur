@@ -36,12 +36,17 @@ import (
 
 // protoBrand is the PROTO A brand: the first menu item names the prototype,
 // and every tray icon byte is retinted toward this hue so the prototype is
-// recognisable at a glance next to the production build (the production glyph
-// is theme ink or a station brand color, never this violet).
-var protoBrand = color.NRGBA{R: 0xA8, G: 0x55, B: 0xF7, A: 0xFF}
+// recognisable at a glance next to the production build. The hue is FIP's own
+// design token (the antenna's official brand color, stations.go), so the
+// prototype wears the house magenta rather than an invented tint.
+var protoBrand = icon.ParseHex(stations.ByKey("fip").Color)
 
-// protoBrandMix is how far each icon pixel is pulled toward protoBrand.
-const protoBrandMix = 0.65
+// protoBrandMix is how far each icon pixel is pulled toward protoBrand. High
+// on purpose: at panel scale (44px bytes, ~22px on the bar) a shy mix reads
+// as a dull wash, and the point of the pass is that this build cannot be
+// mistaken for the production one. Both panel themes stay legible: the mix
+// keeps the glyph's shape (bars) and alpha, only the ink moves.
+const protoBrandMix = 0.9
 
 // menuItem adapts a live dbusmenu entry to the shared menu-item surface used
 // by the chokepoints in ui.go (setPlayingUI, applyVolumeUI, the toggles).
