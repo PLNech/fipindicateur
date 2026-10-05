@@ -1,9 +1,9 @@
 // Package ui wires together the tray presence, the player, metadata, MPRIS
-// and notifications. The user-facing skin is platform-split: on Linux a
-// hand-rolled StatusNotifierItem plus « le panneau » (the drawer) are the
-// whole UI (ui_sni_linux.go); elsewhere fyne/systray builds the classic tray
-// menu (ui_menu.go). This file is the shared core: state, chokepoints,
-// handlers and telemetry.
+// and notifications. The user-facing skin is platform-split, and on every
+// platform the tray menu IS the UI: macOS and Windows build it on
+// fyne/systray (ui_menu.go); Linux builds the same tree on the hand-rolled
+// StatusNotifierItem's dbusmenu (ui_sni_linux.go). This file is the shared
+// core: state, chokepoints, handlers and telemetry.
 package ui
 
 import (
@@ -308,7 +308,7 @@ func (a *App) OnReady() {
 		if n.Play && !a.audible() {
 			a.togglePlay()
 		}
-		if n.Panel {
+		if n.Panel && drawerEnabled {
 			go a.openDrawer()
 		}
 	}
@@ -326,7 +326,8 @@ func (a *App) OnReady() {
 	// playback; one-shot; never presents or steals focus. Headless failures
 	// stay silent here (Prewarm swallows them) and the real open keeps its
 	// error path. toggleDrawer works identically whether this won the race.
-	if drawer.Available {
+	// Skipped entirely while the drawer is unwired (drawerEnabled).
+	if drawer.Available && drawerEnabled {
 		go func() {
 			time.Sleep(2 * time.Second)
 			a.mu.Lock()
@@ -788,6 +789,34 @@ func (a *App) refreshHistoryMenu() {
 }
 
 // --- click handlers ---
+
+// on wires a menu item's click to fn and, for a fixed-kind action, records the
+// event automatically. This is the "measurable by design" chokepoint: every
+// clickable item goes through here, so an action cannot be added without a
+// telemetry decision. A kind of "" means the handler records its own event at
+// source (state-dependent actions like play/pause, volume, station change).
+// (On Linux the drawer's onDrawerCommand played this role while the panel was
+// the UI there; the menu took over.)
+//
+// Invariant (enforced by TestSingleOnClickCallSite): the only onClick loop in
+// this package lives below. Add clickable items via a.on, never onClick.
+func (a *App) on(mi *menuItem, kind events.Kind, fn func()) {
+	go a.onClick(mi.ClickedCh, func() {
+		if kind != "" {
+			a.rec.Record(events.Event{Kind: kind, Station: a.current.Key})
+		}
+		fn()
+	})
+}
+
+// onClick loops over a menu item's click channel, running fn each time. The
+// channel is the platform's click surface: systray's ClickedCh off Linux, the
+// dbusmenu activation channel on Linux (one post per Event(id, "clicked")).
+func (a *App) onClick(ch <-chan struct{}, fn func()) {
+	for range ch {
+		fn()
+	}
+}
 
 func (a *App) togglePlay() {
 	// While casting, the play button means "bring the music back here": stop
@@ -1837,6 +1866,12 @@ func (a *App) onCastError(err error) {
 }
 
 // --- le panneau (quick-control drawer) ---
+
+// drawerEnabled gates every path that launches « le panneau ». The panel UI
+// is abandoned (owner decision, 2026-10-05): the tray menu is the whole UI
+// on every platform, and this prototype (PROTO A, branch proto/menu-sni)
+// keeps the drawer code in the tree but unwired. Flip to true to re-enable.
+const drawerEnabled = false
 
 // drawerPhase is the panel's visibility lifecycle, guarded by a.mu.
 type drawerPhase int

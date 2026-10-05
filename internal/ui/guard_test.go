@@ -13,9 +13,9 @@ import (
 // If this count is not 1, a clickable item was wired with a raw `go a.onClick`
 // and bypassed telemetry. Route it through a.on(item, kind, fn) instead.
 //
-// The menu (and thus App.on) lives in ui_menu.go since the Linux UI moved to
-// the drawer + SNI; there every user action routes through onDrawerCommand or
-// the SNI handlers, which land on the same recording chokepoints. The scan
+// App.on lives in ui.go (shared): every platform builds its menu items on a
+// click channel (systray's ClickedCh off Linux, the sni dbusmenu's activation
+// channel on Linux) and wires them through the same chokepoint. The scan
 // covers every non-test file so a raw onClick loop cannot hide elsewhere.
 func TestSingleOnClickCallSite(t *testing.T) {
 	matches, err := filepath.Glob("*.go")
@@ -23,7 +23,7 @@ func TestSingleOnClickCallSite(t *testing.T) {
 		t.Fatal(err)
 	}
 	total := 0
-	var menuSrc string
+	var coreSrc string
 	for _, f := range matches {
 		if strings.HasSuffix(f, "_test.go") {
 			continue
@@ -33,14 +33,14 @@ func TestSingleOnClickCallSite(t *testing.T) {
 			t.Fatal(err)
 		}
 		total += strings.Count(string(src), "go a.onClick(")
-		if f == "ui_menu.go" {
-			menuSrc = string(src)
+		if f == "ui.go" {
+			coreSrc = string(src)
 		}
 	}
 	if total != 1 {
-		t.Fatalf("measurable-by-design: `go a.onClick(` must appear exactly once (inside App.on in ui_menu.go); found %d. Wire clickable items via a.on(item, kind, fn).", total)
+		t.Fatalf("measurable-by-design: `go a.onClick(` must appear exactly once (inside App.on in ui.go); found %d. Wire clickable items via a.on(item, kind, fn).", total)
 	}
-	if !strings.Contains(menuSrc, "func (a *App) on(mi *menuItem, kind events.Kind, fn func())") {
+	if !strings.Contains(coreSrc, "func (a *App) on(mi *menuItem, kind events.Kind, fn func())") {
 		t.Fatal("the App.on chokepoint helper is missing or changed signature")
 	}
 }
