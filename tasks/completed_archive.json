@@ -136,5 +136,11 @@
     "subject": "Chasse aux bugs UX/état: volume fantôme, cast invisible, dial en vol, readout du curseur",
     "completedAt": "2026-09-29",
     "learnings": "ao-volume rapporte 0 pendant un battement après l'ouverture du flux (avant que PulseAudio n'applique le niveau restauré): ne jamais faire confiance à un rapport lu à PLAYBACK_RESTART, passer par une fenêtre de grâce + relecture posée. Le signal d'écoute doit suivre l'oreille (audible() = flux local OU session cast avec media playing), pas le processus local; la dérivation stats connaît cast_start/stop/pause/resume. Un dial cast en vol est invisible aux tests d'état: toute intention locale de transport doit l'annuler (castDialGen). Vérifier ses propres diagnostics avant de corriger: la ligne « confirmations armées effacées par un push » était fausse (les rows danger sont du HTML statique, jamais reconstruites)."
+  },
+  {
+    "id": "24",
+    "subject": "PROTO A: le menu SNI maison devient toute l'interface Linux",
+    "completedAt": "2026-10-05",
+    "learnings": "Porter ui_menu.go sur le dbusmenu maison se joue sur trois pièges: (1) le menuItem Linux doit rester nil-safe sur CHAQUE mutateur (les tests construisent des App nus et les entonnoirs de ui.go appellent sans garde; le struct{} no-op d'avant le garantissait); (2) un sync.Mutex ne se copie pas: mnu := m.it.menu puis mnu.mu.Lock(), jamais mu := m.it.menu.mu (go vet attrape); (3) gdbus call lit -1 comme une option: il faut le séparateur -- avant les arguments. Pour vérifier un SNI à côté d'une instance de production: l'instance tient le flock de XDG_RUNTIME_DIR (PID trouvé par lsof sur le fichier de verrou, jamais par nom), MPRIS refuse le doublon, donc stop propre, test, puis gtk-launch pour restaurer."
   }
 ]
