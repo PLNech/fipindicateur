@@ -1,13 +1,10 @@
 //go:build linux
 
 // Package sni exposes one StatusNotifierItem on the session bus, hand-rolled
-// over godbus. On Linux the drawer (« le panneau ») is the single UI: the host
-// forwards clicks and scrolls as method calls (Activate, ContextMenu,
-// SecondaryActivate, Scroll) and the app decides what they mean. A minimal
-// one-entry DBusMenu (« Ouvrir le panneau », see dbusmenu.go) exists solely so
-// a SINGLE left click does something on GNOME, whose AppIndicator extension
-// reserves Activate for double clicks and only reacts to a single click by
-// toggling a non-empty menu.
+// over godbus. The tray menu IS the UI: the item carries a full dynamic
+// DBusMenu (see dbusmenu.go) and the host forwards the remaining raw inputs
+// as method calls (Activate on a GNOME double click, SecondaryActivate on a
+// middle click, Scroll on the wheel).
 //
 // The wire conventions (premultiplied ARGB32 pixmaps, registration payload,
 // property set, NewIcon/NewTitle/NewToolTip signals) mirror what fyne/systray
@@ -68,11 +65,6 @@ type Handlers struct {
 	SecondaryActivate func()
 	ContextMenu       func()
 	Scroll            func(delta int, orientation string)
-	// MenuOpen fires when the host opens the item's DBusMenu or activates its
-	// one entry (the GNOME single-click path, see dbusmenu.go). It may fire
-	// while the panel is already open (menu popup then entry click), so the
-	// handler must be idempotent: an "open", never a toggle.
-	MenuOpen func()
 }
 
 // Item is one live StatusNotifierItem. All methods are safe from any
@@ -80,8 +72,14 @@ type Handlers struct {
 type Item struct {
 	conn  *dbus.Conn
 	props *prop.Properties
+	menu  *Menu
 	h     Handlers
 }
+
+// Menu returns the item's live DBusMenu tree (the whole tray UI on Linux):
+// entries are added and mutated after New returns, each mutation published
+// to the shell via LayoutUpdated.
+func (it *Item) Menu() *Menu { return it.menu }
 
 // methods is the exported D-Bus method surface. Kept separate from Item so
 // only these four names are reachable over the bus.
@@ -219,16 +217,16 @@ func New(id, title string, iconPNG []byte, h Handlers) (*Item, error) {
 			"XAyatanaLabelGuide":    {Value: "", Emit: prop.EmitTrue},
 			"XAyatanaOrderingIndex": {Value: uint32(0), Emit: prop.EmitTrue},
 			"ToolTip":               {Value: toolTip{Title: title}, Emit: prop.EmitTrue},
-			// ItemIsMenu=false tells spec-following hosts (KDE) to deliver
-			// Activate/ContextMenu on clicks rather than always popping the
-			// menu. Menu points at the real (minimal) DBusMenu exported in
-			// dbusmenu.go: on GNOME its opening IS the single-click signal
-			// (the extension reserves Activate for double clicks); on KDE it
-			// only shows on right click. It must NOT be the magic
-			// "/NO_DBUSMENU": the GNOME AppIndicator extension maps that to
-			// "no menu path" and then refuses to show the item at all (its
-			// readiness check requires Id + a menu path).
-			"ItemIsMenu": {Value: false, Emit: prop.EmitTrue},
+			// ItemIsMenu=true tells spec-following hosts (KDE) that a left
+			// click opens the DBusMenu rather than calling Activate: the menu
+			// is the whole UI now. Menu points at the dynamic DBusMenu
+			// exported in dbusmenu.go. On GNOME the single left click opens
+			// the popup either way (the extension toggles the menu on the
+			// primary click), and a double click still lands on Activate. It
+			// must NOT be the magic "/NO_DBUSMENU": the GNOME AppIndicator
+			// extension maps that to "no menu path" and then refuses to show
+			// the item at all (its readiness check requires Id + a menu path).
+			"ItemIsMenu": {Value: true, Emit: prop.EmitTrue},
 			"Menu":       {Value: dbus.ObjectPath(menuPath), Emit: prop.EmitTrue},
 		},
 	})
@@ -251,8 +249,8 @@ func New(id, title string, iconPNG []byte, h Handlers) (*Item, error) {
 		return nil, err
 	}
 
-	// The one-entry menu that turns a GNOME single left click into an open
-	// signal (see dbusmenu.go).
+	// The dynamic DBusMenu: the app fills the tree right after New returns.
+	it.menu = newMenu(conn)
 	if err := exportMenu(conn, it); err != nil {
 		conn.Close()
 		return nil, err
