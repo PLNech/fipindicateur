@@ -145,9 +145,10 @@ type App struct {
 	// section both render from it.
 	audioDevs []player.AudioDevice
 
-	// menu items (menuItem is *systray.MenuItem off Linux; on Linux a nil-safe
-	// no-op stand-in, since the drawer replaced the menu there).
+	// menu items (menuItem is *systray.MenuItem off Linux; on Linux the
+	// nil-safe wrapper over the sni dbusmenu entry).
 	mNow           *menuItem
+	mArtTile       *menuItem // Linux only: the cover as a standalone tile row, hidden until art arrives
 	mShow          *menuItem // current programme (émission) on air; hidden when none
 	mVoirWiki      *menuItem
 	mVoirLink      *menuItem

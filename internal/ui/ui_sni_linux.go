@@ -148,10 +148,11 @@ func (a *App) setNowArt(np metadata.NowPlaying) {
 
 // runNowArt walks wanted toward shown, one cover at a time: fetch
 // (best-effort, bounded), render through icon.CoverIcon, attach to the
-// now-playing item via SetIconData. A want with no URL clears the icon, and
-// a failed fetch clears it too (absent art beats stale art). The loop only
-// ever fetches the LATEST want, so a track change mid-flight skips the
-// outgoing cover entirely; it ends when shown catches up.
+// now-playing item via SetIconData and to the standalone tile row (hidden
+// until art lands, hidden again when it clears). A want with no URL clears
+// both, and a failed fetch clears them too (absent art beats stale art).
+// The loop only ever fetches the LATEST want, so a track change mid-flight
+// skips the outgoing cover entirely; it ends when shown catches up.
 func (a *App) runNowArt() {
 	nowArtMu.Lock()
 	if nowArtRunning {
@@ -181,6 +182,12 @@ func (a *App) runNowArt() {
 		nowArtShown = want
 		nowArtMu.Unlock()
 		a.mNow.SetIconData(png)
+		a.mArtTile.SetIconData(png)
+		if png != nil {
+			a.mArtTile.Show()
+		} else {
+			a.mArtTile.Hide()
+		}
 	}
 }
 
@@ -326,8 +333,18 @@ func (a *App) teardownUI() {
 // wired through App.on, the telemetry chokepoint, with exactly the same
 // fixed-kind / record-at-source split as the macOS/Windows menu.
 func (a *App) buildMenu(m *sni.Menu) {
+	// The cover tile: the same 256px cover as a STANDALONE row at the very
+	// top, beside the in-row icon the now-playing item carries below. The
+	// size experiment's A/B: an in-row icon (likely clamped by the shell's
+	// CSS) against a row of its own. Display-only (disabled, empty label),
+	// hidden until the first cover lands (see runNowArt).
+	tile := m.Add("")
+	tile.Disable()
+	tile.Hide()
+	a.mArtTile = mitem(tile)
+
 	// PROTO A brand header: names the prototype, display-only (disabled),
-	// carrying the violet bars glyph as its icon.
+	// carrying the brand bars glyph as its icon.
 	brand := m.Add("PROTO A · SNI maison")
 	brand.SetIconData(icon.BarsIcon(icon.RestPose(), protoBrand))
 	brand.Disable()
