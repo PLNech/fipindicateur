@@ -108,9 +108,15 @@ func (m *menuItem) SetIconData(png []byte) {
 
 // --- pochette (the now-playing item's cover icon) ---
 
-// nowArtSize is the cover's menu-icon size in px: the shell scales icons to
-// its own row height, and 32 stays crisp on hidpi without a fat D-Bus payload.
-const nowArtSize = 32
+// nowArtSize is the cover's published size in px. A size experiment (round 3
+// of the menu UI): 256 is the natural tile the owner asked for; whether the
+// shell honours it is the question. The AppIndicator extension hands the raw
+// pixbuf to an St.Icon styled 'popup-menu-icon' and GNOME Shell's theme CSS
+// clamps that to icon-size: 1.091em (~17-22px), so the likely render is a
+// clamped row icon. The dbusmenu payload itself carries the full 256px, so
+// if a host (or a future shell) ever renders the natural size, the tile is
+// already there.
+const nowArtSize = 256
 
 // nowArtClient fetches covers. Short timeout: a wedged CDN must not stack
 // up requests, and the icon is best-effort by design.
