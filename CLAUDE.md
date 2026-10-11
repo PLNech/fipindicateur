@@ -7,7 +7,7 @@ is the supported target; macOS and Arch are kept buildable.
 
 ```
 make run      # build + run with version stamped from git describe
-make build    # build ./fipindicateur (ldflags stamp internal/version.Version)
+make build    # build ./fipindicateur (-trimpath, -s -w, ldflags stamp internal/version.Version)
 make test     # go test ./...
 make lint     # gofmt check, em-dash ban, go vet, go test, go build (the CI gate)
 make install  # user-level install (binary + launcher + icons), no sudo
@@ -91,7 +91,9 @@ identity (13 stations exceed any categorical palette).
 
 ```
 cmd/fipindicateur   entrypoint + subcommand dispatch (stats, version)
-internal/ui         tray menu, wiring, the App.on telemetry chokepoint
+internal/ui         tray menu (the whole UI), wiring, the App.on telemetry chokepoint
+internal/sni        hand-rolled StatusNotifierItem + dbusmenu (the Linux tray)
+internal/cast       Chromecast discovery + session (cgo-free, stdlib only)
 internal/events     opt-in event log + async Recorder
 internal/stats      pure derivation + embedded self-contained HTML report
 internal/config     persisted settings (~/.config/fipindicateur/config.json)

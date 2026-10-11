@@ -19,17 +19,16 @@ graph of your zapping, release-year epochs, a 2D artist constellation, and the
 émissions you kept company with. Like or dislike the current track straight
 from the tray. **Diffuser sur…** casts the antenna to a Chromecast speaker on
 your network: devices are discovered automatically, local playback pauses so
-the sound never doubles, and « Sur cet appareil » brings it back. On Linux,
-**« Le panneau » IS the interface**: a slick popup drawer with the current
-track, play/pause, a real volume slider, the « Sortie » output picker, the
-crossfade and réglages, the programme à venir, your history, and the 13
-stations as colored chips; while casting, the slider drives the device's own
-volume (your amp's master level, read from the device, never guessed). The
-tray icon speaks gestures: **left-click** opens the panel (under GNOME's
-appindicator extension that is a **double-click**, its constraint, not ours),
-**middle-click** toggles play/pause, **scroll** adjusts the volume,
-**right-click** opens the réglages. macOS and Windows keep the classic tray
-menu. Nothing ever leaves your machine.
+the sound never doubles, and « Sur cet appareil » brings it back. On Linux
+the tray menu is the whole interface (a hand-rolled StatusNotifierItem and
+dbusmenu): current track with its cover, volume, outputs, réglages, history,
+the programme à venir and the 13 stations; while casting, the volume entries
+drive the device's own level (your amp's master volume, read from the device,
+never guessed). The icon speaks gestures: **click** opens the menu (under
+GNOME's appindicator extension, a **double-click** plays or pauses),
+**middle-click** toggles play/pause, **scroll** adjusts the volume. macOS and
+Windows get the same menu through the classic tray. Nothing ever
+leaves your machine.
 
 Unofficial client. Linux (Ubuntu 24.04, GNOME/X11) is the supported target;
 macOS and Arch are kept buildable.
@@ -93,9 +92,6 @@ touches your track history, a separate consent and a separate file.
   updates, media keys, GNOME notifications.
 - **[Development](docs/DEVELOPMENT.md)** : make targets, house style, the
   telemetry-by-design architecture, the report toolchain, `tools/enrich`.
-  `make selftest` drives 350 scripted interactions through the real panel in
-  the real webkit, headless (xvfb); CI publishes light and dark screenshots
-  of every panel view on each push.
 - **[Design system](DESIGN.md)** and **[Product](PRODUCT.md)** : the
   « Fin d'émission » tokens, typography, and voice.
 - **[Changelog](CHANGELOG.md)** and **[Contributing](CONTRIBUTING.md)**.

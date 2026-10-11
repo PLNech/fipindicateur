@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+- Le panneau webkit2gtk disparaît pour de bon : le paquet `internal/drawer`
+  (page, shim cgo, pilote de maquette), les sous-commandes `drawer` et
+  `drawer --selftest`, `make selftest`, le job CI `drawer-visual`, le code de
+  relance d'un panneau mort et les réglages `panel_scale_pct` et `theme`. Les
+  anciens `config.json` qui les contiennent se chargent toujours sans erreur,
+  et les anciens `events.jsonl` (genres `drawer_open`, `panel_recover`,
+  `panel_scale`, `theme`) restent lisibles par le rapport de statistiques
+- Le binaire ne dépend plus de webkit2gtk ni de GTK : le paquet `.deb`
+  (`libwebkit2gtk-4.1-0`) et les paquets AUR (`webkit2gtk-4.1`) ne les
+  demandent plus, seul libmpv reste
+
+### Changed
+- Les binaires livrés sont construits avec `-trimpath` et `-ldflags "-s -w"`
+  (environ 30 % plus petits)
+
 ## v0.7.0 · 2026-10-11 · Le menu fait tout
 
 ### Changed
