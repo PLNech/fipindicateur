@@ -35,9 +35,15 @@ func TestTrayFrameMatchesReference(t *testing.T) {
 	n := 0
 	for _, dark := range []bool{false, true} {
 		withPanel(t, dark)
-		for _, h := range hs {
+		for hi, h := range hs {
 			for _, tint := range tints {
-				for _, w := range washes {
+				// The hand-picked poses meet every wash; the random spread
+				// only the shipped one (the reference pipeline is slow).
+				ws := washes
+				if hi >= 10 {
+					ws = washes[:1]
+				}
+				for _, w := range ws {
 					want, err := refTrayPixmap(h, dark, tint, w.c, w.t)
 					if err != nil {
 						t.Fatal(err)
