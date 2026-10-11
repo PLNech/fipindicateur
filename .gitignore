@@ -1,7 +1,7 @@
 /fipindicateur
-# Prototype demo binaries (named apart so a running instance never makes
-# `go build -o` fail with text file busy).
-/fipindicateur.proto*
+# Demo binaries at the repo root (fipindicateur.a3, .protoa, ...): named apart
+# so a running instance never makes `go build -o` fail with text file busy.
+/fipindicateur.*
 *.test
 *.out
 # Packaging staging output (nfpm .deb, staged desktop file); built in CI.
