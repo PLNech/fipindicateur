@@ -15,8 +15,8 @@ func freshMenu() *Menu { return newMenu(nil) }
 // 2026-07-28), so a real, labelled entry must survive every refactor.
 func TestMenuTree(t *testing.T) {
 	m := freshMenu()
-	brand := m.Add("PROTO A · SNI maison")
-	brand.Disable()
+	first := m.Add("Pause")
+	first.Disable()
 	m.AddSeparator()
 	radios := m.Add("Radios")
 	radios.AddCheckbox("FIP", true, true)
@@ -32,17 +32,17 @@ func TestMenuTree(t *testing.T) {
 		t.Errorf("root children-display = %v, want submenu", got)
 	}
 	if len(root.Children) != 3 {
-		t.Fatalf("root has %d children, want 3 (brand, separator, Radios)", len(root.Children))
+		t.Fatalf("root has %d children, want 3 (first, separator, Radios)", len(root.Children))
 	}
-	brandItem, ok := root.Children[0].Value().(menuLayoutItem)
+	firstItem, ok := root.Children[0].Value().(menuLayoutItem)
 	if !ok {
 		t.Fatalf("root child 0 is %T, want menuLayoutItem", root.Children[0].Value())
 	}
-	if label, _ := brandItem.Props["label"].Value().(string); label != "PROTO A · SNI maison" {
-		t.Errorf("brand label = %q, want the proto branding", label)
+	if label, _ := firstItem.Props["label"].Value().(string); label != "Pause" {
+		t.Errorf("first label = %q, want the first entry label", label)
 	}
-	if got := brandItem.Props["enabled"].Value(); got != false {
-		t.Errorf("brand enabled = %v, want false (display-only header)", got)
+	if got := firstItem.Props["enabled"].Value(); got != false {
+		t.Errorf("first enabled = %v, want false (display-only header)", got)
 	}
 	if typ, ok := root.Children[1].Value().(menuLayoutItem); !ok || typ.Props["type"].Value() != "separator" {
 		t.Errorf("root child 1 is not a separator")
@@ -146,7 +146,7 @@ func TestMenuCheckMutators(t *testing.T) {
 // TestMenuIconData pins the inline-icon property (icon-data, PNG bytes).
 func TestMenuIconData(t *testing.T) {
 	m := freshMenu()
-	e := m.Add("PROTO A · SNI maison")
+	e := m.Add("Pause")
 	if _, has := e.propsLocked()["icon-data"]; has {
 		t.Fatal("fresh entry carries icon-data")
 	}

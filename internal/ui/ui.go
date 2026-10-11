@@ -1877,8 +1877,7 @@ func (a *App) onCastError(err error) {
 
 // drawerEnabled gates every path that launches « le panneau ». The panel UI
 // is abandoned (owner decision, 2026-10-05): the tray menu is the whole UI
-// on every platform, and this prototype (PROTO A, branch proto/menu-sni)
-// keeps the drawer code in the tree but unwired. Flip to true to re-enable.
+// on every platform, and the drawer code stays in the tree but unwired. Flip to true to re-enable.
 const drawerEnabled = false
 
 // drawerPhase is the panel's visibility lifecycle, guarded by a.mu.

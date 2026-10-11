@@ -39,19 +39,16 @@ import (
 	"github.com/PLNech/fipindicateur/internal/version"
 )
 
-// protoBrand is the PROTO A brand: the first menu item names the prototype,
-// and every tray icon byte is retinted toward this hue so the prototype is
-// recognisable at a glance next to the production build. The hue is FIP's own
-// design token (the antenna's official brand color, stations.go), so the
-// prototype wears the house magenta rather than an invented tint.
-var protoBrand = icon.ParseHex(stations.ByKey("fip").Color)
+// fipTint is the hue every tray icon byte is retinted toward. It is FIP's own
+// design token (the antenna's official brand color, stations.go), so the tray
+// wears the house magenta rather than an invented tint.
+var fipTint = icon.ParseHex(stations.ByKey("fip").Color)
 
-// protoBrandMix is how far each icon pixel is pulled toward protoBrand. High
-// on purpose: at panel scale (44px bytes, ~22px on the bar) a shy mix reads
-// as a dull wash, and the point of the pass is that this build cannot be
-// mistaken for the production one. Both panel themes stay legible: the mix
-// keeps the glyph's shape (bars) and alpha, only the ink moves.
-const protoBrandMix = 0.9
+// fipTintMix is how far each icon pixel is pulled toward fipTint. High on
+// purpose: at panel scale (44px bytes, ~22px on the bar) a shy mix reads as a
+// dull wash. Both panel themes stay legible: the mix keeps the glyph's shape
+// (bars) and alpha, only the ink moves.
+const fipTintMix = 0.9
 
 // menuItem adapts a live dbusmenu entry to the shared menu-item surface used
 // by the chokepoints in ui.go (setPlayingUI, applyVolumeUI, the toggles).
@@ -256,12 +253,11 @@ func Quit() {
 func quitApp() { Quit() }
 
 // setTrayIcon hands PNG bytes to the StatusNotifierItem (which repacks them
-// as an ARGB32 pixmap and signals NewIcon), after the PROTO A branding pass:
-// every pixel is pulled toward the prototype hue, so this build cannot be
-// mistaken for the production one. Before the item exists, the last bytes
-// are kept as its initial icon.
+// as an ARGB32 pixmap and signals NewIcon), after the FIP tint pass: every
+// pixel is pulled toward the FIP magenta. Before the item exists, the last
+// bytes are kept as its initial icon.
 func setTrayIcon(b []byte) {
-	b = icon.Retint(b, protoBrand, protoBrandMix)
+	b = icon.Retint(b, fipTint, fipTintMix)
 	sniMu.Lock()
 	it := sniItem
 	if it == nil {
@@ -297,7 +293,7 @@ func (a *App) buildUI() {
 	if len(initial) == 0 {
 		initial = icon.Rest(false, color.NRGBA{}) // OnReady sets one first; belt and braces
 	}
-	it, err := sni.New("fipindicateur", "le fipindicateur", icon.Retint(initial, protoBrand, protoBrandMix), sni.Handlers{
+	it, err := sni.New("fipindicateur", "le fipindicateur", icon.Retint(initial, fipTint, fipTintMix), sni.Handlers{
 		// A single left click opens the menu: the shell pops the DBusMenu
 		// itself (ItemIsMenu=true), so no handler is involved. A GNOME
 		// double click still lands here (the extension cancels the pending
