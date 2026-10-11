@@ -131,7 +131,6 @@ type App struct {
 	// menu items (menuItem is *systray.MenuItem off Linux; on Linux the
 	// nil-safe wrapper over the sni dbusmenu entry).
 	mNow           *menuItem
-	mArtTile       *menuItem // Linux only: the cover as a standalone tile row, hidden until art arrives
 	mShow          *menuItem // current programme (émission) on air; hidden when none
 	mVoirWiki      *menuItem
 	mVoirLink      *menuItem

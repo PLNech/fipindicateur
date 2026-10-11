@@ -103,15 +103,13 @@ func (m *menuItem) SetIconData(png []byte) {
 
 // --- pochette (the now-playing item's cover icon) ---
 
-// nowArtSize is the cover's published size in px. A size experiment (round 3
-// of the menu UI): 256 is the natural tile the owner asked for; whether the
-// shell honours it is the question. The AppIndicator extension hands the raw
-// pixbuf to an St.Icon styled 'popup-menu-icon' and GNOME Shell's theme CSS
-// clamps that to icon-size: 1.091em (~17-22px), so the likely render is a
-// clamped row icon. The dbusmenu payload itself carries the full 256px, so
-// if a host (or a future shell) ever renders the natural size, the tile is
-// already there.
-const nowArtSize = 256
+// nowArtSize is the cover's published size in px. GNOME's AppIndicator
+// extension hands the pixbuf to an St.Icon styled 'popup-menu-icon', and the
+// shell theme clamps that to ~16-22px, so anything larger is wasted bytes in
+// every dbusmenu GetLayout reply. 32 keeps a sharp icon on HiDPI (2x of the
+// ~16px clamp) at a fraction of the 256px payload. The big cover lives in
+// mpris:artUrl (the media controls), which is untouched.
+const nowArtSize = 32
 
 // nowArtClient fetches covers. Short timeout: a wedged CDN must not stack
 // up requests, and the icon is best-effort by design.
@@ -143,9 +141,8 @@ func (a *App) setNowArt(np metadata.NowPlaying) {
 
 // runNowArt walks wanted toward shown, one cover at a time: fetch
 // (best-effort, bounded), render through icon.CoverIcon, attach to the
-// now-playing item via SetIconData and to the standalone tile row (hidden
-// until art lands, hidden again when it clears). A want with no URL clears
-// both, and a failed fetch clears them too (absent art beats stale art).
+// now-playing item via SetIconData. A want with no URL clears it, and a failed
+// fetch clears it too (absent art beats stale art).
 // The loop only ever fetches the LATEST want, so a track change mid-flight
 // skips the outgoing cover entirely; it ends when shown catches up.
 func (a *App) runNowArt() {
@@ -177,12 +174,6 @@ func (a *App) runNowArt() {
 		nowArtShown = want
 		nowArtMu.Unlock()
 		a.mNow.SetIconData(png)
-		a.mArtTile.SetIconData(png)
-		if png != nil {
-			a.mArtTile.Show()
-		} else {
-			a.mArtTile.Hide()
-		}
 	}
 }
 
@@ -349,16 +340,6 @@ func (a *App) teardownUI() {
 // wired through App.on, the telemetry chokepoint, with exactly the same
 // fixed-kind / record-at-source split as the macOS/Windows menu.
 func (a *App) buildMenu(m *sni.Menu) {
-	// The cover tile: the same 256px cover as a STANDALONE row at the very
-	// top, beside the in-row icon the now-playing item carries below. The
-	// size experiment's A/B: an in-row icon (likely clamped by the shell's
-	// CSS) against a row of its own. Display-only (disabled, empty label),
-	// hidden until the first cover lands (see runNowArt).
-	tile := m.Add("")
-	tile.Disable()
-	tile.Hide()
-	a.mArtTile = mitem(tile)
-
 	a.mNow = mitem(m.Add("FIP"))
 	a.on(a.mNow, events.KindOpenWiki, a.openNow)
 
