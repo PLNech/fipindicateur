@@ -149,6 +149,7 @@ func (c Config) Save() error {
 	if err != nil {
 		return err
 	}
+	guardTestWrite(filepath.Dir(p))
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
