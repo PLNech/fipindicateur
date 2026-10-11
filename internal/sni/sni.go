@@ -15,6 +15,7 @@ package sni
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/png"
 	"log"
 	"os"
@@ -383,19 +384,52 @@ func pngToPixmap(b []byte) (pixmap, error) {
 	if err != nil {
 		return pixmap{}, err
 	}
+	return imageToPixmap(img), nil
+}
+
+// imageToPixmap repacks an image as premultiplied ARGB32. The common PNG
+// decodes (NRGBA for the tray frames, RGBA) skip the color.Color interface;
+// anything else takes the generic At path. All paths give the same bytes: they
+// all reduce to the high byte of color.Color.RGBA().
+func imageToPixmap(img image.Image) pixmap {
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
 	pix := make([]byte, 4*w*h)
 	i := 0
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			r, g, bl, a := img.At(x, y).RGBA()
-			pix[i] = byte(a >> 8)
-			pix[i+1] = byte(r >> 8)
-			pix[i+2] = byte(g >> 8)
-			pix[i+3] = byte(bl >> 8)
-			i += 4
+	switch m := img.(type) {
+	case *image.NRGBA:
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, bl, a := m.NRGBAAt(x, y).RGBA()
+				pix[i] = byte(a >> 8)
+				pix[i+1] = byte(r >> 8)
+				pix[i+2] = byte(g >> 8)
+				pix[i+3] = byte(bl >> 8)
+				i += 4
+			}
+		}
+	case *image.RGBA:
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			row := m.Pix[m.PixOffset(bounds.Min.X, y):]
+			for x := 0; x < w; x++ {
+				pix[i] = row[4*x+3]
+				pix[i+1] = row[4*x]
+				pix[i+2] = row[4*x+1]
+				pix[i+3] = row[4*x+2]
+				i += 4
+			}
+		}
+	default:
+		for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+			for x := bounds.Min.X; x < bounds.Max.X; x++ {
+				r, g, bl, a := img.At(x, y).RGBA()
+				pix[i] = byte(a >> 8)
+				pix[i+1] = byte(r >> 8)
+				pix[i+2] = byte(g >> 8)
+				pix[i+3] = byte(bl >> 8)
+				i += 4
+			}
 		}
 	}
-	return pixmap{W: int32(w), H: int32(h), Pix: pix}, nil
+	return pixmap{W: int32(w), H: int32(h), Pix: pix}
 }
