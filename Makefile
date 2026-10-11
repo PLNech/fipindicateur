@@ -8,6 +8,14 @@ PKG := ./cmd/fipindicateur
 VERSION ?= $(shell git describe --tags --dirty --always 2>/dev/null || echo v0.2.0-dev)
 LDFLAGS := -X github.com/PLNech/fipindicateur/internal/version.Version=$(VERSION)
 
+# Shipping flags, for build/install/windows (not `make run`, where a symbol
+# table and DWARF keep debuggers and stack traces friendly):
+#   -trimpath  drops the builder's absolute paths from the binary (smaller
+#              pclntab, reproducible across machines)
+#   -s -w      omit the symbol table and the DWARF debug info (about a quarter
+#              of the file); panics still print full Go stack traces
+RELFLAGS := -trimpath -ldflags "-s -w $(LDFLAGS)"
+
 # User-level install layout (no sudo).
 PREFIX  ?= $(HOME)/.local
 BINDIR  := $(PREFIX)/bin
@@ -27,7 +35,7 @@ web: ## Rebuild internal/stats/report.html.tmpl from web/ (needs Node)
 	@echo "Regenerated internal/stats/report.html.tmpl. Commit it (no Node at build time)."
 
 build: ## Build the binary
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN) $(PKG)
+	$(GO) build $(RELFLAGS) -o $(BIN) $(PKG)
 
 # Windows cross-build. Prerequisite (one-time, network): drop a libmpv dev
 # archive into build/windows/mpv-dev so it contains include/mpv/client.h and
@@ -44,7 +52,7 @@ WINEXE   := $(WINDIR)/fipindicateur.exe
 windows: ## Cross-build the Windows tray binary (needs build/windows/mpv-dev, see comment)
 	@test -f $(MPVDEV)/include/mpv/client.h || { echo "missing $(MPVDEV)/include/mpv/client.h; see the Makefile 'windows' comment for the libmpv dev drop"; exit 1; }
 	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC=x86_64-w64-mingw32-gcc \
-		$(GO) build -ldflags "$(LDFLAGS) -H windowsgui" -o $(WINEXE) $(PKG)
+		$(GO) build -trimpath -ldflags "-s -w $(LDFLAGS) -H windowsgui" -o $(WINEXE) $(PKG)
 	cp $(MPVDEV)/libmpv-2.dll $(WINDIR)/libmpv-2.dll
 	@echo "Built $(WINEXE) (ship it alongside $(WINDIR)/libmpv-2.dll)."
 
@@ -70,7 +78,7 @@ icons: ## Regenerate the tray icons
 
 install: ## Build and install for the current user (binary, launcher, icons, man page)
 	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps $(MANDIR)
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINDIR)/$(BIN) $(PKG)
+	$(GO) build $(RELFLAGS) -o $(BINDIR)/$(BIN) $(PKG)
 	ln -sf $(BIN) $(BINDIR)/fip
 	install -m 644 packaging/fip.1 $(MANDIR)/fip.1
 	printf '.so man1/fip.1\n' > $(MANDIR)/fipindicateur.1
