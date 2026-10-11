@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.7.0 · 2026-10-11 · Le menu fait tout
+
+### Changed
+- Le menu de l'icône est désormais toute l'interface Linux : un dbusmenu
+  dynamique maison (sections, coches, radios, entrées masquables) remplace le
+  panneau webkit comme surface principale. Le clic du milieu (lecture/pause) et
+  la molette (volume) sont conservés. Le titre en cours s'affiche avec sa
+  pochette en tuile, et l'ensemble prend la teinte magenta FIP
+- Le panneau webkit n'est plus branché : le code est toujours dans l'arbre et
+  sa suppression viendra dans une version ultérieure
+- Le sous-menu « Sortie audio » ne liste plus la cinquantaine d'entrées brutes
+  de mpv, seulement les sorties utiles
+- Un appel redondant au menu ne republie plus le menu entier sur D-Bus
+
+### Added
+- `FIP_MPRIS_NAME` choisit le nom D-Bus MPRIS de l'instance, pour lancer
+  plusieurs instances en parallèle (démos, essais) sans collision
+
+### Fixed
+- Les tests n'écrasent plus la vraie configuration : `config.Save` refuse
+  d'écrire hors du dossier temporaire sous `go test` (panique) et le test du
+  volume passait par la vraie config
+- `make lint` : la garde des tirets cadratins ne lit plus que les fichiers
+  suivis, donc un fichier non suivi (docs/, .claude/) ne peut plus la faire
+  échouer
+
 ## v0.6.0 · 2026-09-26 · Le panneau sans attente
 
 ### Added
