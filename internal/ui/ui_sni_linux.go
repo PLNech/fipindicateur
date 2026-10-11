@@ -542,33 +542,21 @@ func (a *App) buildMenu(m *sni.Menu) {
 
 	// Sortie audio: pick the output sink through mpv's audio-device
 	// property, so no pavucontrol is needed. mpv enumerated the devices at
-	// startup (a.audioDevs); the list already carries an "auto" entry.
+	// startup (a.audioDevs).
 	audio := settings.Add("Sortie audio")
 	a.audioMI = map[string]*menuItem{}
 	cur := a.cfg.AudioDevice
 	if cur == "" {
 		cur = "auto" // empty config means mpv's automatic default
 	}
-	if len(a.audioDevs) > 0 {
-		for _, dev := range a.audioDevs {
-			label := dev.Description
-			if dev.Name == "auto" {
-				label = "Automatique" // friendlier than mpv's "Autodetect device"
-			} else if label == "" {
-				label = dev.Name // fall back to the raw name when unlabeled
-			}
-			it := audio.AddCheckbox(label, dev.Name == cur, true)
-			a.audioMI[dev.Name] = mitem(it)
-			name := dev.Name
-			a.on(a.audioMI[dev.Name], events.KindAudioDevice, func() { a.setAudioDevice(name) })
-		}
-	} else {
-		// Enumeration failed or is empty: keep a single Automatique entry so
-		// the submenu is never blank and the user can still reset to the
-		// default.
-		it := audio.AddCheckbox("Automatique", cur == "auto", true)
-		a.audioMI["auto"] = mitem(it)
-		a.on(a.audioMI["auto"], events.KindAudioDevice, func() { a.setAudioDevice("auto") })
+	// menuAudioChoices trims the raw ~50 entries (monitors, backend
+	// duplicates) and keeps Automatique first, so the submenu is never blank
+	// even when the enumeration failed.
+	for _, ch := range menuAudioChoices(a.audioDevs, cur) {
+		it := audio.AddCheckbox(ch.Label, ch.Name == cur, true)
+		a.audioMI[ch.Name] = mitem(it)
+		name := ch.Name
+		a.on(a.audioMI[ch.Name], events.KindAudioDevice, func() { a.setAudioDevice(name) })
 	}
 
 	// Statistiques d'écoute: opt-in (default off), local-only. The toggle
