@@ -11,9 +11,7 @@ package ui
 //   double click   -> Activate, the primary action: play/pause
 //   middle click   -> SecondaryActivate, play/pause (same semantics)
 //   vertical wheel -> volume steps on the active sink
-// The drawer (« le panneau », internal/drawer) is abandoned: its code stays
-// in the tree, unwired (drawerEnabled=false in ui.go). The menu structure
-// mirrors ui_menu.go (macOS/Windows) item for item; every click is wired
+// The menu structure mirrors ui_menu.go (macOS/Windows) item for item; every click is wired
 // through the shared App.on chokepoint, exactly like there.
 // The main loop is a plain quit-channel wait: D-Bus (SNI, MPRIS) runs on
 // godbus goroutines, so nothing needs the main goroutine.
@@ -45,8 +43,8 @@ import (
 var fipTint = icon.ParseHex(stations.ByKey("fip").Color)
 
 // fipTintMix is how far each icon pixel is pulled toward fipTint. High on
-// purpose: at panel scale (44px bytes, ~22px on the bar) a shy mix reads as a
-// dull wash. Both panel themes stay legible: the mix keeps the glyph's shape
+// purpose: at tray scale (44px bytes, ~22px on the bar) a shy mix reads as a
+// dull wash. Both bar themes stay legible: the mix keeps the glyph's shape
 // (bars) and alpha, only the ink moves.
 const fipTintMix = 0.9
 

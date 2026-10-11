@@ -9,36 +9,6 @@ import (
 	"github.com/PLNech/fipindicateur/internal/cast"
 )
 
-// TestDrawerStatePendingDial pins what the panel is told while a dial is in
-// flight: the clicked device is named as pending, casting is NOT yet active
-// (the sound is still local until the dial lands) and the device is still
-// listed, so the page can mark that very chip « Connexion… ».
-func TestDrawerStatePendingDial(t *testing.T) {
-	a := &App{}
-	a.castDevices = []cast.Device{{Name: "Salon"}, {Name: "Cuisine"}}
-	a.castDialing = "Salon"
-
-	st := a.drawerState()
-	if st.Cast.Dialing != "Salon" {
-		t.Errorf("Cast.Dialing = %q, want Salon (the panel cannot show pending without it)", st.Cast.Dialing)
-	}
-	if st.Cast.Active {
-		t.Error("Cast.Active during a dial: the audio is still local until the dial lands")
-	}
-	if len(st.Devices) != 2 {
-		t.Errorf("Devices = %v, want both devices still listed", st.Devices)
-	}
-}
-
-// TestDrawerStateNoDial is the negative control: no dial, nothing pending.
-func TestDrawerStateNoDial(t *testing.T) {
-	a := &App{}
-	a.castDevices = []cast.Device{{Name: "Salon"}}
-	if st := a.drawerState(); st.Cast.Dialing != "" {
-		t.Errorf("Cast.Dialing = %q with no dial in flight, want empty", st.Cast.Dialing)
-	}
-}
-
 // TestStopCastingCancelsDial covers the third pending transition: the user
 // picks local playback while a receiver is still taking its time. The pending
 // state must clear AND the dial must be marked superseded, so the session it
@@ -57,9 +27,6 @@ func TestStopCastingCancelsDial(t *testing.T) {
 	}
 	if !a.castDialSuperseded(gen) {
 		t.Error("the dial in flight was not marked superseded: its session would take over late")
-	}
-	if st := a.drawerState(); st.Cast.Dialing != "" {
-		t.Errorf("the panel still shows %q as pending after the cancel", st.Cast.Dialing)
 	}
 }
 

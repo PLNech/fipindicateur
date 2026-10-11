@@ -37,7 +37,7 @@ func Quit() {
 	systray.Quit()
 }
 
-// quitApp is the in-app quit chokepoint (menu item, drawer command, restart).
+// quitApp is the in-app quit chokepoint (menu item, restart).
 func quitApp() { Quit() }
 
 // setTrayIcon is the single, platform-neutral chokepoint for handing bytes to
@@ -100,8 +100,8 @@ func (a *App) buildMenu() {
 	// play/pause event (so media keys and MPRIS are captured too), hence "".
 	a.on(a.mPlay, "", a.togglePlay)
 
-	// Volume submenu. Volume stays measurable through the same setters the
-	// Linux panel drives, and every item drives the ACTIVE sink: the cast
+	// Volume submenu. Volume stays measurable through the same setters as
+	// every other entry point, and every item drives the ACTIVE sink: the cast
 	// device while casting, mpv otherwise (setActiveVolume / toggleActiveMute).
 	// The submenu's own title says which one it is talking to (applyVolumeUI).
 	a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
@@ -242,7 +242,7 @@ func (a *App) buildMenu() {
 
 	// Sortie audio: pick the output sink through mpv's audio-device property,
 	// so no pavucontrol or macOS audio panel is needed. mpv enumerated the
-	// devices at startup (a.audioDevs, shared with the Linux panel); the list
+	// devices at startup (a.audioDevs); the list
 	// already carries an "auto" entry.
 	audio := settings.AddSubMenuItem("Sortie audio", "Choisir la sortie audio")
 	a.audioMI = map[string]*menuItem{}

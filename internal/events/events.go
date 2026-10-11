@@ -36,10 +36,8 @@ const (
 	KindDislike       Kind = "dislike"              // explicit taste: disliked the current track
 	KindCastStart     Kind = "cast_start"           // started casting to a Chromecast (behaviour only: never the device name or address)
 	KindCastStop      Kind = "cast_stop"            // stopped casting, playback back local
-	KindCastPause     Kind = "cast_pause"           // paused the media on the cast device (drawer transport)
-	KindCastResume    Kind = "cast_resume"          // resumed the media on the cast device (drawer transport)
-	KindDrawerOpen    Kind = "drawer_open"          // opened the quick-control panel (le panneau)
-	KindPanelRecover  Kind = "panel_recover"        // the panel's GTK stack was found dead; the app relaunched itself
+	KindCastPause     Kind = "cast_pause"           // LEGACY: paused the media on the cast device (emitted by the retired panel; stats still reads it from old logs)
+	KindCastResume    Kind = "cast_resume"          // LEGACY: resumed the media on the cast device (see KindCastPause)
 	KindStationChange Kind = "station_change"       // From, To set
 	KindShowChange    Kind = "show_change"          // From, To = programme conceptUuid (ambient, on the antenna)
 	KindAudioDevice   Kind = "audio_device"         // user picked an audio output device
@@ -48,8 +46,6 @@ const (
 	KindHiFi          Kind = "hifi"                 // Value = 1 on, 0 off
 	KindCrossfade     Kind = "crossfade"            // Value = seconds, 0 = off
 	KindAmp           Kind = "amp_toggle"           // Value = 0 off, 1 doux (+4 dB), 2 costaud (+8 dB)
-	KindPanelScale    Kind = "panel_scale"          // Value = panel zoom percent (100..300)
-	KindTheme         Kind = "theme"                // Value = 0 auto, 1 light, 2 dark (panel colour-scheme)
 	KindNotif         Kind = "notif_toggle"         // Value = 1 on, 0 off
 	KindShowNotif     Kind = "show_notif_toggle"    // Value = 1 on, 0 off (émission notifications)
 	KindShowCalendar  Kind = "show_calendar_toggle" // Value = 1 on, 0 off (émission calendar)
@@ -63,8 +59,7 @@ const (
 	KindOpenAbout     Kind = "open_about"
 	KindStatsView     Kind = "stats_view"
 	KindStatsToggle   Kind = "stats_toggle" // Value = 1 on, 0 off
-	KindStatsClear    Kind = "stats_clear"
-	KindPrefsClear    Kind = "prefs_clear" // deleted prefs.jsonl (taste verdicts)
+	KindPrefsClear    Kind = "prefs_clear"  // deleted prefs.jsonl (taste verdicts)
 	KindRestart       Kind = "restart"
 	KindUpdateCheck   Kind = "update_check"
 	KindUpdateStartup Kind = "update_startup_toggle" // Value = 1 on, 0 off

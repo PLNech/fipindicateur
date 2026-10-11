@@ -45,110 +45,61 @@ func TestSingleOnClickCallSite(t *testing.T) {
 	}
 }
 
-// TestActionKindsWired checks that the discrete action kinds are actually
-// referenced in the UI wiring, so a new Kind constant is not left dangling.
-// State-dependent kinds (play/pause/volume/mute/station_change) are recorded at
-// source; open/lifecycle kinds flow through a.on. All should appear in ui.go.
-func TestActionKindsWired(t *testing.T) {
-	src, err := os.ReadFile("ui.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(src)
-	for _, kind := range []string{
-		"KindAppStart", "KindAppStop", "KindPlay", "KindPause",
-		"KindLike", "KindDislike", "KindCastStart", "KindCastStop",
-		"KindCastPause", "KindCastResume", "KindDrawerOpen",
-		"KindStationChange", "KindShowChange", "KindAudioDevice", "KindVolume", "KindMute", "KindHiFi",
-		"KindCrossfade", "KindTheme", "KindAmp", "KindPanelScale",
-		"KindNotif", "KindShowNotif", "KindShowCalendar", "KindAnim", "KindAutostart", "KindPlayOnStart", "KindOpenWiki",
-		"KindOpenLink", "KindOpenHistory", "KindOpenFip", "KindOpenAbout",
-		"KindStatsView", "KindStatsToggle", "KindPrefsClear", "KindRestart", "KindUpdateCheck",
-		"KindUpdateStartup", "KindQuit", "KindPanelRecover",
-	} {
-		if !strings.Contains(s, "events."+kind) {
-			t.Errorf("action kind %s is defined but not wired in ui.go", kind)
-		}
-	}
+// legacyKinds are Kind constants no UI path emits any more but that must keep
+// existing: old events.jsonl files still hold them and internal/stats derives
+// listening time from them (cast_pause/cast_resume were emitted by the retired
+// panel's transport). They are exempt from the wiring check; anything else
+// declared in internal/events must be recorded by the ui package.
+var legacyKinds = map[string]bool{
+	"KindCastPause":  true,
+	"KindCastResume": true,
 }
 
-// TestDrawerActionsWired is the panel's sibling of TestActionKindsWired: the
-// page declares its complete command vocabulary in one greppable ACTIONS
-// manifest (page.html; send() refuses anything undeclared), and this test
-// asserts, both ways, that the manifest and the Go router agree:
-//   - every declared page action has a `case` in onDrawerCommand;
-//   - every router case is declared by the page (js_error, the page's error
-//     trap, is the one router-only route: it is posted directly, not via
-//     send, and exists precisely to catch render bugs);
-//   - every `action: '...'` literal in the page is declared in the manifest
-//     or is drawer-internal plumbing.
-//
-// A button added without a handler, or a handler without a button, fails
-// here; the live twin is `fipindicateur drawer --selftest`, which clicks
-// every control in the real webkit.
-func TestDrawerActionsWired(t *testing.T) {
-	page, err := os.ReadFile(filepath.Join("..", "drawer", "page.html"))
+// TestActionKindsWired checks that every action kind declared in
+// internal/events is actually referenced in the UI wiring (any non-test file of the package: the shared
+// core and both menu skins), so a new Kind
+// constant is not left dangling. The list is read from events.go itself (a
+// new constant is checked without editing this test). State-dependent kinds
+// (play/pause/volume/mute/station_change) are recorded at source; open and
+// lifecycle kinds flow through a.on. All should appear in the package, except the
+// explicit legacyKinds that only old logs and the stats derivation still use.
+func TestActionKindsWired(t *testing.T) {
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := string(page)
-
-	// The declared vocabulary: the ACTIONS manifest.
-	m := regexp.MustCompile(`(?s)const ACTIONS = \[(.*?)\];`).FindStringSubmatch(src)
-	if m == nil {
-		t.Fatal("page.html: manifest `const ACTIONS = [...]` not found")
-	}
-	quoted := regexp.MustCompile(`'([a-z_]+)'`)
-	declared := map[string]bool{}
-	for _, g := range quoted.FindAllStringSubmatch(m[1], -1) {
-		declared[g[1]] = true
-	}
-	if len(declared) == 0 {
-		t.Fatal("page.html: empty ACTIONS manifest")
-	}
-	im := regexp.MustCompile(`(?s)const INTERNAL_ACTIONS = \[(.*?)\];`).FindStringSubmatch(src)
-	if im == nil {
-		t.Fatal("page.html: manifest `const INTERNAL_ACTIONS = [...]` not found")
-	}
-	internal := map[string]bool{}
-	for _, g := range quoted.FindAllStringSubmatch(im[1], -1) {
-		internal[g[1]] = true
-	}
-
-	// Every action literal used anywhere in the page must be declared.
-	for _, g := range regexp.MustCompile(`action: '([a-z_]+)'`).FindAllStringSubmatch(src, -1) {
-		if !declared[g[1]] && !internal[g[1]] {
-			t.Errorf("page.html posts undeclared action %q (add it to ACTIONS)", g[1])
+	var all strings.Builder
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
 		}
-	}
-	for _, g := range regexp.MustCompile(`armThenSend\('[^']+', '([a-z_]+)'`).FindAllStringSubmatch(src, -1) {
-		if !declared[g[1]] {
-			t.Errorf("page.html arms undeclared action %q (add it to ACTIONS)", g[1])
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
 		}
+		all.Write(src)
 	}
-
-	// The Go router's cases, extracted from onDrawerCommand only.
-	uisrc, err := os.ReadFile("ui.go")
+	s := all.String()
+	decl, err := os.ReadFile(filepath.Join("..", "events", "events.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	fn := regexp.MustCompile(`(?s)func \(a \*App\) onDrawerCommand\(.*?\n\}\n`).FindString(string(uisrc))
-	if fn == "" {
-		t.Fatal("ui.go: onDrawerCommand not found")
+	kinds := regexp.MustCompile(`(?m)^	Kind([A-Za-z]+)\s+Kind = `).FindAllStringSubmatch(string(decl), -1)
+	if len(kinds) < 30 {
+		t.Fatalf("found only %d Kind constants in events.go: the declaration pattern drifted", len(kinds))
 	}
-	routed := map[string]bool{}
-	for _, g := range regexp.MustCompile(`case "([a-z_]+)"`).FindAllStringSubmatch(fn, -1) {
-		routed[g[1]] = true
-	}
-
-	for a := range declared {
-		if !routed[a] {
-			t.Errorf("page action %q has no case in onDrawerCommand (dead button)", a)
+	for _, m := range kinds {
+		kind := "Kind" + m[1]
+		if legacyKinds[kind] {
+			continue
+		}
+		if !strings.Contains(s, "events."+kind) {
+			t.Errorf("action kind %s is defined but not wired in the ui package", kind)
 		}
 	}
-	for a := range routed {
-		if !declared[a] && a != "js_error" {
-			t.Errorf("onDrawerCommand case %q is not declared by the page (unreachable handler)", a)
+	for kind := range legacyKinds {
+		if strings.Contains(s, "events."+kind) {
+			t.Errorf("%s is listed as legacy but the ui package records it: drop it from legacyKinds", kind)
 		}
 	}
 }
