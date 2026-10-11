@@ -220,7 +220,7 @@ func mitem(e *sni.Entry) *menuItem { return &menuItem{Entry: e} }
 // The process's one SNI item. setIcon (via setTrayIcon) can run before
 // buildUI created the item (OnReady sets the icon first thing, to minimise
 // the no-pixmap window): the bytes are stashed and used as the item's initial
-// icon. Package-level like the old drawer's `current`: one app per process.
+// icon. Package-level: one app per process.
 var (
 	sniMu      sync.Mutex
 	sniItem    *sni.Item

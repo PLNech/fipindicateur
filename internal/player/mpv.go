@@ -12,9 +12,9 @@ package player
 // #include <locale.h>
 //
 // /* Read-only: libmpv refuses mpv_create unless LC_NUMERIC is "C". Never write
-//    the locale from here: this runs on arbitrary goroutines while the panel's
-//    GTK thread reads it. The panel restores the category itself
-//    (drawer_linux.go); this only names the culprit in the log. */
+//    the locale from here: this runs on arbitrary goroutines, and another
+//    toolkit in the process may be reading it. This only names the culprit in
+//    the log. */
 // static const char *lcNumeric(void) { return setlocale(LC_NUMERIC, NULL); }
 //
 // /* helper functions for building C string arrays */
