@@ -16,6 +16,12 @@ make windows  # cross-build the Windows tray binary
 CI checks formatting: run `make fix` before pushing. See
 [CONTRIBUTING.md](../CONTRIBUTING.md).
 
+## Running a second instance
+
+`FIP_MPRIS_NAME=fipindicateur.dev` makes a dev build claim its own MPRIS D-Bus
+name (`org.mpris.MediaPlayer2.fipindicateur.dev`) instead of the default one,
+so it does not fight your installed copy for the media keys.
+
 ## House style (enforced by `make lint`)
 
 - **No em dashes (U+2014) anywhere**, including HTML/JS/CSS. Use middot (`·`),

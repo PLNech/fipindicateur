@@ -17,8 +17,8 @@ func TestWellKnownName(t *testing.T) {
 	}{
 		{"", defaultWellKnownName},
 		{"   ", defaultWellKnownName},
-		{"org.mpris.MediaPlayer2.fipindicateur.protoA", "org.mpris.MediaPlayer2.fipindicateur.protoA"},
-		{"fipindicateur.protoA", "org.mpris.MediaPlayer2.fipindicateur.protoA"},
+		{"org.mpris.MediaPlayer2.fipindicateur.dev", "org.mpris.MediaPlayer2.fipindicateur.dev"},
+		{"fipindicateur.dev", "org.mpris.MediaPlayer2.fipindicateur.dev"},
 		{"  org.mpris.MediaPlayer2.protoB  ", "org.mpris.MediaPlayer2.protoB"},
 		{"protoB", "org.mpris.MediaPlayer2.protoB"},
 	}

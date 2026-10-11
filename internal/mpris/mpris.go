@@ -34,7 +34,7 @@ const defaultWellKnownName = mprisPrefix + "fipindicateur"
 // the default lock stays default, the override only opts a specific launch
 // out of it). Absent or empty = the default, semantics unchanged. A value
 // without the org.mpris.MediaPlayer2. prefix is prefixed, so a bare
-// "fipindicateur.protoA" and the full name mean the same thing and media-key
+// "fipindicateur.dev" and the full name mean the same thing and media-key
 // routing keeps working.
 func wellKnownName() string {
 	v := strings.TrimSpace(os.Getenv("FIP_MPRIS_NAME"))
