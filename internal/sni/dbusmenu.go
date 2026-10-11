@@ -22,6 +22,7 @@ package sni
 // primary action.
 
 import (
+	"bytes"
 	"sync"
 	"time"
 
@@ -137,10 +138,14 @@ func (m *Menu) append(parent, e *Entry) *Entry {
 
 // --- entry mutators (each publishes the new layout) ---
 
-// SetLabel replaces the entry's text.
+// SetLabel replaces the entry's text (a no-op when unchanged, like every
+// mutator below: a redundant call must not make the shell refetch the layout).
 func (e *Entry) SetLabel(label string) {
 	e.menu.mu.Lock()
 	defer e.menu.mu.Unlock()
+	if e.label == label {
+		return
+	}
 	e.label = label
 	e.menu.changedLocked()
 }
@@ -154,6 +159,9 @@ func (e *Entry) Disable() { e.setEnabled(false) }
 func (e *Entry) setEnabled(on bool) {
 	e.menu.mu.Lock()
 	defer e.menu.mu.Unlock()
+	if e.enabled == on {
+		return
+	}
 	e.enabled = on
 	e.menu.changedLocked()
 }
@@ -185,15 +193,22 @@ func (e *Entry) Hide() { e.setVisible(false) }
 func (e *Entry) setVisible(on bool) {
 	e.menu.mu.Lock()
 	defer e.menu.mu.Unlock()
+	if e.visible == on {
+		return
+	}
 	e.visible = on
 	e.menu.changedLocked()
 }
 
 // SetIconData gives the entry an inline icon (PNG bytes, the dbusmenu
-// "icon-data" property). Nil clears it.
+// "icon-data" property). Nil clears it. Setting identical bytes is a no-op:
+// every layout update makes the shell refetch the cover PNGs.
 func (e *Entry) SetIconData(png []byte) {
 	e.menu.mu.Lock()
 	defer e.menu.mu.Unlock()
+	if bytes.Equal(e.iconData, png) {
+		return
+	}
 	e.iconData = png
 	e.menu.changedLocked()
 }

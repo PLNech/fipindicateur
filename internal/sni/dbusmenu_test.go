@@ -227,6 +227,35 @@ func TestMenuRevision(t *testing.T) {
 	}
 }
 
+// TestMenuRedundantMutators pins the no-change guards: setting a value the
+// entry already holds leaves the revision alone (every bump makes the shell
+// refetch the whole layout, cover PNGs included), a real change bumps once.
+func TestMenuRedundantMutators(t *testing.T) {
+	m := freshMenu()
+	e := m.Add("Pause")
+	e.SetIconData([]byte{1, 2, 3})
+	cases := []struct {
+		name         string
+		same, change func()
+	}{
+		{"SetLabel", func() { e.SetLabel("Pause") }, func() { e.SetLabel("Lecture") }},
+		{"Disable", func() { e.Enable() }, func() { e.Disable() }},
+		{"Hide", func() { e.Show() }, func() { e.Hide() }},
+		{"SetIconData", func() { e.SetIconData([]byte{1, 2, 3}) }, func() { e.SetIconData([]byte{4}) }},
+	}
+	for _, c := range cases {
+		r := m.revision
+		c.same()
+		if m.revision != r {
+			t.Errorf("%s: redundant call bumped the revision", c.name)
+		}
+		c.change()
+		if m.revision != r+1 {
+			t.Errorf("%s: real change moved the revision %d -> %d, want one bump", c.name, r, m.revision)
+		}
+	}
+}
+
 // TestMenuByUnknownID pins the error answers for ids outside the tree.
 func TestMenuByUnknownID(t *testing.T) {
 	m := freshMenu()
