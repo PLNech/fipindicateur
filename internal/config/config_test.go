@@ -62,7 +62,7 @@ func TestLoadPartialKeepsDefaults(t *testing.T) {
 	if got != want {
 		t.Fatalf("partial config lost defaults:\n got  %+v\n want %+v", got, want)
 	}
-	if !got.AnimatedIcon || !got.ShowNotifications || got.PanelScalePct != 100 {
+	if !got.AnimatedIcon || !got.ShowNotifications {
 		t.Fatalf("absent keys did not keep defaults: %+v", got)
 	}
 }
@@ -95,5 +95,37 @@ func writeRaw(t *testing.T, xdg, body string) {
 	}
 	if err := os.WriteFile(filepath.Join(d, "config.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestLoadIgnoresRetiredKeys: a config.json written by a build that still had
+// the panel carries panel_scale_pct and theme. Those keys no longer exist in
+// Config; Load must neither fail nor lose the settings it still knows, and the
+// next Save drops the dead keys.
+func TestLoadIgnoresRetiredKeys(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeRaw(t, dir, `{"station":"jazz","volume":34,"crossfade_secs":7,"panel_scale_pct":200,"theme":"dark","made_up_future_key":{"a":1}}`)
+
+	got := Load()
+	want := Default()
+	want.Station = "jazz"
+	want.Volume = 34
+	want.CrossfadeSecs = 7
+	if got != want {
+		t.Fatalf("retired keys disturbed Load:\n got  %+v\n want %+v", got, want)
+	}
+
+	if err := got.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, "fipindicateur", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dead := range []string{"panel_scale_pct", "theme"} {
+		if strings.Contains(string(saved), dead) {
+			t.Errorf("Save re-wrote the retired key %q", dead)
+		}
 	}
 }
