@@ -14,6 +14,10 @@ import (
 // must not clobber the real level. The same report once the window has passed
 // is trusted (a genuine 0 still lands).
 func TestVolumeSettleGateDropsRestartPhantom(t *testing.T) {
+	// onExternalVolume persists through a.save(): without this isolation the
+	// test overwrote the real ~/.config/fipindicateur/config.json with its
+	// zero-valued fixture.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := &App{cfg: config.Config{Volume: 40}, rec: events.NewRecorder(false)}
 
 	a.markVolumeSettle()
