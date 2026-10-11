@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/PLNech/fipindicateur/internal/vu"
@@ -165,7 +166,7 @@ func haloWidth(size int) float64 { return 1.0 + float64(size)*0.05 }
 // Mask pixels are left untouched: the caller paints the ink over them.
 func drawHalo(img *image.NRGBA, mask []bool, size int) {
 	width := haloWidth(size)
-	r := int(math.Ceil(width))
+	ring := haloRing(size)
 	at := func(x, y int) bool {
 		return x >= 0 && y >= 0 && x < size && y < size && mask[y*size+x]
 	}
@@ -174,14 +175,13 @@ func drawHalo(img *image.NRGBA, mask []bool, size int) {
 			if at(x, y) {
 				continue // glyph body; ink is painted here later
 			}
+			// The ring is sorted by distance, so the first glyph pixel found
+			// is the nearest one.
 			best := math.MaxFloat64
-			for dy := -r; dy <= r; dy++ {
-				for dx := -r; dx <= r; dx++ {
-					if at(x+dx, y+dy) {
-						if d := math.Hypot(float64(dx), float64(dy)); d < best {
-							best = d
-						}
-					}
+			for _, o := range ring {
+				if at(x+o.dx, y+o.dy) {
+					best = o.d
+					break
 				}
 			}
 			if best > width {
@@ -198,6 +198,33 @@ func drawHalo(img *image.NRGBA, mask []bool, size int) {
 			img.SetNRGBA(x, y, color.NRGBA{0xFF, 0xFF, 0xFF, uint8(a * 255)})
 		}
 	}
+}
+
+// haloOffset is one neighbour of the search square and its distance.
+type haloOffset struct {
+	dx, dy int
+	d      float64
+}
+
+var haloRings sync.Map // size -> []haloOffset
+
+// haloRing lists the offsets of the (2r+1)^2 search square, nearest first,
+// computed once per canvas size. Distances come from the same Hypot call the
+// brute-force scan used, so the result is bit-identical.
+func haloRing(size int) []haloOffset {
+	if v, ok := haloRings.Load(size); ok {
+		return v.([]haloOffset)
+	}
+	r := int(math.Ceil(haloWidth(size)))
+	var ring []haloOffset
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			ring = append(ring, haloOffset{dx, dy, math.Hypot(float64(dx), float64(dy))})
+		}
+	}
+	sort.SliceStable(ring, func(i, j int) bool { return ring[i].d < ring[j].d })
+	haloRings.Store(size, ring)
+	return ring
 }
 
 // clamp01Halo clamps to [0,1] (gen has its own clamp01; the icon package keeps
