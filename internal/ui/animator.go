@@ -154,16 +154,22 @@ func (an *animator) stop() {
 	an.stopCh = nil
 }
 
+// frameKey is the frame identity: the (heights, tint) tuple. A tint step
+// advance redraws, an unchanged tuple never does. Both members are comparable.
+type frameKey struct {
+	h    vu.Heights
+	tint color.NRGBA
+}
+
+// drawFrame paints one animation frame on the tray.
+func (a *App) drawFrame(k frameKey) {
+	a.setIcon(icon.BarsIcon(k.h, k.tint))
+}
+
 func (an *animator) loop(stop chan struct{}) {
 	ticker := time.NewTicker(animInterval)
 	defer ticker.Stop()
 
-	// The frame identity is the (heights, tint) tuple: a tint step advance
-	// redraws, an unchanged tuple never does. Both members are comparable.
-	type frameKey struct {
-		h    vu.Heights
-		tint color.NRGBA
-	}
 	var (
 		prev  vu.Heights
 		last  = frameKey{h: vu.Heights{255}} // sentinel: first real frame draws
@@ -214,7 +220,7 @@ func (an *animator) loop(stop chan struct{}) {
 
 		fk := frameKey{h: h, tint: an.quantizedTint(time.Now())}
 		if fk != last {
-			an.app.setIcon(icon.BarsIcon(fk.h, fk.tint))
+			an.app.drawFrame(fk)
 			last = fk
 		}
 	}
