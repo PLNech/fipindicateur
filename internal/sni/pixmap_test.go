@@ -62,3 +62,41 @@ func TestPNGToPixmapMatchesGeneric(t *testing.T) {
 		t.Errorf("pngToPixmap differs from the generic conversion (%dx%d)", pm.W, pm.H)
 	}
 }
+
+// TestSetIconPixmapDedupes: an identical pixmap is not sent twice (no property
+// set, no NewIcon), a changed one is, and a malformed one is refused.
+func TestSetIconPixmapDedupes(t *testing.T) {
+	var sent [][]byte
+	it := NewDetached(func(w, h int, pix []byte) { sent = append(sent, pix) })
+	a := bytes.Repeat([]byte{1, 2, 3, 4}, 4) // 2x2
+	b := bytes.Repeat([]byte{4, 3, 2, 1}, 4)
+
+	it.SetIconPixmap(2, 2, a)
+	it.SetIconPixmap(2, 2, append([]byte(nil), a...)) // equal content, new slice
+	it.SetIconPixmap(2, 2, a)
+	if len(sent) != 1 {
+		t.Fatalf("identical pixmaps sent %d times, want 1", len(sent))
+	}
+	it.SetIconPixmap(2, 2, b)
+	it.SetIconPixmap(2, 2, a)
+	if len(sent) != 3 {
+		t.Fatalf("changed pixmaps: %d sends, want 3", len(sent))
+	}
+	it.SetIconPixmap(2, 2, a[:7]) // wrong length
+	it.SetIconPixmap(0, 0, nil)
+	if len(sent) != 3 {
+		t.Errorf("malformed pixmap reached the host (%d sends)", len(sent))
+	}
+}
+
+// TestSetIconPNGDedupes: the PNG entry point shares the same guard.
+func TestSetIconPNGDedupes(t *testing.T) {
+	n := 0
+	it := NewDetached(func(w, h int, pix []byte) { n++ })
+	data := benchPNG(t)
+	it.SetIconPNG(data)
+	it.SetIconPNG(data)
+	if n != 1 {
+		t.Errorf("same PNG sent %d times, want 1", n)
+	}
+}

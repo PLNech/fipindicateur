@@ -19,6 +19,7 @@ import (
 	"image/png"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -80,6 +81,10 @@ type Item struct {
 	// bus (property set + NewIcon); NewDetached wires it to a plain callback so
 	// the icon pipeline can be tested and benchmarked without a session bus.
 	sendIcon func(pm pixmap)
+
+	// last is the pixmap the host holds, guarded by iconMu.
+	iconMu sync.Mutex
+	last   pixmap
 }
 
 // NewDetached returns a bus-less Item whose icon updates are handed to fn as
@@ -198,6 +203,7 @@ func New(id, title string, iconPNG []byte, h Handlers) (*Item, error) {
 		conn.Close()
 		return nil, fmt.Errorf("sni: initial icon: %w", err)
 	}
+	it.last = pm // the host reads this one first; an identical set is a no-op
 	// The full property surface of the extension's StatusNotifierItem.xml is
 	// exported, including the attention/overlay slots this app never uses:
 	// hosts refresh properties in batches on every New* signal, and godbus
@@ -342,6 +348,31 @@ func (it *Item) SetIconPNG(b []byte) {
 		log.Printf("sni: icon: %v", err)
 		return
 	}
+	it.setPixmap(pm)
+}
+
+// SetIconPixmap replaces the icon from raw premultiplied ARGB32 bytes (network
+// byte order, w*h*4 of them), skipping the PNG round trip. The item keeps pix:
+// the caller must not modify it afterwards. A pixmap identical to the one the
+// host already holds is dropped, with no property set and no NewIcon.
+func (it *Item) SetIconPixmap(w, h int, pix []byte) {
+	if w <= 0 || h <= 0 || len(pix) != 4*w*h {
+		log.Printf("sni: icon: bad pixmap %dx%d with %d bytes", w, h, len(pix))
+		return
+	}
+	it.setPixmap(pixmap{W: int32(w), H: int32(h), Pix: pix})
+}
+
+// setPixmap publishes pm unless it equals the last one published. The lock is
+// held across the send so concurrent callers (animator, static icon) leave the
+// recorded baseline equal to what the host last received.
+func (it *Item) setPixmap(pm pixmap) {
+	it.iconMu.Lock()
+	defer it.iconMu.Unlock()
+	if it.last.W == pm.W && it.last.H == pm.H && bytes.Equal(it.last.Pix, pm.Pix) {
+		return
+	}
+	it.last = pm
 	it.sendIcon(pm)
 }
 

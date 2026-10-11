@@ -46,11 +46,24 @@ func BenchmarkPNGToPixmap(b *testing.B) {
 
 // BenchmarkSetIconPNGDetached is the whole SNI half of a frame minus the bus.
 func BenchmarkSetIconPNGDetached(b *testing.B) {
-	data := benchPNG(b)
+	// Two different icons alternate so the identical-pixmap guard never hides
+	// the decode and send cost.
+	img, _ := png.Decode(bytes.NewReader(benchPNG(b)))
+	flipped := image.NewNRGBA(img.Bounds())
+	for y := 0; y < 44; y++ {
+		for x := 0; x < 44; x++ {
+			flipped.Set(x, y, img.At(43-x, y))
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, flipped); err != nil {
+		b.Fatal(err)
+	}
+	data := [2][]byte{benchPNG(b), buf.Bytes()}
 	it := NewDetached(func(w, h int, pix []byte) {})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		it.SetIconPNG(data)
+		it.SetIconPNG(data[i&1])
 	}
 }
