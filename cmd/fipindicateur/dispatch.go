@@ -13,8 +13,6 @@ const (
 	actVersion                      // print the stamped version
 	actControl                      // talk to the running instance over the socket
 	actCastScan                     // scan the LAN for Chromecast devices, standalone
-	actDrawer                       // open « le panneau » standalone with mock state (design iteration)
-	actSelftest                     // drawer --selftest: panel wiring self-test (real page, real webkit)
 	actHelp                         // print usage to stdout, exit 0
 	actUsageErr                     // print usage to stderr, exit 2 (unknown command)
 )
@@ -72,20 +70,6 @@ func decide(base string, args []string) decision {
 			return decision{kind: actCastScan}
 		}
 		return decision{kind: actUsageErr}
-	case args[0] == "drawer":
-		if len(args) == 2 && args[1] == "--selftest" {
-			return decision{kind: actSelftest}
-		}
-		if len(args) == 1 {
-			return decision{kind: actDrawer}
-		}
-		// --dark / --light force a theme regardless of the desktop preference,
-		// so headless captures (CI screenshots under xvfb) cover both,
-		// deterministically.
-		if len(args) == 2 && (args[1] == "--dark" || args[1] == "--light") {
-			return decision{kind: actDrawer, args: args[1:]}
-		}
-		return decision{kind: actUsageErr}
 	case args[0] == "version" || args[0] == "--version" || args[0] == "-v":
 		return decision{kind: actVersion}
 	case controlVerbs[args[0]]:
@@ -124,16 +108,6 @@ Commandes:
   cast [scan]         Cherche les appareils Chromecast sur le réseau local
                       (mDNS) et les liste, un par ligne. Ne requiert pas
                       d'instance lancée.
-  drawer [--dark|--light]
-                      Ouvre « le panneau » (le tiroir de contrôle rapide) seul,
-                      avec un état factice, pour itérer sur son design (Linux).
-                      --dark / --light forcent le thème, quel que soit le
-                      bureau (utile en headless, ex. CI).
-                      Échap ou perte de focus ferme la fenêtre. Des commandes
-                      sur stdin pilotent la maquette (view/hist/upcoming).
-  drawer --selftest   Vérifie le câblage du panneau : la vraie page dans le
-                      vrai webkit, chaque bouton cliqué, chaque commande
-                      attendue côté Go (voir make selftest; xvfb-run possible).
   version             Affiche la version
   help, -h, --help    Affiche cette aide
 

@@ -50,14 +50,6 @@ func TestDecide(t *testing.T) {
 		{"cast unknown subaction", "fip", []string{"cast", "frobnicate"}, decision{kind: actUsageErr}},
 		{"cast scan extra args", "fip", []string{"cast", "scan", "x"}, decision{kind: actUsageErr}},
 
-		// drawer: the standalone design-iteration window.
-		{"drawer", "fipindicateur", []string{"drawer"}, decision{kind: actDrawer}},
-		{"drawer via fip", "fip", []string{"drawer"}, decision{kind: actDrawer}},
-		{"drawer dark", "fipindicateur", []string{"drawer", "--dark"}, decision{kind: actDrawer, args: []string{"--dark"}}},
-		{"drawer light", "fipindicateur", []string{"drawer", "--light"}, decision{kind: actDrawer, args: []string{"--light"}}},
-		{"drawer selftest", "fipindicateur", []string{"drawer", "--selftest"}, decision{kind: actSelftest}},
-		{"drawer unknown flag", "fipindicateur", []string{"drawer", "--nope"}, decision{kind: actUsageErr}},
-
 		// Unknown subcommand: usage error (exit 2), never the tray, for both names.
 		{"unknown via fipindicateur", "fipindicateur", []string{"frobnicate"}, decision{kind: actUsageErr}},
 		{"unknown via fip", "fip", []string{"frobnicate"}, decision{kind: actUsageErr}},
@@ -80,7 +72,7 @@ func TestDecide(t *testing.T) {
 // sync with the dispatch: each subcommand a user can type must be documented.
 func TestUsageMentionsEveryCommand(t *testing.T) {
 	u := usage()
-	for _, cmd := range []string{"status", "play", "pause", "toggle", "station", "stations", "stats", "cast", "drawer", "version", "help", "--out", "--no-open"} {
+	for _, cmd := range []string{"status", "play", "pause", "toggle", "station", "stations", "stats", "cast", "version", "help", "--out", "--no-open"} {
 		if !strings.Contains(u, cmd) {
 			t.Errorf("usage() does not mention %q", cmd)
 		}

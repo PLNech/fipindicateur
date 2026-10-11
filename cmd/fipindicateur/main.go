@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"fmt"
@@ -41,14 +40,6 @@ func main() {
 		os.Exit(ui.RunControlClient(d.args))
 	case actCastScan:
 		os.Exit(runCastScan())
-	case actDrawer:
-		theme := ""
-		if len(d.args) == 1 {
-			theme = strings.TrimPrefix(d.args[0], "--")
-		}
-		os.Exit(runDrawer(theme))
-	case actSelftest:
-		os.Exit(runSelftest())
 	case actLaunchTray:
 		// Fall through to the tray setup below.
 	}
@@ -77,7 +68,7 @@ func main() {
 		ui.Quit()
 	}()
 
-	// The platform main loop: systray on macOS/Windows; on Linux the SNI +
-	// drawer need no loop of their own, so Run waits on Quit.
+	// The platform main loop: systray on macOS/Windows; on Linux the SNI
+	// needs no loop of its own, so Run waits on Quit.
 	ui.Run(app)
 }
