@@ -74,6 +74,19 @@ type Item struct {
 	props *prop.Properties
 	menu  *Menu
 	h     Handlers
+
+	// sendIcon publishes one decoded icon to the host. New wires it to the
+	// bus (property set + NewIcon); NewDetached wires it to a plain callback so
+	// the icon pipeline can be tested and benchmarked without a session bus.
+	sendIcon func(pm pixmap)
+}
+
+// NewDetached returns a bus-less Item whose icon updates are handed to fn as
+// (width, height, premultiplied ARGB32 bytes). It exists for tests and
+// benchmarks of the per-frame icon path; every other method is a no-op or
+// unusable on it.
+func NewDetached(fn func(w, h int, pix []byte)) *Item {
+	return &Item{sendIcon: func(pm pixmap) { fn(int(pm.W), int(pm.H), pm.Pix) }}
 }
 
 // Menu returns the item's live DBusMenu tree (the whole tray UI on Linux):
@@ -172,6 +185,7 @@ func New(id, title string, iconPNG []byte, h Handlers) (*Item, error) {
 		return nil, err
 	}
 	it := &Item{conn: conn, h: h}
+	it.sendIcon = it.sendIconBus
 
 	if err := conn.Export(&methods{it: it}, itemPath, itemIface); err != nil {
 		conn.Close()
@@ -327,6 +341,11 @@ func (it *Item) SetIconPNG(b []byte) {
 		log.Printf("sni: icon: %v", err)
 		return
 	}
+	it.sendIcon(pm)
+}
+
+// sendIconBus sets the IconPixmap property and signals NewIcon.
+func (it *Item) sendIconBus(pm pixmap) {
 	it.props.SetMust(itemIface, "IconPixmap", []pixmap{pm})
 	if err := it.conn.Emit(itemPath, itemIface+".NewIcon"); err != nil {
 		log.Printf("sni: NewIcon: %v", err)
