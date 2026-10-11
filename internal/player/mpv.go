@@ -382,8 +382,15 @@ func (m *MPV) rmsLevelDB() (float64, string) {
 	}
 	defer C.mpv_free(unsafe.Pointer(cs))
 
+	return parseRMSLevel(C.GoString(cs))
+}
+
+// parseRMSLevel extracts the overall RMS level from the JSON map libmpv returns
+// for af-metadata/astats. Split from the cgo fetch so it is testable and
+// benchmarkable without a libmpv handle.
+func parseRMSLevel(js string) (float64, string) {
 	var meta map[string]string
-	if err := json.Unmarshal([]byte(C.GoString(cs)), &meta); err != nil {
+	if err := json.Unmarshal([]byte(js), &meta); err != nil {
 		return 0, fmt.Sprintf("af-metadata/astats illisible: %v", err)
 	}
 	raw, ok := meta["lavfi.astats.Overall.RMS_level"]
