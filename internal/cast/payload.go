@@ -85,18 +85,6 @@ func setVolumeMutedPayload(reqID int, muted bool) string {
 	return mustJSON(setVolumeRequest{Type: "SET_VOLUME", RequestID: reqID, Volume: volumePayload{Muted: &muted}})
 }
 
-// mediaCommandRequest is PLAY/PAUSE on the media namespace, addressed to the
-// transport and scoped to the media session learned from MEDIA_STATUS.
-type mediaCommandRequest struct {
-	Type           string `json:"type"`
-	RequestID      int    `json:"requestId"`
-	MediaSessionID int    `json:"mediaSessionId"`
-}
-
-func mediaCommandPayload(reqID int, typ string, mediaSessionID int) string {
-	return mustJSON(mediaCommandRequest{Type: typ, RequestID: reqID, MediaSessionID: mediaSessionID})
-}
-
 // quantizeLevel snaps a 0..1 level to the device's stepInterval grid (and
 // clamps). A zero/absent step means the device declared no grid: pass through.
 func quantizeLevel(level, step float64) float64 {

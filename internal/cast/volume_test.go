@@ -33,15 +33,6 @@ func TestSetVolumeMutedPayload(t *testing.T) {
 	}
 }
 
-func TestMediaCommandPayloads(t *testing.T) {
-	for _, typ := range []string{"PAUSE", "PLAY"} {
-		m := decode(t, mediaCommandPayload(11, typ, 42))
-		if m["type"] != typ || m["requestId"] != float64(11) || m["mediaSessionId"] != float64(42) {
-			t.Errorf("%s payload wrong: %v", typ, m)
-		}
-	}
-}
-
 func TestQuantizeLevel(t *testing.T) {
 	cases := []struct {
 		level, step, want float64
