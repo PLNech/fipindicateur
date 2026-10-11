@@ -90,28 +90,7 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 	}
 
 	img := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
-
-	const (
-		barW   = 6
-		gap    = 4
-		bottom = barsSize - 3
-		unit   = 3 // pixels per height step: 11 levels above stub = 33px travel
-		stub   = 3 // minimum visible bar so silence still shows life
-	)
-	// 4*6 + 3*4 = 36 px of bars, centered in 44.
-	x0 := (barsSize - (vu.Bars*barW + (vu.Bars-1)*gap)) / 2
-
-	// mask marks every glyph (bar) pixel; the phantom halo is derived from it.
-	var mask [barsSize * barsSize]bool
-	for i := 0; i < vu.Bars; i++ {
-		barH := stub + int(h[i])*unit // 3..36 px
-		xs := x0 + i*(barW+gap)
-		for y := bottom - barH; y < bottom; y++ {
-			for x := xs; x < xs+barW; x++ {
-				mask[y*barsSize+x] = true
-			}
-		}
-	}
+	mask := barMask(h)
 
 	// Phantom outline first (under the ink), then the bars on top so the glyph
 	// body stays crisp and only the surrounding ring carries the halo.
@@ -131,6 +110,30 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 		return Active(false)
 	}
 	return buf.Bytes()
+}
+
+// barMask marks every glyph (bar) pixel for the given heights, bottom-aligned
+// in the barsSize canvas. The phantom halo is derived from it.
+func barMask(h vu.Heights) (mask [barsSize * barsSize]bool) {
+	const (
+		barW   = 6
+		gap    = 4
+		bottom = barsSize - 3
+		unit   = 3 // pixels per height step: 11 levels above stub = 33px travel
+		stub   = 3 // minimum visible bar so silence still shows life
+	)
+	// 4*6 + 3*4 = 36 px of bars, centered in 44.
+	x0 := (barsSize - (vu.Bars*barW + (vu.Bars-1)*gap)) / 2
+	for i := 0; i < vu.Bars; i++ {
+		barH := stub + int(h[i])*unit // 3..36 px
+		xs := x0 + i*(barW+gap)
+		for y := bottom - barH; y < bottom; y++ {
+			for x := xs; x < xs+barW; x++ {
+				mask[y*barsSize+x] = true
+			}
+		}
+	}
+	return mask
 }
 
 // Phantom-outline tuning, shared with the gen generator (internal/icon/gen).
