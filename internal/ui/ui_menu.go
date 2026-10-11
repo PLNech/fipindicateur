@@ -13,6 +13,7 @@ import (
 	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/events"
+	"github.com/PLNech/fipindicateur/internal/icon"
 	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/prefs"
@@ -47,6 +48,12 @@ func quitApp() { Quit() }
 // what the platform's tray expects, via encodeTrayIcon.
 func setTrayIcon(b []byte) {
 	systray.SetIcon(encodeTrayIcon(b))
+}
+
+// drawFrame paints one animation frame on the tray: systray wants PNG bytes, so
+// the frame takes the cached PNG route.
+func (a *App) drawFrame(k frameKey) {
+	a.setIcon(icon.BarsIcon(k.h, k.tint))
 }
 
 // setTrayNowLabel is a no-op here: the now-playing label lives on the mNow

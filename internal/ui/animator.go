@@ -14,9 +14,11 @@ import (
 // The animated tray icon: polls real audio levels from mpv's astats filter
 // and renders a 4-bar VU glyph. CPU discipline, in order of importance:
 //  1. low frame rate (6 fps, one ticker, only while playing);
-//  2. quantized frame cache (icon.BarsIcon renders each state once);
-//  3. skip SetIcon entirely when the quantized state is unchanged
-//     (the dbus round-trip + shell redraw is the real cost, not our pixels).
+//  2. frames go straight to the tray's ARGB32 pixmap (icon.TrayFrame: memoized
+//     bar shape, one colour pass, no PNG encode/decode, no second retint);
+//  3. skip the draw entirely when the quantized state is unchanged, and the
+//     SNI item drops a pixmap identical to the one the host holds (the dbus
+//     round-trip + shell redraw is the real cost, not our pixels).
 const (
 	animFPS      = 6
 	animInterval = time.Second / animFPS
@@ -159,11 +161,6 @@ func (an *animator) stop() {
 type frameKey struct {
 	h    vu.Heights
 	tint color.NRGBA
-}
-
-// drawFrame paints one animation frame on the tray.
-func (a *App) drawFrame(k frameKey) {
-	a.setIcon(icon.BarsIcon(k.h, k.tint))
 }
 
 func (an *animator) loop(stop chan struct{}) {

@@ -267,6 +267,28 @@ func setTrayIcon(b []byte) {
 	}
 }
 
+// drawFrame paints one animation frame on the tray. The frame is rendered
+// straight to the ARGB32 pixmap the item wants, FIP wash included (icon
+// .TrayFrame is pinned pixel for pixel to the PNG route), so a frame costs no
+// PNG encode, retint or decode. Before the item exists the PNG route keeps the
+// pending-icon bookkeeping.
+func (a *App) drawFrame(k frameKey) {
+	sniMu.Lock()
+	it := sniItem
+	sniMu.Unlock()
+	if it == nil {
+		a.setIcon(icon.BarsIcon(k.h, k.tint))
+		return
+	}
+	f := icon.TrayFrame(k.h, k.tint, fipTint, fipTintMix)
+	it.SetIconPixmap(f.W, f.H, f.Pix)
+	// The tray no longer shows what setIcon last recorded, so forget it: the
+	// next static icon must be pushed even if its bytes match that baseline.
+	a.iconMu.Lock()
+	a.lastIcon = nil
+	a.iconMu.Unlock()
+}
+
 // setTrayNowLabel pushes the now-playing label as the item's title and
 // tooltip (what the mNow menu item also shows as its label).
 func (a *App) setTrayNowLabel(label string) {
