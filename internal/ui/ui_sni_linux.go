@@ -343,12 +343,6 @@ func (a *App) buildMenu(m *sni.Menu) {
 	tile.Hide()
 	a.mArtTile = mitem(tile)
 
-	// PROTO A brand header: names the prototype, display-only (disabled),
-	// carrying the brand bars glyph as its icon.
-	brand := m.Add("PROTO A · SNI maison")
-	brand.SetIconData(icon.BarsIcon(icon.RestPose(), protoBrand))
-	brand.Disable()
-
 	a.mNow = mitem(m.Add("FIP"))
 	a.on(a.mNow, events.KindOpenWiki, a.openNow)
 
