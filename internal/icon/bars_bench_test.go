@@ -34,6 +34,34 @@ func BenchmarkBarsIconHit(b *testing.B) {
 	}
 }
 
+// BenchmarkTrayFrameWarm is the animator's per-frame render: the shape is
+// memoized, so this is the colour pass plus the pixmap allocation.
+func BenchmarkTrayFrameWarm(b *testing.B) {
+	wash := ParseHex("#e2007a")
+	for _, h := range benchHeights {
+		TrayFrame(h, benchTint, wash, 0.9)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = TrayFrame(benchHeights[i%len(benchHeights)], benchTint, wash, 0.9)
+	}
+}
+
+// BenchmarkTrayFrameCold is a shape-memo miss: halo included.
+func BenchmarkTrayFrameCold(b *testing.B) {
+	wash := ParseHex("#e2007a")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		shapeMu.Lock()
+		clear(shapes)
+		shapeMu.Unlock()
+		b.StartTimer()
+		_ = TrayFrame(benchHeights[i%len(benchHeights)], benchTint, wash, 0.9)
+	}
+}
+
 // BenchmarkRetint is the FIP wash applied to every frame before it ships.
 func BenchmarkRetint(b *testing.B) {
 	png := renderBars(benchHeights[0], true, benchTint)
