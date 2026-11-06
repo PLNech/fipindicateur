@@ -154,5 +154,11 @@
     "subject": "Release v0.8.0 (roue des genres + tray natif macOS)",
     "completedAt": "2026-11-06",
     "learnings": "Le workflow release/ci epinglait un asset shinchiro mpv-dev purge en amont (404 depuis octobre): curl sans -f fabriquait un mpv-dev.7z de 9 octets et le message 7z 'Is not archive' cachait la vraie cause. Repin + curl -fL --retry 3. Pieges de la seance: (1) rg -rn n'est pas -n, c'est --replace n (fausse alerte rtk); (2) un pipe apres gh run watch --exit-status avale le code de sortie: watcher en fond SANS pipe, jamais; (3) destructive-guard refuse --force tag: delete+push du tag plutot, le run rate n'ayant cree aucun objet release."
+  },
+  {
+    "id": 27,
+    "subject": "Sprint chasse aux bugs d'etat: icone animee qui s'arrete + races",
+    "completedAt": "2026-11-06",
+    "learnings": "L'icone qui 's'arrete' etait un etat zombie: END_FILE ne faisait que journaliser, playing restait true, IsPlaying mentait, le menu aussi. Le fix structurant est un callback StreamEnded filtre par raison (eof/erreur, pas nos stop) + resync via setPlayingUI; tout le reste (double clic play, station morte inclicable) tombe gratis. Les 'autres bugs d'etat' etaient surtout des races sans verrou: config ecrite depuis le goroutine mpv, lue par l'animateur, retournee par les clics. Pattern qui tient: snapshot (cfgSnapshot/currentStation) plutot que verrouiller chaque acces. -race sur les paquets touches, pas partout: c'est lui qui fera foi au prochain cycle."
   }
 ]
