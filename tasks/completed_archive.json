@@ -148,5 +148,11 @@
     "subject": "Roue editoriale des genres pour le zap precedent/suivant",
     "completedAt": "2026-11-06",
     "learnings": "Le cercle de zap etait l'ordre brut de stations.All (5 accords dissonants sur 13). Decision: roue editoriale de 6 duos affines + FIP a la couture (All reste canonique, Wheel() facade la navigation, menus en ordre de roue). Le voisinage data-driven (Held-Karp sur les arêtes station_change symetrisees, ~1,4M etats pour 13 noeuds) est differe jusqu'a assez de sessions: stats opt-in desactive sur le Mac, log complet sur le XPS omon + sauvegarde domovoy (volume bloque par blind-guard, data plus tard). TestWheelIsPermutation a attrape aussitot une cle inventee (monde vs world): le garde-fou paie sa place des le premier commit."
+  },
+  {
+    "id": "26",
+    "subject": "Release v0.8.0 (roue des genres + tray natif macOS)",
+    "completedAt": "2026-11-06",
+    "learnings": "Le workflow release/ci epinglait un asset shinchiro mpv-dev purge en amont (404 depuis octobre): curl sans -f fabriquait un mpv-dev.7z de 9 octets et le message 7z 'Is not archive' cachait la vraie cause. Repin + curl -fL --retry 3. Pieges de la seance: (1) rg -rn n'est pas -n, c'est --replace n (fausse alerte rtk); (2) un pipe apres gh run watch --exit-status avale le code de sortie: watcher en fond SANS pipe, jamais; (3) destructive-guard refuse --force tag: delete+push du tag plutot, le run rate n'ayant cree aucun objet release."
   }
 ]
