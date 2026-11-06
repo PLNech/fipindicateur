@@ -406,15 +406,6 @@ func (a *App) startStation(s stations.Station, play bool) {
 	}
 	a.setPlayingUI(play)
 
-	// Crossfade the animated glyph's ink toward this station's legible brand
-	// color, over the SAME duration as the audio fondu: the tray shows what the
-	// speakers are doing. Color only while music plays: paused/stopped falls back
-	// to the static neutral icon (Active) via setPlayingUI. The gsettings panel
-	// probe is cached (icon.PanelIsDark), never per frame.
-	if play {
-		a.anim.setTintTarget(icon.Legible(s.Color, icon.PanelIsDark()), a.tintDuration())
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	a.watchCancel = cancel
 	updates := a.meta.Watch(ctx, s)
@@ -893,6 +884,14 @@ func (a *App) setPlayingUI(playing bool) {
 			a.applyIconState(false)
 		}
 		a.anim.start()
+		// The glyph wears this station's legible brand color for every local
+		// playback start, not only a zap: a resume (play button, media key,
+		// « Cet ordinateur ») used to dance in neutral gray until the next
+		// zap, because only startStation fed the tint. The fade eases from
+		// the displayed tint, so re-aiming at the same color is invisible.
+		// setPlayingUI is local-only while playing (a cast start calls it
+		// with false), so a.current is the station being heard here.
+		a.anim.setTintTarget(icon.Legible(a.current.Color, icon.PanelIsDark()), a.tintDuration())
 	} else {
 		a.anim.stop()
 		a.applyIconState(true)
