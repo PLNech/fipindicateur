@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/PLNech/fipindicateur/internal/vu"
 )
 
 // The af chain measures only measure_overall=RMS_level, so libmpv returns a
@@ -22,6 +24,49 @@ func fullAstats() string {
 	}
 	b.WriteString(`,"lavfi.astats.Overall.RMS_level":"-18.402531"}`)
 	return b.String()
+}
+
+func TestParseFilterMean(t *testing.T) {
+	mag, ok := parseFilterMean(`{"lavfi.aspectralstats.1.mean":"0.05","lavfi.aspectralstats.2.mean":"0.01"}`)
+	if !ok || mag != 0.05 {
+		t.Fatalf("mean = %v ok=%v, want 0.05", mag, ok)
+	}
+	if _, ok := parseFilterMean(`{"lavfi.astats.Overall.RMS_level":"-18"}`); ok {
+		t.Error("a loudness map is not a band mean")
+	}
+	if _, ok := parseFilterMean("nope"); ok {
+		t.Error("bad json is a miss")
+	}
+}
+
+func TestShapeToBandsPicksTheTone(t *testing.T) {
+	// A 60 Hz tone measured live: centroid near 80, narrow spread, rolloff
+	// just above the tone. The bass bar should win.
+	b := shapeToBands(80, 530, 86)
+	if loudestBand(b) != 0 {
+		t.Errorf("low centroid should light the bass bar, got %v", b)
+	}
+	hi := shapeToBands(4800, 400, 6000)
+	if loudestBand(hi) != 3 {
+		t.Errorf("high centroid should light the air bar, got %v", hi)
+	}
+}
+
+func loudestBand(b vu.Bands) int {
+	i := 0
+	for k := 1; k < len(b); k++ {
+		if b[k] > b[i] {
+			i = k
+		}
+	}
+	return i
+}
+
+func TestBandsFromMeansRanksLoudest(t *testing.T) {
+	b := bandsFromMeans([vu.Bars]float64{0.2, 0.001, 0.001, 0.001}, true)
+	if b[0] <= b[3] {
+		t.Errorf("a loud bass mean should outrank a quiet air mean, got %v", b)
+	}
 }
 
 func TestParseRMSLevel(t *testing.T) {

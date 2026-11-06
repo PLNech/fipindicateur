@@ -76,6 +76,22 @@ func TestTargetsVaryAcrossBars(t *testing.T) {
 	}
 }
 
+func TestTargetsFromBands(t *testing.T) {
+	silent := TargetsFromBands(Bands{})
+	if silent != (Heights{}) {
+		t.Errorf("silence should be flat, got %v", silent)
+	}
+	full := TargetsFromBands(Bands{1, 1, 1, 1})
+	if full != (Heights{MaxHeight, MaxHeight, MaxHeight, MaxHeight}) {
+		t.Errorf("full bands = %v", full)
+	}
+	// A bass-heavy frame lifts the first bar and leaves the air bar down.
+	h := TargetsFromBands(Bands{0.9, 0.4, 0.2, 0})
+	if h[0] <= h[3] {
+		t.Errorf("bass should outrank air, got %v", h)
+	}
+}
+
 func TestEnvelopeAttackInstant(t *testing.T) {
 	got := Envelope(Heights{0, 1, 2, 3}, Heights{7, 7, 7, 7})
 	if got != (Heights{7, 7, 7, 7}) {

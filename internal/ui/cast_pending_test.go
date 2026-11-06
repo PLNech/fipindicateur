@@ -72,7 +72,11 @@ func TestActiveVolumeLocal(t *testing.T) {
 // sends it to the cast device while casting; writing a.player.SetVolume
 // directly would move a sink nobody is listening to.
 func TestLocalSinkWriteChokepoints(t *testing.T) {
-	allowed := map[string]bool{"setLocalVolume": true, "applyVolumeLive": true}
+	allowed := map[string]bool{
+		"setLocalVolume":     true, // a user (or MPRIS) chose a level
+		"applyVolumeLive":    true, // zenity drag tick, recorded once on OK
+		"reapplySavedVolume": true, // playback restart, sinks that forget the level
+	}
 	fnHead := regexp.MustCompile(`^func \(a \*App\) ([A-Za-z]+)\(`)
 
 	for _, f := range []string{"ui.go", "ui_menu.go", "ui_sni_linux.go"} {

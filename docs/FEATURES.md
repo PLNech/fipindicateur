@@ -32,24 +32,59 @@ Everything `fipindicateur` does, in detail. For a 30-second overview see the
 
 ## Desktop integration
 
-- **MPRIS2**: controllable with `playerctl` and desktop media keys; shows track
-  and cover in your desktop's media widget. The Volume property is read/write,
-  so `playerctl volume 0.5` works and the menu follows.
+- **MPRIS2** (Linux): controllable with `playerctl` and desktop media keys;
+  shows track and cover in your desktop's media widget. The Volume property
+  is read/write, so `playerctl volume 0.5` works and the menu follows.
+- **Menu bar** (macOS): the icon is a status item. Launch through
+  `FipIndicateur.app` (`open -a FipIndicateur`, Spotlight). A terminal start
+  of the bare binary is a background task, and macOS then places the item
+  off the bar.
+- **Media keys** (macOS): the app registers with Now Playing, so the keyboard
+  play/pause key, Control Center, the lock screen and headphone clicks drive
+  the same path as the menu. The track shows in Control Center. Next/previous
+  zap around the wheel of genres (FIP, Rock, Metal, Electro, Hip-Hop, Reggae,
+  Monde, Jazz, Groove, Pop, Nouveautés, Sacré français !, Cultes, and back):
+  an editorial neighbourhood where each webradio sits next to the ones it
+  sounds like. The Radios submenu follows the same order. There is no MPRIS on
+  macOS; `fip play` / `fip pause` is the command-line equivalent. The volume
+  keys stay with macOS. On an HDMI display that reports no volume control,
+  macOS disables them outright; that is a system limit, not the app's.
 - **Volume, one knob**: the tray submenu (Muet + a zenity slider, or 10/25/50/
-  75/100 % presets as fallback) drives the app's **PulseAudio stream volume**
-  (mpv `ao-volume`), the same per-app slider pavucontrol and GNOME show. Adjust
-  it there and the menu + MPRIS follow. PulseAudio remembers the level across
-  restarts (module-stream-restore); the app never overwrites it at startup, and
-  only an explicit preset click, Muet, or MPRIS write touches the stream.
+  75/100 % presets as fallback) drives the app's stream volume (mpv
+  `ao-volume`). On Linux that is the PulseAudio per-app slider pavucontrol and
+  GNOME show; adjust it there and the menu + MPRIS follow. PulseAudio remembers
+  the level across restarts (module-stream-restore); the app never overwrites
+  it at startup, and only an explicit preset click, Muet, or MPRIS write
+  touches the stream. On macOS, CoreAudio forgets the per-app level when the
+  output closes, so play (menu, media key, `fip play`) writes the saved level
+  back. Without that, every play snapped to 100.
 - **Desktop notifications** on track change, with cover art, crediting the
-  album, year and label when known.
-- **Icône animée**: while playing, the tray glyph becomes a 4-bar VU meter
-  driven by real audio levels (mpv astats filter), with VU physics (instant
-  attack, slow decay). Engineered cheap: 6 fps cap, 12 quantized levels, frame
-  cache, identical frames never redrawn. Measured (pidstat, 60 s, hifi stream):
-  ~6.4% of one core playing with animation vs ~4.8% without, so the animation
-  itself costs ~1.6%; the bulk is mpv's audio decoding. Toggle in Réglages, on
-  by default.
+  album, year and label when known. On macOS these are system banners, split
+  across three lines (title, artist, album · label · station) and they are
+  interactive: J'aime / Pas pour moi buttons record the same verdict as the
+  menu (the click IS the consent), and clicking the banner opens the track's
+  listen link. System notices (cast, statistics) stay plain banners. The
+  first one asks for permission; a refusal leaves playback alone. The system
+  decides how long a banner stays.
+- **Tray glyph** (macOS): the animated spectrum bars stay the tray glyph.
+  The tint and the white rim track the system appearance live: under the
+  Auto appearance, an evening flip to the dark look re-inks the glyph and
+  adds the rim so it stays visible and clickable on a dark menu bar.
+- **Volume, native on macOS**: a slider inside the Volume submenu plus
+  scroll-wheel steps on the tray icon, both driving the active sink (the
+  cast device while casting, the local stream otherwise) through the same
+  recorded path as the presets.
+- **Icône animée**: while playing, the tray glyph becomes a 4-bar meter.
+  Three numbers from a short spectrum reading (where the energy sits, how
+  wide it is, where it rolls off) place the weight across bass, low-mid,
+  presence and air. The overall level sets how tall the bars are, so a quiet
+  passage stays short. The reading does not change what reaches the speakers.
+  When it is missing the bars fall back to the overall level with a small
+  per-bar variation. VU physics still apply (instant attack, slow decay).
+  Engineered cheap: 6 fps cap, 12 quantized levels, frame cache, identical
+  frames never redrawn. On macOS the bars are drawn without the white rim the
+  Linux panel uses: at the menu-bar size that rim reads as a thick border.
+  Toggle in Réglages, on by default.
 
 ## Local analytics (opt-in, off by default)
 

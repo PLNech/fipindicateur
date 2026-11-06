@@ -26,6 +26,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/mpris"
 	"github.com/PLNech/fipindicateur/internal/notify"
+	"github.com/PLNech/fipindicateur/internal/nowplay"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/player"
 	"github.com/PLNech/fipindicateur/internal/prefs"
@@ -256,7 +257,38 @@ func (a *App) OnReady() {
 		a.mpris = ins
 	}
 
-	a.notif = notify.New()
+	a.notif = notify.New(notify.Actions{
+		// The track banner carries J'aime / Pas pour moi buttons (macOS);
+		// pressing one is a click like the menu item, so it lands on the
+		// same recordTaste path and the click IS the consent.
+		Like:    func() { a.recordTaste(prefs.Like) },
+		Dislike: func() { a.recordTaste(prefs.Dislike) },
+		Open:    func(link string) { open.URL(link) },
+		// Denied banners are dropped silently by the system, the one silence
+		// the user cannot debug from the menu. Once per run, take them to the
+		// only switch that exists (System Settings, Notifications pane). The
+		// once matters: denied posts happen on every track change, and opening
+		// a settings pane each time would be its own notification flood.
+		Denied: sync.OnceFunc(func() {
+			log.Printf("notify: notifications denied by the system, opening the settings pane")
+			open.URL("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+		}),
+	})
+	// macOS media keys, Control Center and headphone clicks route through
+	// Now Playing, not MPRIS (a no-op there). Same handlers as MPRIS, so a
+	// key press is measurable the same way as a menu click. No-op off darwin.
+	// Registered before the first station start so the opening playback state
+	// (set inside startStation) is published, not dropped.
+	nowplay.Start(nowplay.Handler{
+		Play:   a.Play,
+		Pause:  a.Pause,
+		Toggle: a.Toggle,
+		// Next/previous on the hardware pair zap the webradio list: a live
+		// stream has no track queue. Same setStation path as the Radios
+		// submenu, so the transition is recorded like any menu zap.
+		Next: func() { a.zapStation(+1) },
+		Prev: func() { a.zapStation(-1) },
+	})
 	a.anim.app = a
 
 	a.buildUI()
@@ -324,6 +356,7 @@ func (a *App) OnExit() {
 	if a.mpris != nil {
 		a.mpris.Close()
 	}
+	nowplay.Stop()
 	if a.notif != nil {
 		a.notif.Close()
 	}
@@ -496,6 +529,15 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	if showChanged {
 		a.refreshShowMenu()
 		a.refreshCalendarMenu()
+	}
+	// Now Playing (macOS media keys, Control Center) wants the current track
+	// even when it did not change: the first poll at startup has nothing to
+	// differ from, and a key pressed before the next song must still find us.
+	// The center replaces its dictionary, so a repeat publish is cheap.
+	if hasTrack {
+		a.publishNowPlaying(np)
+	} else if np.Show != nil && (showChanged || trackCleared) {
+		a.publishNowPlaying(metadata.NowPlaying{Title: np.Show.Title})
 	}
 
 	// A notification and a history-log line both mean "you heard this". The
@@ -687,27 +729,43 @@ func (a *App) recordTaste(verdict string) {
 		if np.Artist != "" {
 			body = np.Artist + " · " + np.Title
 		}
-		a.notif.Notify(summary, body, "", a.cfg.NotifTimeoutMs)
+		// Same cover as the track banner: by the time you verdict a track it
+		// is already fetched and cached by URL, so this is a disk stat away.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		iconPath := a.notif.FetchCover(ctx, np.CoverURL)
+		a.notif.Notify(summary, body, iconPath, a.cfg.NotifTimeoutMs)
 	}
 }
 
+// notify posts the track banner. macOS splits the fields across the banner's
+// three lines (title, subtitle, body); Linux folds the artist ahead of the
+// body. The station closes the line so a banner is never ambiguous after a
+// zap, and the listen link rides along for click-to-open on macOS.
 func (a *App) notify(np metadata.NowPlaying) {
-	summary := np.Title
-	body := np.Artist
+	body := ""
 	if np.Album != "" {
-		extra := np.Album
+		body = np.Album
 		if np.Year > 0 {
-			extra = fmt.Sprintf("%s (%d)", np.Album, np.Year)
+			body = fmt.Sprintf("%s (%d)", body, np.Year)
 		}
-		body = np.Artist + " · " + extra
-		if np.Label != "" {
-			body += " · " + np.Label
+	}
+	if np.Label != "" {
+		if body != "" {
+			body += " · "
 		}
+		body += np.Label
+	}
+	if st := a.current.Display; st != "" {
+		if body != "" {
+			body += " · "
+		}
+		body += st
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	iconPath := a.notif.FetchCover(ctx, np.CoverURL)
-	a.notif.Notify(summary, body, iconPath, a.cfg.NotifTimeoutMs)
+	a.notif.NotifyTrack(np.Title, np.Artist, body, iconPath, np.Link, a.cfg.NotifTimeoutMs)
 }
 
 // pushHistoryLocked prepends np to the history ring (caller holds a.mu).
@@ -837,6 +895,7 @@ func (a *App) setPlayingUI(playing bool) {
 	if a.mpris != nil {
 		a.mpris.SetPlaybackStatus(playing)
 	}
+	nowplay.SetPlaying(playing)
 }
 
 // b2i maps a toggle's resulting state to the event Value field (1 on, 0 off).
@@ -877,7 +936,32 @@ func (a *App) setStation(key string) {
 	}
 	a.cfg.Station = key
 	a.save()
+	// A zap confirms itself, whatever drove it (menu, hardware next/previous,
+	// `fip station`): from the keys there is no menu checkmark in sight, and
+	// the first track banner of the new station only lands after its metadata
+	// poll, or never during an émission. The banner rides the same
+	// replace-in-place channel, so the arriving track metadata replaces it.
+	if a.cfg.Notifications && a.notif != nil {
+		a.notif.Notify(s.Display, "En écoute", "", a.cfg.NotifTimeoutMs)
+	}
 	a.startStation(s, true)
+}
+
+// zapStation switches to the next (dir 1) or previous (dir -1) webradio in
+// the wheel order (stations.Wheel, the editorial genre circle), wrapping at
+// the ends. It backs the hardware next/previous keys (nowplay on macOS): a
+// live stream has no track queue, so the pair is repurposed as station zap.
+// It rides setStation, the same path as the Radios submenu, so startStation
+// records the transition the same way.
+func (a *App) zapStation(dir int) {
+	wheel := stations.Wheel()
+	n := len(wheel)
+	for i, s := range wheel {
+		if s.Key == a.current.Key {
+			a.setStation(wheel[(i+dir+n)%n].Key)
+			return
+		}
+	}
 }
 
 func (a *App) toggleHiFi() {
@@ -915,6 +999,12 @@ func (a *App) toggleNotif() {
 	a.cfg.Notifications = !a.cfg.Notifications
 	if a.cfg.Notifications {
 		a.mNotif.Check()
+		// The toggle confirms itself with a real banner: it exercises the
+		// whole path (permission prompt on first use, then delivery) so the
+		// user knows at once whether the plumbing works, without waiting for
+		// the next track change. Any other toggle in the menu shows state in
+		// place; this one is about an output the menu cannot show.
+		a.notif.Notify("Notifications activées", "C'est le chemin qu'emprunteront les morceaux, les émissions et les diffusions.", "", a.cfg.NotifTimeoutMs)
 	} else {
 		a.mNotif.Uncheck()
 	}
@@ -1025,6 +1115,12 @@ func (a *App) toggleActiveMute() {
 // audible. An unreported level shows as « Volume (appareil) », never as an
 // invented number.
 func (a *App) applyVolumeUI() {
+	// The darwin inline slider mirrors the ACTIVE sink wherever the volume UI
+	// syncs; a no-op seam off darwin (volumeui_other.go). known=false (a cast
+	// device that has not reported a level) grays it out instead of
+	// displaying an invented number, the same rule the wheel notch follows.
+	sv, sknown := a.activeVolume()
+	setTraySliderVolume(sv, sknown)
 	if a.mVolume != nil {
 		if sess := a.castSession(); sess != nil {
 			v, ok := sess.ReceiverVolume()
@@ -1130,20 +1226,28 @@ func (a *App) volumeSettling() bool {
 	return time.Now().Before(a.volSettleUntil)
 }
 
-// onPlaybackRestart READS the PulseAudio stream state and syncs the UI to it.
-// PulseAudio (module-stream-restore) is the single source of truth for the
-// per-app volume: it remembers the level across app restarts, including any
-// live pavucontrol adjustment. We never write a stored volume onto the
-// stream here; an earlier version did and stomped the user's duck during a
-// call. Config only caches the last-known level for pre-playback display.
+// onPlaybackRestart syncs the stream level with the UI.
 //
-// The read does NOT happen here: at PLAYBACK_RESTART the restored level has
-// not landed yet and ao-volume reports 0 (see volumeSettleGrace). The stream
-// is asked again once the window has passed; observer events in between are
-// dropped by the same gate.
+// On PulseAudio the sink remembers the per-app level (module-stream-restore),
+// including a duck made in the mixer during a call, so this only READS. An
+// earlier version wrote the cached level here and stomped that duck. The read
+// waits out volumeSettleGrace: at PLAYBACK_RESTART the restored level has not
+// landed yet and ao-volume reports 0.
+//
+// On a sink that forgets the level (CoreAudio), the reopened output comes up
+// at the driver default of 100, and the settled read then saved that 100 over
+// the user's level. There the saved level is written back before the read, so
+// the read sees what we just applied. The write lands inside the grace window;
+// its observer echo is dropped, and no volume event is recorded (the user did
+// not change anything).
 func (a *App) onPlaybackRestart() {
 	a.markVolumeSettle()
+	a.reapplySavedVolume()
 	time.AfterFunc(volumeSettleReadDelay, func() {
+		// Second write: the audio output can still be closed at the restart
+		// event itself, so the first apply may have been a no-op. By the
+		// settled read it is open. On a remembering sink this is a no-op.
+		a.reapplySavedVolume()
 		if v, ok := a.player.Volume(); ok {
 			a.onExternalVolume(v)
 		}
@@ -1151,6 +1255,19 @@ func (a *App) onPlaybackRestart() {
 			a.onExternalMute(mu)
 		}
 	})
+}
+
+// reapplySavedVolume writes the cached level back onto the local stream, on
+// sinks that do not remember it across an output close. It is a no-op where
+// the audio server is the source of truth (player.SinkRestoresVolume). One of
+// the two allowed local-sink writers (see TestLocalSinkWriteChokepoints): it
+// restores, it does not decide a new level, so it records nothing.
+func (a *App) reapplySavedVolume() {
+	if a.player == nil || player.SinkRestoresVolume() {
+		return
+	}
+	a.player.SetVolume(float64(a.cfg.Volume))
+	a.player.SetMute(a.cfg.Mute)
 }
 
 // onExternalVolume handles an ao-volume observer event: the PulseAudio stream
@@ -1450,6 +1567,12 @@ const castPendingSuffix = " · Connexion…"
 // over a pending dial on the same device (the last repaint of a successful
 // dial happens while castDialing is still set), and everything else is local.
 func (a *App) refreshCastMenu() {
+	if a.mCastNone == nil {
+		// The menu is not built (tests, or a stop arriving before OnReady
+		// finished): there is nothing to repaint, and on menu platforms a
+		// method call on a nil systray item panics inside the C layer.
+		return
+	}
 	a.mu.Lock()
 	devs := make([]cast.Device, len(a.castDevices))
 	copy(devs, a.castDevices)
@@ -2115,6 +2238,19 @@ func (a *App) applyIconState(paused bool) {
 	a.setIcon(icon.Rest(paused, tint))
 }
 
+// repaintIconState re-paints the tray glyph after a change that alters its
+// pixels without touching playback: the panel flipping dark or light (the
+// Auto appearance). The animator gets a repaint nudge while playing (the
+// (heights, tint) tuple alone can no longer tell whether the halo is
+// current); the static glyph re-inks in place otherwise.
+func (a *App) repaintIconState() {
+	if a.anim.willRun() && a.player.IsPlaying() {
+		a.anim.repaint()
+		return
+	}
+	a.applyIconState(!a.player.IsPlaying())
+}
+
 // setIcon is the single chokepoint for the tray icon. It (1) refuses empty
 // bytes, which would register a null pixmap on the StatusNotifierItem and trip
 // GNOME's cogl "data != NULL" assertion, and (2) skips a push when the bytes
@@ -2142,6 +2278,17 @@ func (a *App) save() {
 	if err := a.cfg.Save(); err != nil {
 		log.Printf("ui: save config: %v", err)
 	}
+}
+
+// publishNowPlaying pushes the current track to the OS media surface (Now
+// Playing on macOS; a no-op elsewhere, where MPRIS is that surface). Called
+// from the metadata chokepoint, so every source of a track change lands here.
+func (a *App) publishNowPlaying(np metadata.NowPlaying) {
+	nowplay.SetTrack(nowplay.Info{
+		Title:  np.Title,
+		Artist: np.Artist,
+		Album:  np.Album,
+	})
 }
 
 // --- mpris.Controller ---

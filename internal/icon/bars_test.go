@@ -52,3 +52,38 @@ func TestBarsIconTintDistinct(t *testing.T) {
 		t.Error("expected cached bytes for the same (heights, tint)")
 	}
 }
+
+// TestRenderBarsThemeSplit is the dark-mode evidence: the two panel themes
+// produce different pixels (different ink, and a halo wherever the platform
+// draws one on dark), so a misdetection cannot hide behind "both look fine".
+func TestRenderBarsThemeSplit(t *testing.T) {
+	h := vu.Heights{3, 7, 4, 9}
+	hasInk := func(t *testing.T, data []byte, want color.NRGBA) bool {
+		t.Helper()
+		img, err := png.Decode(bytes.NewReader(data))
+		if err != nil {
+			t.Fatalf("not a valid PNG: %v", err)
+		}
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				if c := img.At(x, y); c == want {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	dark := renderBars(h, true, color.NRGBA{})
+	light := renderBars(h, false, color.NRGBA{})
+	if bytes.Equal(dark, light) {
+		t.Error("dark and light panels must render different glyphs")
+	}
+	// The theme ink itself flips: light ink on a dark panel, dark on light.
+	if !hasInk(t, dark, ThemeInk(true)) {
+		t.Error("the dark-panel render must carry the light theme ink")
+	}
+	if !hasInk(t, light, ThemeInk(false)) {
+		t.Error("the light-panel render must carry the dark theme ink")
+	}
+}

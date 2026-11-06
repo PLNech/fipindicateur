@@ -10,7 +10,8 @@
 ## What it is
 
 Pick one of the 13 FIP stations from your tray, see who you're hearing, and
-play / pause from the menu, your media keys, or `playerctl`. On the main
+play / pause from the menu, your media keys, or `playerctl` (Linux). On macOS
+the same keys go through Now Playing (Control Center, lock screen, headphones). On the main
 antenna the tray also knows the **émission** on air (Club Jazzafip, Transe Fip
 Express…) and what comes next. Turn on the opt-in, **100% local** listening log
 and `fipindicateur stats` renders **« Fin d'émission »**, a self-contained

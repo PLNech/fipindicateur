@@ -62,6 +62,28 @@ func TestMenuAudioChoices(t *testing.T) {
 		{"pulse used when pipewire is absent", []player.AudioDevice{
 			dev("auto", "x"), dev("alsa/default", "Default"), dev("pulse/sink1", "Sink 1"),
 		}, "auto", []audioChoice{{"auto", "Automatique"}, {"pulse/sink1", "Sink 1"}}},
+		{"coreaudio: the avfoundation twin of each device is hidden", []player.AudioDevice{
+			dev("auto", "Autoselect device"),
+			dev("coreaudio/3669", "MSI MP271Q"),
+			dev("coreaudio/BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+			dev("coreaudio/zoom", "ZoomAudioDevice"),
+			dev("avfoundation/3669", "MSI MP271Q"),
+			dev("avfoundation/BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+			dev("avfoundation/zoom", "ZoomAudioDevice"),
+		}, "auto", []audioChoice{
+			{"auto", "Automatique"},
+			{"coreaudio/3669", "MSI MP271Q"},
+			{"coreaudio/BuiltInSpeakerDevice", "MacBook Pro Speakers"},
+			{"coreaudio/zoom", "ZoomAudioDevice"},
+		}},
+		{"a selected avfoundation device stays visible", []player.AudioDevice{
+			dev("auto", "Autoselect device"),
+			dev("coreaudio/3669", "MSI MP271Q"),
+			dev("avfoundation/3669", "MSI MP271Q"),
+		}, "avfoundation/3669", []audioChoice{
+			{"auto", "Automatique"},
+			{"avfoundation/3669", "MSI MP271Q"},
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

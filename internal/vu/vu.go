@@ -43,29 +43,47 @@ func LevelFromDB(db float64) float64 {
 }
 
 // perBarGain returns a deterministic multiplier for bar i at the given frame,
-// so bars don't move in lockstep. Each bar oscillates around 1.0 with its own
-// phase and speed; amplitude is small enough to preserve the overall level
-// reading.
+// so bars don't move in lockstep when no spectrum is available. Each bar
+// oscillates around 1.0 with its own phase and speed; amplitude is small
+// enough to preserve the overall level reading.
 func perBarGain(i, frame int) float64 {
 	phase := float64(i) * 1.7
 	speed := 0.9 + 0.13*float64(i)
 	return 1.0 + 0.22*math.Sin(phase+speed*float64(frame))
 }
 
-// Targets derives per-bar target heights from a level in 0..1 at a frame
-// counter, quantized to 0..MaxHeight.
+// quantize maps a 0..1 level to a bar height.
+func quantize(level float64) uint8 {
+	q := int(math.Round(level * MaxHeight))
+	if q < 0 {
+		q = 0
+	}
+	if q > MaxHeight {
+		q = MaxHeight
+	}
+	return uint8(q)
+}
+
+// Targets derives per-bar target heights from one level in 0..1 at a frame
+// counter, quantized to 0..MaxHeight. The per-bar sine is the fallback for
+// when the spectrum reading is missing.
 func Targets(level float64, frame int) Heights {
 	var h Heights
 	for i := 0; i < Bars; i++ {
-		v := level * perBarGain(i, frame) * MaxHeight
-		q := int(math.Round(v))
-		if q < 0 {
-			q = 0
-		}
-		if q > MaxHeight {
-			q = MaxHeight
-		}
-		h[i] = uint8(q)
+		h[i] = quantize(level * perBarGain(i, frame))
+	}
+	return h
+}
+
+// Bands is one 0..1 level per bar, low to high. A zero value means silence.
+type Bands [Bars]float64
+
+// TargetsFromBands maps four band levels to bar heights. No sine: the
+// differences between bars come from the sound.
+func TargetsFromBands(b Bands) Heights {
+	var h Heights
+	for i := 0; i < Bars; i++ {
+		h[i] = quantize(b[i])
 	}
 	return h
 }

@@ -30,9 +30,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"sync"
 	"unsafe"
+
+	"github.com/PLNech/fipindicateur/internal/vu"
 )
 
 // property observe reply ids
@@ -80,6 +83,9 @@ type MPV struct {
 	// applies a change to the live handle.
 	amp int
 
+	// silent selects the null output. Set before Initialize.
+	silent bool
+
 	// Callbacks, all best-effort and invoked from the event goroutine.
 	// Set them before Initialize.
 
@@ -92,10 +98,13 @@ type MPV struct {
 	// MuteChanged fires when the stream mute state (ao-mute) changes.
 	MuteChanged func(mute bool)
 	// PlaybackRestarted fires when playback (re)starts, i.e. when the audio
-	// output exists again: the moment to READ ao-volume/ao-mute and sync the
-	// UI. Never write a stored volume here: PulseAudio's stream-restore is
-	// the single source of truth for the per-app level, and overwriting it
-	// once stomped a live pavucontrol adjustment during a call.
+	// output exists again. On a sink that remembers the per-app level
+	// (SinkRestoresVolume) this is the moment to READ ao-volume/ao-mute and
+	// sync the UI, never to write: PulseAudio's stream-restore is the source
+	// of truth, and overwriting it once stomped a live pavucontrol adjustment
+	// during a call. On a sink that forgets the level (CoreAudio), the UI
+	// writes the saved level back, because the reopened output comes up at
+	// the driver default.
 	PlaybackRestarted func()
 }
 
@@ -140,11 +149,21 @@ func (m *MPV) Initialize() error {
 	// by RMSLevelDB) and dumps every one of them to the log when a handle is
 	// destroyed, which a crossfade now does on every zap. It sits AFTER the
 	// preamp stage so the icon dances to what the listener actually hears.
+	// Four band-pass meters follow it. Each publishes one mean magnitude, which
+	// the tray reads as one bar (bass, low-mid, presence, air). A full bin
+	// dump would be hundreds of keys six times a second; four numbers is the
+	// whole reading. The filters measure only: the samples that reach the
+	// speakers are unchanged.
 	m.setOptionString("af", afChain(m.amp))
 
 	m.setOptionFlag("terminal", false)
 	m.setOptionFlag("input-terminal", false)
 	m.setOptionFlag("quiet", true)
+	if m.silent {
+		// Measurement only. No output device is opened, so a test can read
+		// the bands without touching a speaker.
+		m.setOptionString("ao", "null")
+	}
 
 	if err := m.check(C.mpv_initialize(m.handle)); err != nil {
 		return err
@@ -183,8 +202,14 @@ func ampFilter(level int) string {
 // afChain assembles the full af option value: the optional preamp, then the
 // labeled astats tap (see Initialize). Pure function, unit-tested.
 func afChain(amp int) string {
+	// One flat graph. A side chain does not publish its numbers through this
+	// player, and a bandpass in series would change what the speakers hear.
+	// astats keeps the overall level. aspectralstats adds three numbers
+	// (where the energy sits, how wide it is, where it rolls off). The tray
+	// paints four bars from those. The samples are unchanged.
 	return "@astats:lavfi=[" + ampFilter(amp) +
-		"astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level]"
+		"astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level," +
+		"aspectralstats=win_size=2048:overlap=0.5:measure=centroid+spread+rolloff]"
 }
 
 // Play loads the given URL and (re)joins the live edge. For live radio this is
@@ -385,6 +410,43 @@ func (m *MPV) rmsLevelDB() (float64, string) {
 	return parseRMSLevel(C.GoString(cs))
 }
 
+// Silence disconnects the output device. Call it before Initialize.
+// Measurement still runs. Used by tests that must never open a speaker.
+func (m *MPV) Silence() { m.silent = true }
+
+// SpectrumBands returns four band levels in 0..1, low to high, folded from
+// the mean magnitude of the FFT bins. ok is false when the filter has not
+// published yet; the caller then falls back to the overall level.
+func (m *MPV) SpectrumBands() (vu.Bands, bool) {
+	m.mu.Lock()
+	handle := m.handle
+	running := m.running
+	m.mu.Unlock()
+	if handle == nil || !running {
+		return vu.Bands{}, false
+	}
+	cn := C.CString("af-metadata/astats")
+	defer C.free(unsafe.Pointer(cn))
+	cs := C.mpv_get_property_string(handle, cn)
+	if cs == nil {
+		return vu.Bands{}, false
+	}
+	defer C.mpv_free(unsafe.Pointer(cs))
+	return parseSpectrumShape(C.GoString(cs))
+}
+
+// filterMean reads lavfi.<label>.1.mean from one labeled filter's metadata.
+func (m *MPV) filterMean(handle *C.mpv_handle, label string) (float64, bool) {
+	cn := C.CString("af-metadata/" + label)
+	defer C.free(unsafe.Pointer(cn))
+	cs := C.mpv_get_property_string(handle, cn)
+	if cs == nil {
+		return 0, false
+	}
+	defer C.mpv_free(unsafe.Pointer(cs))
+	return parseFilterMean(C.GoString(cs))
+}
+
 // parseRMSLevel extracts the overall RMS level from the JSON map libmpv returns
 // for af-metadata/astats. Split from the cgo fetch so it is testable and
 // benchmarkable without a libmpv handle.
@@ -405,6 +467,113 @@ func parseRMSLevel(js string) (float64, string) {
 		return 0, fmt.Sprintf("niveau %q non numérique: %v", raw, err)
 	}
 	return db, ""
+}
+
+// parseSpectrumShape turns the three published spectrum numbers into four
+// bar levels. centroid is where the energy sits (Hz), spread is how wide it
+// is, rolloff is the frequency under which most of the energy falls. A tone
+// lights one bar; a wide mix lights several. Missing keys are a miss.
+func parseSpectrumShape(js string) (vu.Bands, bool) {
+	var meta map[string]string
+	if err := json.Unmarshal([]byte(js), &meta); err != nil {
+		return vu.Bands{}, false
+	}
+	centroid, okC := parseMetaFloat(meta, "lavfi.aspectralstats.1.centroid")
+	spread, okS := parseMetaFloat(meta, "lavfi.aspectralstats.1.spread")
+	rolloff, okR := parseMetaFloat(meta, "lavfi.aspectralstats.1.rolloff")
+	if !okC || !okS || !okR {
+		return vu.Bands{}, false
+	}
+	return shapeToBands(centroid, spread, rolloff), true
+}
+
+func parseMetaFloat(meta map[string]string, key string) (float64, bool) {
+	raw, ok := meta[key]
+	if !ok {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(v) {
+		return 0, false
+	}
+	return v, true
+}
+
+// shapeToBands paints four bars from centroid, spread and rolloff. The bar
+// centers sit an octave-ish apart. Width comes from the spread, so a pure
+// tone is one bar and a full mix is several.
+func shapeToBands(centroid, spread, rolloff float64) vu.Bands {
+	centers := [vu.Bars]float64{80, 300, 1200, 5000}
+	width := math.Max(spread, 40)
+	var b vu.Bands
+	var sum float64
+	for i, c := range centers {
+		d := (math.Log2(math.Max(centroid, 20)) - math.Log2(c)) * 1200 // cents
+		b[i] = math.Exp(-(d * d) / (2 * width * width))
+		sum += b[i]
+	}
+	// rolloff below the centroid means the energy is piled on the low side,
+	// so the lower bars keep more of the weight.
+	if rolloff > 0 && rolloff < centroid {
+		b[0] *= 1.3
+		b[1] *= 1.1
+	}
+	if sum == 0 {
+		return b
+	}
+	peak := 0.0
+	for i := 0; i < vu.Bars; i++ {
+		if b[i] > peak {
+			peak = b[i]
+		}
+	}
+	if peak > 0 {
+		for i := 0; i < vu.Bars; i++ {
+			b[i] /= peak
+		}
+	}
+	return b
+}
+
+// parseFilterMean reads the single mean magnitude a band meter publishes.
+// The key is lavfi.aspectralstats.1.mean (channel 1). A missing key is a miss.
+func parseFilterMean(js string) (float64, bool) {
+	var meta map[string]string
+	if err := json.Unmarshal([]byte(js), &meta); err != nil {
+		return 0, false
+	}
+	raw, ok := meta["lavfi.aspectralstats.1.mean"]
+	if !ok {
+		return 0, false
+	}
+	mag, err := strconv.ParseFloat(raw, 64)
+	if err != nil || mag < 0 || math.IsNaN(mag) {
+		return 0, false
+	}
+	return mag, true
+}
+
+// bandsFromMeans maps four mean magnitudes to 0..1 bar levels. When a band
+// has not reported yet its level stays 0 and the caller still gets a reading
+// from the bands that have.
+func bandsFromMeans(means [vu.Bars]float64, complete bool) vu.Bands {
+	_ = complete
+	var b vu.Bands
+	for i := 0; i < vu.Bars; i++ {
+		b[i] = bandLevel(means[i])
+	}
+	return b
+}
+
+// bandLevel maps a mean bin magnitude to 0..1. The filter publishes a linear
+// magnitude; a log curve keeps a quiet band visible next to a loud one,
+// which is what a four-bar glyph needs at 16 points.
+func bandLevel(mean float64) float64 {
+	if mean <= 1e-6 {
+		return 0
+	}
+	db := 20 * math.Log10(mean)
+	return vu.LevelFromDB(db)
 }
 
 // AudioDeviceList enumerates the output devices mpv sees on this platform

@@ -90,8 +90,13 @@ yay -S fipindicateur-git    # rolling, builds main
 brew install PLNech/tap/fipindicateur
 ```
 
-> macOS is CI-built against `brew install mpv` but has **never been run on real
-> macOS hardware**; treat the tray app as unverified there.
+On a Mac, `make app` (after `brew install mpv pkg-config`) puts
+`FipIndicateur.app` in `/Applications`. Spotlight, Launchpad and
+`open -a FipIndicateur` launch it. It is a menu-bar agent: no Dock icon.
+Launch it that way: a bare `~/.local/bin/fipindicateur` started from a
+terminal is a background task, and macOS then places the menu-bar icon
+off the bar. The bundle's executable is the binary itself, so Homebrew's
+libmpv resolves through the default library path.
 
 ### Nix (flake)
 
@@ -110,10 +115,12 @@ Launch `fipindicateur`. A broadcast-waves glyph appears in your top bar; click
 it for the menu. Your last station and settings are remembered in
 `~/.config/fipindicateur/config.json`.
 
-- **Launch at login:** toggle *Réglages, Lancer au démarrage* (writes
-  `~/.config/autostart/fipindicateur.desktop`). Autostart is not autoplay: by
-  default launch just tunes and indicates the antenna, paused. Toggle
-  *Réglages, Lecture au lancement* to have it start playing on launch instead.
+- **Launch at login:** toggle *Réglages, Lancer au démarrage*. On Linux that
+  writes `~/.config/autostart/fipindicateur.desktop`. On macOS it registers
+  `FipIndicateur.app` as a login item, so the menu-bar icon comes back at
+  login. Autostart is not autoplay: by default launch just tunes and
+  indicates the antenna, paused. Toggle *Réglages, Lecture au lancement* to
+  have it start playing on launch instead.
 - **Statistiques:** enable *Réglages, Statistiques d'écoute (local)*, then
   `fipindicateur stats` (or *Voir le rapport*) opens your listening report.
   `fipindicateur stats --out report.html --no-open` just writes the file.
@@ -123,12 +130,23 @@ it for the menu. Your last station and settings are remembered in
   notifies you, opening the release page when a newer one exists. *Vérifier au
   démarrage* (off by default) opts into a quiet check at launch. *Relancer*
   restarts the app to load a freshly installed binary.
-- **Media keys / playerctl:**
+- **Media keys / playerctl:** on Linux, MPRIS exposes the player, so the
+  desktop media keys and `playerctl` both work:
 
   ```sh
   playerctl -p fipindicateur play-pause
   playerctl -p fipindicateur metadata
   ```
+
+  On macOS there is no MPRIS. The app registers with Now Playing instead, so
+  the keyboard play/pause key, Control Center and headphone clicks play and
+  pause. From a terminal, `fip play` / `fip pause` / `fip toggle` do the same.
+
+  The volume keys are macOS's, and on an HDMI display that reports no volume
+  control they do nothing at all (no HUD, no event). A virtual output such as
+  [Proxy Audio Device](https://github.com/briankendall/proxy-audio-device)
+  restores them system-wide: it is a device the volume keys can move, and it
+  forwards the sound to the display. Select it in **Réglages, Sortie audio**.
 
 ### The `fip` command line
 

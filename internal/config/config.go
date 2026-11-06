@@ -42,10 +42,12 @@ type Config struct {
 	// AudioDevice is the mpv audio-device name (empty = mpv "auto", i.e. the
 	// system default output). Persisted so a chosen sink survives restarts.
 	AudioDevice string `json:"audio_device"`
-	// Volume/Mute cache the last-known PulseAudio stream state for
-	// pre-playback DISPLAY only. PulseAudio (module-stream-restore) is the
-	// single source of truth: these values are never written onto the audio
-	// stream except on an explicit user action (menu preset, Muet, MPRIS).
+	// Volume/Mute cache the last-known stream level. On PulseAudio they are
+	// display-only: module-stream-restore is the source of truth, and these
+	// values are written onto the stream only by an explicit user action.
+	// On a sink that forgets the per-app level when the output closes
+	// (CoreAudio), playback restart writes them back, or play snaps to the
+	// driver default of 100.
 	Volume int  `json:"volume"` // last-known stream volume percent (0..100)
 	Mute   bool `json:"mute"`   // last-known stream mute state
 }
@@ -72,10 +74,20 @@ func Default() Config {
 }
 
 // Dir returns the config directory, creating it if needed.
+//
+// XDG_CONFIG_HOME wins on every OS, not only Linux. os.UserConfigDir ignores
+// it on macOS and Windows, which made the test isolation
+// (t.Setenv("XDG_CONFIG_HOME", t.TempDir())) write the real
+// ~/Library/Application Support config. The running app is unaffected: the
+// variable is unset, so the platform default stands.
 func Dir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
 	}
 	dir := filepath.Join(base, "fipindicateur")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

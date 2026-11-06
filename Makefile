@@ -23,7 +23,7 @@ APPDIR  := $(PREFIX)/share/applications
 ICONDIR := $(PREFIX)/share/icons/hicolor
 MANDIR  := $(PREFIX)/share/man/man1
 
-.PHONY: build run test lint fix icons clean install uninstall windows web
+.PHONY: build run test lint fix icons clean install uninstall windows web app
 
 # Rebuild the stats report template from the web/ SPA toolchain (npm + esbuild
 # + D3, subsetted WOFF2 fonts inlined). The GENERATED internal/stats/
@@ -76,6 +76,39 @@ fix: ## Auto-format and tidy
 icons: ## Regenerate the tray icons
 	$(GO) run internal/icon/gen/main.go
 
+# macOS app bundle so Spotlight, Launchpad and `open -a` can start it. A bare
+# binary in ~/.local/bin is invisible to all three. The bundle is a menu-bar
+# agent (LSUIElement): no Dock icon. The executable copied in is the same
+# build `make install` just wrote. It has to be that Mach-O, not a shell
+# script that execs it: a script makes the process a background task, and
+# the status item is then placed off the menu bar.
+APPSDIR ?= /Applications
+APPBUND := $(APPSDIR)/FipIndicateur.app
+
+app: install ## Build the macOS app bundle (Spotlight, Launchpad, open -a)
+	@if [ "$$(uname)" != "Darwin" ]; then echo "app: macOS only"; exit 1; fi
+	mkdir -p "$(APPBUND)/Contents/MacOS" "$(APPBUND)/Contents/Resources"
+	sed 's|@VERSION@|$(VERSION)|g' packaging/darwin/Info.plist > "$(APPBUND)/Contents/Info.plist"
+	# The bundle executable must be the Mach-O itself. A shell wrapper makes
+	# Launch Services treat the process as a background task, and macOS then
+	# parks the status item off the menu bar (origin y past the display).
+	# Homebrew's lib dir is on the default dyld fallback path, so libmpv
+	# resolves without a PATH prefix.
+	cp "$(BINDIR)/$(BIN)" "$(APPBUND)/Contents/MacOS/fipindicateur"
+	chmod 755 "$(APPBUND)/Contents/MacOS/fipindicateur"
+	# icns from the 128px app icon. sips plus iconutil, both stock macOS tools.
+	rm -rf /tmp/fipindicateur.iconset
+	mkdir -p /tmp/fipindicateur.iconset
+	sips -z 128 128 internal/icon/icon_app_128.png --out /tmp/fipindicateur.iconset/icon_128x128.png >/dev/null
+	sips -z 256 256 internal/icon/icon_app_128.png --out /tmp/fipindicateur.iconset/icon_128x128@2x.png >/dev/null
+	iconutil -c icns /tmp/fipindicateur.iconset -o "$(APPBUND)/Contents/Resources/fipindicateur.icns"
+	rm -rf /tmp/fipindicateur.iconset
+	cp packaging/darwin/LISEZ-MOI.txt "$(APPBUND)/Contents/Resources/LISEZ-MOI.txt"
+	codesign --force --sign - "$(APPBUND)"
+	# A brand-new bundle is invisible to `open -a` until Launch Services sees it.
+	-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$(APPBUND)"
+	@echo "App: $(APPBUND)  (Spotlight: FipIndicateur, or: open -a FipIndicateur)"
+
 install: ## Build and install for the current user (binary, launcher, icons, man page)
 	mkdir -p $(BINDIR) $(APPDIR) $(ICONDIR)/22x22/apps $(ICONDIR)/44x44/apps $(ICONDIR)/128x128/apps $(MANDIR)
 	$(GO) build $(RELFLAGS) -o $(BINDIR)/$(BIN) $(PKG)
@@ -109,6 +142,7 @@ uninstall: ## Remove the user-level install (binary, launcher, icons, autostart)
 	rm -f $(ICONDIR)/44x44/apps/fipindicateur.png
 	rm -f $(ICONDIR)/128x128/apps/fipindicateur.png
 	rm -f $(HOME)/.config/autostart/fipindicateur.desktop
+	rm -rf "$(APPBUND)"
 	-update-desktop-database $(APPDIR) 2>/dev/null || true
 	touch $(ICONDIR) 2>/dev/null || true
 

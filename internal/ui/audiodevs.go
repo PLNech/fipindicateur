@@ -21,29 +21,36 @@ func isMonitorSource(dev player.AudioDevice) bool {
 		strings.HasPrefix(strings.ToLower(dev.Description), "monitor of ")
 }
 
+// preferredAudioBackend is the one backend whose devices the submenu shows,
+// when mpv lists several backends for the same physical outputs. PipeWire
+// and Pulse each own the stream level; ALSA beside them is a duplicate.
+// coreaudio is the macOS default and the one whose ao-volume is the app's
+// own level; avfoundation lists the same devices again and is not the
+// output the player opens.
+func preferredAudioBackend(devs []player.AudioDevice) string {
+	for _, want := range []string{"pipewire", "pulse", "coreaudio"} {
+		for _, dev := range devs {
+			if isBackendDevice(dev.Name, want) {
+				return want
+			}
+		}
+	}
+	return ""
+}
+
 // menuAudioChoices turns mpv's raw audio-device-list (often ~50 entries of
-// ALSA plugin variants, monitors and bridges) into a short submenu:
+// ALSA plugin variants, monitors and bridges, or the same CoreAudio device
+// listed a second time under avfoundation) into a short submenu:
 //   - "auto" is always first (synthesized if mpv did not list it);
 //   - monitor sources are dropped;
-//   - where PipeWire or PulseAudio sinks exist, only that backend's sinks
-//     stay (pipewire preferred), hiding the ALSA/JACK/SDL duplicates;
+//   - where a preferred backend exists (pipewire, else pulse, else
+//     coreaudio), only that backend's devices stay;
 //   - entries with an identical label collapse into the first one;
 //   - the currently selected device is always visible, whatever the rules
 //     above say (it takes the place of a same-label duplicate);
 //   - mpv's order is kept, so the menu never reshuffles between runs.
 func menuAudioChoices(devs []player.AudioDevice, selected string) []audioChoice {
-	backend := ""
-	for _, want := range []string{"pipewire", "pulse"} {
-		for _, dev := range devs {
-			if isBackendDevice(dev.Name, want) {
-				backend = want
-				break
-			}
-		}
-		if backend != "" {
-			break
-		}
-	}
+	backend := preferredAudioBackend(devs)
 
 	out := []audioChoice{{Name: "auto", Label: "Automatique"}}
 	byLabel := map[string]int{"Automatique": 0}

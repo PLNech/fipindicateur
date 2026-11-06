@@ -27,8 +27,13 @@ var (
 	barsCacheMu sync.Mutex
 	barsCache   = map[barsKey][]byte{}
 
-	panelOnce sync.Once
-	panelDark bool
+	// panelMu guards the cached probe below. The probe itself is cheap after
+	// the first call (an in-process NSAppearance read on darwin), and the UI
+	// re-probes on the appearance's own schedule (RefreshPanelDark from the
+	// tray's flip notification), so no timer or polling is involved.
+	panelMu    sync.RWMutex
+	panelDark  bool
+	panelKnown bool
 )
 
 type barsKey struct {
@@ -40,16 +45,47 @@ type barsKey struct {
 	tint color.NRGBA
 }
 
-// panelIsDark caches the gsettings probe: it spawns a process, which must not
-// happen per frame.
+// panelIsDark returns the panel-darkness probe, cached between re-probes.
+// The cache is not a sync.Once: under the Auto appearance the panel flips
+// dark and light on the system's schedule, so a boot-time answer frozen
+// forever drew dark ink on an evening bar. The UI invalidates through
+// RefreshPanelDark when the effective appearance changes; every cache key
+// below carries dark, so a flip re-renders instead of serving stale pixels.
 func panelIsDark() bool {
-	panelOnce.Do(func() { panelDark = darkPanel() })
+	panelMu.RLock()
+	if panelKnown {
+		d := panelDark
+		panelMu.RUnlock()
+		return d
+	}
+	panelMu.RUnlock()
+	panelMu.Lock()
+	defer panelMu.Unlock()
+	if panelKnown {
+		return panelDark
+	}
+	panelDark = darkPanel()
+	panelKnown = true
 	return panelDark
 }
 
 // PanelIsDark exposes the cached panel-darkness probe so callers (the UI)
-// resolve station colors against the same surface without a per-frame spawn.
+// resolve station colors against the same surface without a per-frame probe.
 func PanelIsDark() bool { return panelIsDark() }
+
+// RefreshPanelDark re-probes the panel darkness (the appearance changed) and
+// reports whether the state actually flipped, so the caller repaints only on
+// a real change. The next BarsIcon/TrayFrame call keys on the new state; the
+// caches need no clearing.
+func RefreshPanelDark() bool {
+	d := darkPanel()
+	panelMu.Lock()
+	defer panelMu.Unlock()
+	changed := panelKnown && d != panelDark
+	panelDark = d
+	panelKnown = true
+	return changed
+}
 
 // ThemeInk is the neutral bar ink for the current panel: the color used when
 // no tint is applied. Callers ease a first tint in from this so the intro is a
@@ -94,8 +130,12 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 	mask := barMask(h)
 
 	// Phantom outline first (under the ink), then the bars on top so the glyph
-	// body stays crisp and only the surrounding ring carries the halo.
-	drawHalo(img, mask[:], barsSize)
+	// body stays crisp and only the surrounding ring carries the halo. The rim
+	// exists where the panel downscales the 44px PNG (haloOnPanel); a platform
+	// that draws the PNG at its native point size skips it.
+	if haloOnPanel(dark) {
+		drawHalo(img, mask[:], barsSize)
+	}
 	for y := 0; y < barsSize; y++ {
 		for x := 0; x < barsSize; x++ {
 			if mask[y*barsSize+x] {

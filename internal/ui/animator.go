@@ -39,9 +39,10 @@ const (
 type animator struct {
 	app *App
 
-	mu     sync.Mutex
-	stopCh chan struct{}
-	broken bool // astats unavailable; animation off for this run
+	mu        sync.Mutex
+	stopCh    chan struct{}
+	repaintCh chan struct{} // non-nil while running: a receive lifts the frame dedupe
+	broken    bool          // astats unavailable; animation off for this run
 
 	// Tint crossfade state, guarded by mu. tintSet stays false until the first
 	// target is set, so the icon draws with theme ink (zero tint) until then.
@@ -141,6 +142,7 @@ func (an *animator) start() {
 		return
 	}
 	an.stopCh = make(chan struct{})
+	an.repaintCh = make(chan struct{}, 1)
 	go an.loop(an.stopCh)
 }
 
@@ -154,6 +156,25 @@ func (an *animator) stop() {
 	}
 	close(an.stopCh)
 	an.stopCh = nil
+	an.repaintCh = nil
+}
+
+// repaint forces the next frame to draw even when the (heights, tint) tuple
+// is unchanged: the pixels under the frame identity changed (the panel
+// flipped, a cover just left the glyph), so the tuple alone can no longer
+// tell whether the tray is current. Draws within one tick; a no-op while the
+// loop is not running.
+func (an *animator) repaint() {
+	an.mu.Lock()
+	ch := an.repaintCh
+	an.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
 }
 
 // frameKey is the frame identity: the (heights, tint) tuple. A tint step
@@ -178,6 +199,11 @@ func (an *animator) loop(stop chan struct{}) {
 		select {
 		case <-stop:
 			return
+		case <-an.repaintCh:
+			// The pixels under the frame identity changed (panel flip, cover
+			// cleared): lift the dedupe so the draw below really paints, and
+			// do it now rather than one tick late.
+			last = frameKey{h: vu.Heights{255}}
 		case <-ticker.C:
 		}
 
@@ -210,7 +236,17 @@ func (an *animator) loop(stop chan struct{}) {
 			}
 		}
 
-		target := vu.Targets(level, frame)
+		var target vu.Heights
+		if bands, bok := an.app.player.SpectrumBands(); bok {
+			// The shape says which bars; the overall level says how tall.
+			// A quiet passage stays short, a shout fills the icon.
+			for i := range bands {
+				bands[i] *= level
+			}
+			target = vu.TargetsFromBands(bands)
+		} else {
+			target = vu.Targets(level, frame)
+		}
 		frame++
 		h := vu.Envelope(prev, target)
 		prev = h

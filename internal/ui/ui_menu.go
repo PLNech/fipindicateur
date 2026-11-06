@@ -2,15 +2,16 @@
 
 package ui
 
-// The tray-menu half of the UI for macOS and Windows: fyne/systray lifecycle
-// and menu construction. The a.on click chokepoint lives in ui.go (shared:
-// Linux builds the same tree on its hand-rolled dbusmenu, see
-// ui_sni_linux.go); the zenity sliders and presets live in ui_dialog.go.
+// The tray-menu half of the UI for macOS and Windows: the tray lifecycle and
+// menu construction. The platform adapters live in traymenu_darwin.go (the
+// hand-rolled internal/tray) and traymenu_systray.go (fyne/systray, unchanged
+// on Windows). The a.on click chokepoint lives in ui.go (shared: Linux builds
+// the same tree on its hand-rolled dbusmenu, see ui_sni_linux.go); the zenity
+// sliders and presets live in ui_dialog.go.
 
 import (
 	"fmt"
 
-	"fyne.io/systray"
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/events"
 	"github.com/PLNech/fipindicateur/internal/icon"
@@ -21,37 +22,33 @@ import (
 	"github.com/PLNech/fipindicateur/internal/version"
 )
 
-// menuItem is the real systray item on the menu platforms. The Linux build
-// substitutes a nil-safe no-op type, so shared chokepoints (setPlayingUI,
-// applyVolumeUI, the toggles) update menu state without per-platform branches.
-type menuItem = systray.MenuItem
-
-// Run hands the process to the systray main loop; OnReady/OnExit carry the
+// Run hands the process to the platform tray loop; OnReady/OnExit carry the
 // app lifecycle exactly as before.
 func Run(a *App) {
-	systray.Run(a.OnReady, a.OnExit)
+	trayRun(a.OnReady, a.OnExit)
 }
 
-// Quit asks the main loop to end (signal handler, CLI); systray then runs
-// OnExit.
+// Quit asks the main loop to end (signal handler, CLI); the platform loop
+// then runs OnExit.
 func Quit() {
-	systray.Quit()
+	trayQuit()
 }
 
 // quitApp is the in-app quit chokepoint (menu item, restart).
 func quitApp() { Quit() }
 
 // setTrayIcon is the single, platform-neutral chokepoint for handing bytes to
-// systray. It is the ONLY place `systray.SetIcon` is called in the tree (the
-// guard test in guard_test.go enforces that). App.setIcon dedupes and refuses
-// empty bytes before reaching here; this layer only adapts the byte format to
-// what the platform's tray expects, via encodeTrayIcon.
+// the platform tray (the guard test in guard_test.go enforces that it is the
+// only route). App.setIcon dedupes and refuses empty bytes before reaching
+// here; this layer only adapts the byte format to what the platform's tray
+// expects, via encodeTrayIcon, then hands off to the platform adapter
+// setTrayIconNative (traymenu_*.go).
 func setTrayIcon(b []byte) {
-	systray.SetIcon(encodeTrayIcon(b))
+	setTrayIconNative(encodeTrayIcon(b))
 }
 
-// drawFrame paints one animation frame on the tray: systray wants PNG bytes, so
-// the frame takes the cached PNG route.
+// drawFrame paints one animation frame on the tray: the tray wants PNG
+// bytes, so the frame takes the cached PNG route.
 func (a *App) drawFrame(k frameKey) {
 	a.setIcon(icon.BarsIcon(k.h, k.tint))
 }
@@ -63,26 +60,33 @@ func (a *App) setTrayNowLabel(string) {}
 // setNowArt is a no-op here: systray menu items carry no inline icons on
 // these platforms, so the track cover stays on the notification (FetchCover)
 // like it always was. The Linux menu implements it (ui_sni_linux.go).
-func (a *App) setNowArt(np metadata.NowPlaying) {}
+func (a *App) setNowArt(metadata.NowPlaying) {}
 
 // teardownUI has nothing to release: systray closes its own connection when
 // the main loop ends.
 func (a *App) teardownUI() {}
 
-// buildUI builds the tray menu (the whole UI on these platforms).
-func (a *App) buildUI() { a.buildMenu() }
+// buildUI builds the tray menu (the whole UI on these platforms). The scroll
+// hook is wired before the menu: a wheel event over the icon must have its
+// receiver in place, whoever opens the menu first. Same for the appearance
+// flip hook: the menu bar can flip under the glyph before any menu opens.
+func (a *App) buildUI() {
+	a.wireTrayScroll()
+	a.wirePanelFlip()
+	a.buildMenu()
+}
 
 func (a *App) buildMenu() {
-	a.mNow = systray.AddMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
+	a.mNow = addMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
 	a.on(a.mNow, events.KindOpenWiki, a.openNow)
 
 	// The programme (émission) currently on air. Display-only (disabled), hidden
 	// until a show is playing. Shows exist only on the main antenna.
-	a.mShow = systray.AddMenuItem("", "Émission en cours sur l'antenne")
+	a.mShow = addMenuItem("", "Émission en cours sur l'antenne")
 	a.mShow.Disable()
 	a.mShow.Hide()
 
-	voir := systray.AddMenuItem("Voir…", "Liens pour ce titre")
+	voir := addMenuItem("Voir…", "Liens pour ce titre")
 	a.mVoirWiki = voir.AddSubMenuItem("Wikipédia (artiste)", "Chercher l'artiste sur fr.wikipedia.org")
 	a.on(a.mVoirWiki, events.KindOpenWiki, a.openNow)
 	a.mVoirLink = voir.AddSubMenuItem("Écouter ailleurs (lien FIP)", "Lien musique fourni par Radio France")
@@ -94,15 +98,15 @@ func (a *App) buildMenu() {
 	// internal/prefs). The a.on chokepoint records the behaviour (KindLike/
 	// KindDislike, station only, no track identity); the handler snapshots the
 	// track into prefs.jsonl. Both are no-ops when nothing is playing.
-	a.mLike = systray.AddMenuItem("J'aime ce morceau", "Mémoriser que vous aimez ce titre (prefs.jsonl)")
+	a.mLike = addMenuItem("J'aime ce morceau", "Mémoriser que vous aimez ce titre (prefs.jsonl)")
 	a.mLike.Disable() // enabled once a track is known (see onNowPlaying)
 	a.on(a.mLike, events.KindLike, func() { a.recordTaste(prefs.Like) })
-	a.mDislike = systray.AddMenuItem("Pas pour moi", "Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)")
+	a.mDislike = addMenuItem("Pas pour moi", "Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)")
 	a.mDislike.Disable()
 	a.on(a.mDislike, events.KindDislike, func() { a.recordTaste(prefs.Dislike) })
 
-	systray.AddSeparator()
-	a.mPlay = systray.AddMenuItem("⏸ Pause", "Lecture / pause")
+	addSeparator()
+	a.mPlay = addMenuItem("⏸ Pause", "Lecture / pause")
 	// Play/pause is state-dependent: setPlayingUI records the resulting
 	// play/pause event (so media keys and MPRIS are captured too), hence "".
 	a.on(a.mPlay, "", a.togglePlay)
@@ -111,7 +115,7 @@ func (a *App) buildMenu() {
 	// every other entry point, and every item drives the ACTIVE sink: the cast
 	// device while casting, mpv otherwise (setActiveVolume / toggleActiveMute).
 	// The submenu's own title says which one it is talking to (applyVolumeUI).
-	a.mVolume = systray.AddMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
+	a.mVolume = addMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
 	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
 	a.on(a.mMute, "", a.toggleActiveMute) // records the resulting state at source
 	a.volMI = map[int]*menuItem{}
@@ -121,6 +125,12 @@ func (a *App) buildMenu() {
 		p := pct
 		a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
 	}
+	// The native slider on macOS (the hand-rolled tray hosts an NSSlider as
+	// this submenu's first entry, above the mute toggle). It writes through
+	// the same chokepoint as the presets below (setActiveVolume, which
+	// records at source, drag ticks coalesced by recordVolume); a no-op
+	// elsewhere (volumeui_other.go).
+	a.addVolumeSlider()
 	// A real slider, when zenity is present. Absent on macOS/Windows and
 	// minimal installs, so the item is only added when the binary exists (no
 	// dead item). The resulting volume change is the measurable action,
@@ -131,9 +141,9 @@ func (a *App) buildMenu() {
 		a.on(slider, "", a.openVolumeSlider)
 	}
 
-	// Radios
-	radios := systray.AddMenuItem("Radios", "Choisir une webradio")
-	for _, s := range stations.All {
+	// Radios, in wheel order: the menu reads like the next/previous cycle.
+	radios := addMenuItem("Radios", "Choisir une webradio")
+	for _, s := range stations.Wheel() {
 		it := radios.AddSubMenuItemCheckbox(s.Display, s.Slug, s.Key == a.current.Key)
 		a.stationMI[s.Key] = it
 		key := s.Key
@@ -144,8 +154,8 @@ func (a *App) buildMenu() {
 
 	// Diffuser sur…: cast the antenna to a Chromecast speaker. Devices are
 	// discovered fresh each run, nothing persisted; the slots are
-	// pre-allocated because systray cannot remove items once added.
-	castMenu := systray.AddMenuItem("Diffuser sur…", "Diffuser la station sur un appareil Chromecast")
+	// pre-allocated because neither tray backend removes items once added.
+	castMenu := addMenuItem("Diffuser sur…", "Diffuser la station sur un appareil Chromecast")
 	a.mCastLocal = castMenu.AddSubMenuItemCheckbox("Cet ordinateur", "Lecture locale (arrête la diffusion)", true)
 	// State-dependent: stopCasting records cast_stop at source only when a
 	// cast was actually active, so a redundant click logs nothing.
@@ -168,7 +178,7 @@ func (a *App) buildMenu() {
 	a.on(a.mCastScan, "", a.rescanCast)
 
 	// Historique
-	hist := systray.AddMenuItem("Historique", "Titres récents")
+	hist := addMenuItem("Historique", "Titres récents")
 	a.histMI = make([]*menuItem, historySlots)
 	for i := 0; i < historySlots; i++ {
 		it := hist.AddSubMenuItem("", "")
@@ -181,7 +191,7 @@ func (a *App) buildMenu() {
 	// Calendrier: the upcoming programmes on the antenna (station 7 only). The
 	// slots are display-only (no click telemetry needed); the whole submenu is
 	// hidden when the calendar setting is off or nothing is scheduled.
-	a.mCalendar = systray.AddMenuItem("Calendrier", "Prochaines émissions sur l'antenne")
+	a.mCalendar = addMenuItem("Calendrier", "Prochaines émissions sur l'antenne")
 	a.calMI = make([]*menuItem, calendarSlots)
 	for i := 0; i < calendarSlots; i++ {
 		it := a.mCalendar.AddSubMenuItem("", "")
@@ -194,7 +204,7 @@ func (a *App) buildMenu() {
 	a.mCalendar.Hide()
 
 	// Réglages
-	settings := systray.AddMenuItem("Réglages", "Options")
+	settings := addMenuItem("Réglages", "Options")
 	a.mHiFi = settings.AddSubMenuItemCheckbox("Haute qualité (AAC 192k)", "", a.cfg.HiFi)
 	a.on(a.mHiFi, "", a.toggleHiFi)
 	// Fondu enchaîné (crossfade on a live station zap). With zenity a single item
@@ -257,15 +267,12 @@ func (a *App) buildMenu() {
 	if cur == "" {
 		cur = "auto" // empty config means mpv's automatic default
 	}
-	if len(a.audioDevs) > 0 {
-		for _, dev := range a.audioDevs {
-			label := dev.Description
-			if dev.Name == "auto" {
-				label = "Automatique" // friendlier than mpv's "Autodetect device"
-			} else if label == "" {
-				label = dev.Name // fall back to the raw name when unlabeled
-			}
-			it := audio.AddSubMenuItemCheckbox(label, dev.Name, dev.Name == cur)
+	if choices := menuAudioChoices(a.audioDevs, cur); len(choices) > 0 {
+		// Same short list as Linux: one backend, no monitor sources, no
+		// same-label twins. On macOS that drops the avfoundation copy of
+		// every CoreAudio device (the display, the speakers, Zoom).
+		for _, dev := range choices {
+			it := audio.AddSubMenuItemCheckbox(dev.Label, dev.Name, dev.Name == cur)
 			a.audioMI[dev.Name] = it
 			name := dev.Name
 			a.on(it, events.KindAudioDevice, func() { a.setAudioDevice(name) })
@@ -295,23 +302,23 @@ func (a *App) buildMenu() {
 	a.mPrefsClear = statsMenu.AddSubMenuItem("Effacer mes goûts…", "Supprimer prefs.jsonl (vos J'aime / Pas pour moi)")
 	a.on(a.mPrefsClear, "", a.clearPrefsConfirm)
 
-	systray.AddSeparator()
-	about := systray.AddMenuItem("À propos", "Ouvrir la page du projet")
+	addSeparator()
+	about := addMenuItem("À propos", "Ouvrir la page du projet")
 	a.on(about, events.KindOpenAbout, func() { open.URL(repoURL) })
-	ver := systray.AddMenuItem("le fipindicateur "+version.String(), "Version installée")
+	ver := addMenuItem("le fipindicateur "+version.String(), "Version installée")
 	ver.Disable()
 	// Mises à jour: "Vérifier maintenant" is the on-demand check; the checkbox
 	// is the opt-in startup check. Both off + never clicking = never checks.
-	maj := systray.AddMenuItem("Mises à jour", "Vérifier les nouvelles versions")
+	maj := addMenuItem("Mises à jour", "Vérifier les nouvelles versions")
 	checkNow := maj.AddSubMenuItem("Vérifier maintenant", "Comparer avec la dernière release sur GitHub")
 	a.on(checkNow, events.KindUpdateCheck, a.checkUpdates)
 	a.mUpdateStartup = maj.AddSubMenuItemCheckbox("Vérifier au démarrage", "Un contrôle discret au lancement (sinon jamais)", a.cfg.UpdateStartup)
 	a.on(a.mUpdateStartup, "", a.toggleUpdateStartup)
-	relancer := systray.AddMenuItem("Relancer", "Redémarrer le fipindicateur (recharge la dernière version installée)")
+	relancer := addMenuItem("Relancer", "Redémarrer le fipindicateur (recharge la dernière version installée)")
 	a.on(relancer, events.KindRestart, a.restart)
-	quit := systray.AddMenuItem("Quitter", "Fermer le fipindicateur")
+	quit := addMenuItem("Quitter", "Fermer le fipindicateur")
 	a.on(quit, events.KindQuit, quitApp)
 
-	systray.SetTitle("")
-	systray.SetTooltip("le fipindicateur")
+	traySetTitle("")
+	traySetTooltip("le fipindicateur")
 }

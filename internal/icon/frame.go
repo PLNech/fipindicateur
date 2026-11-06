@@ -36,15 +36,25 @@ const shapeCap = 512
 
 var (
 	shapeMu sync.Mutex
-	shapes  = map[vu.Heights]*[barsSize * barsSize]uint8{}
+	shapes  = map[shapeKey]*[barsSize * barsSize]uint8{}
 )
 
-// shapeOf returns the class map for the heights: 0 transparent, inkClass for
-// a bar pixel, otherwise the halo alpha. It reuses drawHalo, so the halo is
-// the very one the PNG renderer draws.
-func shapeOf(h vu.Heights) *[barsSize * barsSize]uint8 {
+// shapeKey is the shape identity: the bar heights plus whether the halo rides
+// along. The halo used to be a build-time constant; on darwin it now follows
+// the live panel darkness (haloOnPanel), so it keys the memo like any other
+// pixel-changing input.
+type shapeKey struct {
+	h    vu.Heights
+	halo bool
+}
+
+// shapeOf returns the class map for the heights and panel: 0 transparent,
+// inkClass for a bar pixel, otherwise the halo alpha. It reuses drawHalo, so
+// the halo is the very one the PNG renderer draws.
+func shapeOf(h vu.Heights, dark bool) *[barsSize * barsSize]uint8 {
+	key := shapeKey{h: h, halo: haloOnPanel(dark)}
 	shapeMu.Lock()
-	if s, ok := shapes[h]; ok {
+	if s, ok := shapes[key]; ok {
 		shapeMu.Unlock()
 		return s
 	}
@@ -52,7 +62,9 @@ func shapeOf(h vu.Heights) *[barsSize * barsSize]uint8 {
 
 	mask := barMask(h)
 	halo := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
-	drawHalo(halo, mask[:], barsSize)
+	if key.halo {
+		drawHalo(halo, mask[:], barsSize)
+	}
 	s := new([barsSize * barsSize]uint8)
 	for i := range s {
 		if mask[i] {
@@ -66,7 +78,7 @@ func shapeOf(h vu.Heights) *[barsSize * barsSize]uint8 {
 	if len(shapes) >= shapeCap {
 		clear(shapes)
 	}
-	shapes[h] = s
+	shapes[key] = s
 	shapeMu.Unlock()
 	return s
 }
@@ -89,11 +101,12 @@ func washPixel(src, wash color.NRGBA, t float64) [4]byte {
 // tray pixmap, with the brand wash (mixed toward wash by mixT) already applied.
 // A zero tint means the theme ink, as in BarsIcon.
 func TrayFrame(h vu.Heights, tint, wash color.NRGBA, mixT float64) *Frame {
-	ink := ThemeInk(panelIsDark())
+	dark := panelIsDark()
+	ink := ThemeInk(dark)
 	if (tint != color.NRGBA{}) {
 		ink = tint
 	}
-	shape := shapeOf(h)
+	shape := shapeOf(h, dark)
 
 	// One washed value per class actually met, computed on first use.
 	var (

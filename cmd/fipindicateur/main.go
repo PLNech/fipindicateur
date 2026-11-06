@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"fmt"
@@ -70,5 +71,14 @@ func main() {
 
 	// The platform main loop: systray on macOS/Windows; on Linux the SNI
 	// needs no loop of its own, so Run waits on Quit.
+	//
+	// LockOSThread pins the main goroutine to the process main thread, which
+	// the systray README requires: AppKit must run [NSApp run] on the main
+	// thread, and Go would otherwise schedule this goroutine on any thread.
+	// Without it the tray still draws, but every main-queue hop into AppKit
+	// (nowplay's media-key registration, notifications) is serviced by a main
+	// thread that sits idle in the Go scheduler, so the blocks never run and
+	// macOS never routes the media keys.
+	runtime.LockOSThread()
 	ui.Run(app)
 }

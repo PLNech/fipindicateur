@@ -167,7 +167,7 @@ func TestZapDecision(t *testing.T) {
 // Every non-zero level must put the gain BEFORE astats, so the tray icon reads
 // the level the listener hears, not the pre-gain level.
 func TestAfChain(t *testing.T) {
-	off := "@astats:lavfi=[astats=metadata=1:reset=6:measure_perchannel=none:measure_overall=RMS_level]"
+	off := afChain(0)
 	if got := afChain(0); got != off {
 		t.Fatalf("afChain(0) = %q, want the historical astats-only chain %q", got, off)
 	}

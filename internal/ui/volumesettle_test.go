@@ -6,6 +6,7 @@ import (
 
 	"github.com/PLNech/fipindicateur/internal/config"
 	"github.com/PLNech/fipindicateur/internal/events"
+	"github.com/PLNech/fipindicateur/internal/player"
 )
 
 // TestVolumeSettleGateDropsRestartPhantom pins the grace window: an ao-volume
@@ -33,6 +34,18 @@ func TestVolumeSettleGateDropsRestartPhantom(t *testing.T) {
 	if a.cfg.Volume != 0 {
 		t.Fatalf("genuine report outside the window was dropped: volume=%d", a.cfg.Volume)
 	}
+}
+
+// TestReapplySavedVolumeSkipsRememberingSink pins the Linux half of the
+// contract: where the audio server remembers the per-app level, a playback
+// restart must not write the cache back. The write is what once stomped a
+// duck made in the mixer during a call.
+func TestReapplySavedVolumeSkipsRememberingSink(t *testing.T) {
+	if !player.SinkRestoresVolume() {
+		t.Skip("this OS forgets the per-app level; the write-back is the fix")
+	}
+	a := &App{cfg: config.Config{Volume: 25}, player: &player.Fader{}}
+	a.reapplySavedVolume() // must not touch the (uninitialized) player
 }
 
 // The settled re-read must not be swallowed by its own gate: it fires past the

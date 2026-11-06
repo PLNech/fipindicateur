@@ -32,7 +32,8 @@ func TestSaveRefusesRealConfigDir(t *testing.T) {
 }
 
 // TestSaveIsolatedUnderTempDir checks the happy path: with XDG_CONFIG_HOME in a
-// temp dir, Save writes there and Load reads it back.
+// temp dir, Save writes there and Load reads it back. This has to hold on
+// macOS too, where os.UserConfigDir ignores the variable on its own.
 func TestSaveIsolatedUnderTempDir(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)

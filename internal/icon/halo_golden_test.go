@@ -28,7 +28,9 @@ func TestRenderBarsMatchesReference(t *testing.T) {
 }
 
 // TestDrawHaloMatchesReference compares the halo layer alone, on the glyph
-// shapes plus an arbitrary mask touching the canvas edges.
+// shapes plus an arbitrary mask touching the canvas edges. No platform skip:
+// the halo layer is platform-independent, and every platform now draws it
+// somewhere (darwin when the panel is dark, see halo_darwin.go).
 func TestDrawHaloMatchesReference(t *testing.T) {
 	hs, _ := goldenInputs()
 	for _, h := range hs {

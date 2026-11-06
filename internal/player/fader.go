@@ -6,6 +6,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/PLNech/fipindicateur/internal/vu"
 )
 
 // Fader is a facade over one or two MPV handles that turns a live station zap
@@ -491,6 +493,16 @@ func (f *Fader) URL() string {
 		return ""
 	}
 	return cur.URL()
+}
+
+// SpectrumBands returns the current handle's four band levels. A miss leaves
+// the caller on the overall-level fallback.
+func (f *Fader) SpectrumBands() (vu.Bands, bool) {
+	cur := f.cur()
+	if cur == nil {
+		return vu.Bands{}, false
+	}
+	return cur.SpectrumBands()
 }
 
 // RMSLevelDB returns the current handle's RMS level (drives the VU icon, which

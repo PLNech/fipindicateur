@@ -18,6 +18,106 @@
 - Les binaires livrés sont construits avec `-trimpath` et `-ldflags "-s -w"`
   (environ 30 % plus petits)
 
+### Added
+- macOS : les notifications de titre, d'émission, de diffusion et de goût
+  passent par les bannières du système. La première affiche la demande
+  d'autorisation ; un refus laisse la lecture intacte
+- macOS : « Lancer au démarrage » inscrit `FipIndicateur.app` dans les
+  éléments d'ouverture (le bundle, pas le binaire seul, pour que l'icône
+  reste dans la barre)
+- macOS : `make app` pose `FipIndicateur.app` dans `/Applications`. Spotlight,
+  Launchpad et `open -a FipIndicateur` le trouvent. L'app est un agent (pas
+  d'icône dans le Dock). L'exécutable du bundle est le binaire lui-même
+  (la même construction que `make install`)
+- macOS : les touches média, le Centre de contrôle, l'écran verrouillé et le
+  clic du casque pilotent la lecture. L'app s'inscrit auprès de Now Playing
+  (MPNowPlayingInfoCenter), le chemin que macOS utilise à la place de MPRIS.
+  Play, pause et le basculement passent par les mêmes méthodes que le menu,
+  donc les statistiques les voient pareil. Le titre en cours s'affiche dans
+  le Centre de contrôle
+- macOS : précédent et suivant (touches, casque, écran verrouillé) zappent la
+  webradio suivante ou précédente de la liste : un flux live n'a pas de file
+  de morceaux, la paire sert la grille des radios
+- La roue des genres : le cycle précédent/suivant et le sous-menu Radios
+  suivent un voisinage éditorial (FIP, Rock, Metal, Electro, Hip-Hop, Reggae,
+  Monde, Jazz, Groove, Pop, Nouveautés, Sacré français !, Cultes, retour à
+  FIP) : six duos affines, FIP à la couture, chaque accord se raconte. À
+  terme, le voisinage pourra être recalé sur les transitions réellement
+  observées dans les statistiques d'écoute
+- macOS : la bannière du morceau devient interactive. Deux boutons, J'aime et
+  Pas pour moi, notent le titre en cours par le même chemin que le menu (le
+  clic est le consentement) ; cliquer la bannière ouvre le lien d'écoute du
+  morceau. Les bannières système (diffusion, statistiques) restent sans
+  boutons
+- macOS : la bannière du morceau se lit en trois lignes (titre, artiste,
+  album (année) · label · station) et porte la pochette ré-encodée ; la
+  bannière de verdict (C'est noté) porte la pochette aussi
+- Changer de radio (menu, touches précédent/suivant, `fip station`) annonce
+  la nouvelle station par une bannière « En écoute » : depuis les touches,
+  il n'y a pas de coche de menu à voir, et le premier titre de la station
+  n'arrive qu'à la prochaine lecture de métadonnées. La bannière du titre la
+  remplace dès qu'il est connu
+
+### Changed
+- L'icône animée suit le spectre : où l'énergie se place, sa largeur, et
+  où elle retombe. Les quatre barres (grave, bas-médium, présence, aigu)
+  en découlent, et le niveau global fixe leur hauteur. La mesure ne change
+  pas ce qui sort des enceintes. Sans cette lecture, l'ancienne variation
+  reste en repli
+- macOS : la bannière du morceau porte la vraie pochette. Les images de la
+  grille Radio France sont des JPEG progressifs, que la pièce jointe de
+  notification n'affiche pas de façon fiable ; chaque pochette est
+  ré-encodée en PNG de base (en cache, une fois par image) avant l'envoi,
+  ce qui vaut aussi pour l'icône de notification Linux
+- macOS : la teinte suit l'apparence en direct. Le mode Auto basculait
+  l'interface vers le sombre sans prévenir l'app, qui dessinait alors de
+  l'encre sombre sur la barre sombre (icône invisible) ; la détection lit
+  maintenant l'apparence effective du système et suit chaque bascule. Le
+  liseré blanc revient quand la barre est sombre, pour que l'icône reste
+  trouvable au clic
+- macOS : le plateau est désormais notre propre composant AppKit
+  (internal/tray), sur le modèle du plateau Linux artisanal : taille
+  d'icône fidèle au PNG, position persistée par AppKit, OnExit réellement
+  exécuté à la fermeture. Curseur de volume natif dans le sous-menu Volume,
+  et molette sur l'icône pour monter ou baisser le volume de la sortie
+  active. Le sous-menu à paliers reste pour les clics rapides
+
+### Fixed
+- macOS : les touches média ne répondaient pas. Deux causes : le fil principal
+  n'était pas verrouillé (Go déplaçait la goroutine principale, AppKit tournait
+  ailleurs, et les blocs déposés sur la file principale n'étaient jamais
+  servis), et l'inscription auprès de Now Playing se faisait hors du fil
+  principal d'AppKit, ce que macOS ignore en silence. Le fil est verrouillé et
+  l'inscription passe par la file principale ; le titre publié suit le même
+  chemin
+- Le réglage « Notifications » envoie une bannière de test à l'activation :
+  le chemin complet (permission, affichage) s'exerce tout de suite, sans
+  attendre le prochain morceau. Si le système refuse la permission, l'app
+  ouvre une fois le panneau Réglages système · Notifications, le seul endroit
+  où l'interrupteur existe
+- macOS : le processus sans bundle (make run, le binaire fip seul) ne s'arrête
+  plus à la première notification : le centre de notifications n'existe pas
+  hors d'un bundle, on reste silencieux et la lecture continue
+- macOS : les tests qui touchent le menu cast ne plantent plus quand le menu
+  n'est pas construit (refreshCastMenu sort tôt au lieu d'appeler un item
+  systray nul)
+- macOS : sur un MacBook à encoche, l'icône se retrouvait dessous, invisible
+  alors que le son jouait. Au lancement elle prend la place à droite des
+  extras, hors de l'encoche. Un déplacement au clic-Commande est conservé
+- macOS : l'icône de la barre des menus restait hors écran (origine négative)
+  quand `FipIndicateur.app` lançait le binaire via un script shell. macOS
+  classe alors le processus comme tâche de fond, et place l'item hors de la
+  barre. L'exécutable du bundle est maintenant le binaire Mach-O
+- macOS : « Sortie audio » ne liste plus chaque appareil deux fois. mpv
+  annonce les mêmes sorties en coreaudio et en avfoundation ; seul
+  coreaudio reste (l'écran HDMI, les haut-parleurs, Zoom)
+- macOS : le volume ne revient plus à 100 % à chaque lecture. CoreAudio oublie
+  le niveau quand la sortie se ferme (pause, relance), et la relecture du
+  flux adoptait ce 100 par défaut, puis l'enregistrait. Au redémarrage de la
+  lecture le niveau mémorisé est réappliqué. Linux inchangé : PulseAudio se
+  souvient du niveau tout seul, et l'écrire aurait écrasé un réglage fait dans
+  le mixeur pendant un appel
+
 ## v0.7.0 · 2026-10-11 · Le menu fait tout
 
 ### Changed

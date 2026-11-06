@@ -7,29 +7,32 @@ package notify
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
-	"io"
 	"log"
-	"net/http"
-	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/godbus/dbus/v5"
 )
+
+// Actions carries the banner-interaction callbacks (macOS: the like/dislike
+// buttons and click-to-open). On Linux the freedesktop spec has actions too,
+// but they need an ActionInvoked signal listener; until one is wired the
+// callbacks are accepted and unused, so the call sites stay platform-neutral.
+type Actions struct {
+	Like    func()
+	Dislike func()
+	Open    func(link string)
+	Denied  func()
+}
 
 // Notifier sends replace-in-place desktop notifications.
 type Notifier struct {
 	conn   *dbus.Conn
 	lastID uint32
-	client *http.Client
 }
 
 // New connects to the session bus. Returns a usable (possibly degraded)
 // Notifier even on error, so callers need not nil-check.
-func New() *Notifier {
-	n := &Notifier{client: &http.Client{Timeout: 10 * time.Second}}
+func New(actions Actions) *Notifier {
+	n := &Notifier{}
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		log.Printf("notify: session bus: %v", err)
@@ -72,45 +75,26 @@ func (n *Notifier) Notify(summary, body, iconPath string, timeoutMs int) {
 	}
 }
 
+// NotifyTrack posts the track banner. The platform has no subtitle field, so
+// the artist leads the body line, ahead of album/label/station.
+func (n *Notifier) NotifyTrack(title, subtitle, body, iconPath string, link string, timeoutMs int) {
+	if subtitle != "" {
+		if body != "" {
+			body = subtitle + " · " + body
+		} else {
+			body = subtitle
+		}
+	}
+	n.Notify(title, body, iconPath, timeoutMs)
+}
+
 // FetchCover downloads a cover image to a temp file and returns its path, or
 // "" on any error. Caller passes the path to Notify as the icon.
 func (n *Notifier) FetchCover(ctx context.Context, url string) string {
-	if n == nil || url == "" {
+	if n == nil {
 		return ""
 	}
-	dir := os.Getenv("XDG_RUNTIME_DIR")
-	if dir == "" {
-		dir = os.TempDir()
-	}
-	sum := sha1.Sum([]byte(url))
-	dst := filepath.Join(dir, "fipindicateur-cover-"+hex.EncodeToString(sum[:8])+".jpg")
-
-	if _, err := os.Stat(dst); err == nil {
-		return dst // cached
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return ""
-	}
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return ""
-	}
-	f, err := os.Create(dst)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	if _, err := io.Copy(f, io.LimitReader(resp.Body, 8<<20)); err != nil {
-		_ = os.Remove(dst)
-		return ""
-	}
-	return dst
+	return fetchCover(ctx, url)
 }
 
 // Close releases the connection.

@@ -76,7 +76,9 @@ func refBarsImage(h vu.Heights, dark bool, tint color.NRGBA) *image.NRGBA {
 			}
 		}
 	}
-	refDrawHalo(img, mask[:], barsSize)
+	if haloOnPanel(dark) {
+		refDrawHalo(img, mask[:], barsSize)
+	}
 	for y := 0; y < barsSize; y++ {
 		for x := 0; x < barsSize; x++ {
 			if mask[y*barsSize+x] {

@@ -11,10 +11,16 @@ import (
 // withPanel forces the cached panel-darkness probe for one test.
 func withPanel(t *testing.T, dark bool) {
 	t.Helper()
-	panelIsDark() // run the once
-	old := panelDark
-	panelDark = dark
-	t.Cleanup(func() { panelDark = old })
+	panelIsDark() // prime the cache once (the probe may run cgo on darwin)
+	panelMu.Lock()
+	oldDark, oldKnown := panelDark, panelKnown
+	panelDark, panelKnown = dark, true
+	panelMu.Unlock()
+	t.Cleanup(func() {
+		panelMu.Lock()
+		panelDark, panelKnown = oldDark, oldKnown
+		panelMu.Unlock()
+	})
 }
 
 // TestTrayFrameMatchesReference is the golden test: TrayFrame must equal the

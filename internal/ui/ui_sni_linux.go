@@ -400,9 +400,9 @@ func (a *App) buildMenu(m *sni.Menu) {
 		a.on(mitem(slider), "", a.openVolumeSlider)
 	}
 
-	// Radios
+	// Radios, in wheel order: the menu reads like the next/previous cycle.
 	radios := m.Add("Radios")
-	for _, s := range stations.All {
+	for _, s := range stations.Wheel() {
 		it := radios.AddCheckbox(s.Display, s.Key == a.current.Key, true)
 		a.stationMI[s.Key] = mitem(it)
 		key := s.Key
