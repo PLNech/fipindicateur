@@ -487,9 +487,6 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	pendingShow := newConcept != a.lastShowConcept
 	a.now = np
 	a.upcoming = np.UpcomingShows
-	if changed {
-		a.pushHistoryLocked(np)
-	}
 	a.mu.Unlock()
 
 	// Nothing tray-visible changes when neither the track nor the show moved:
@@ -530,7 +527,6 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 		if a.mpris != nil {
 			a.mpris.UpdateMetadata(np)
 		}
-		a.refreshHistoryMenu()
 	} else if !hasTrack && np.Show != nil && (showChanged || trackCleared) {
 		// No track is known during this programme: the show title becomes the
 		// tray label, better than a stale track from before it started. Same
@@ -555,15 +551,23 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 		a.publishNowPlaying(metadata.NowPlaying{Title: np.Show.Title})
 	}
 
-	// A notification and a history-log line both mean "you heard this". The
-	// watcher keeps polling FIP while paused or stopped, so gate both on actual
-	// playback: when nothing is audible you are not listening, so we stay
-	// silent and log nothing. The menu still updates above, so resuming shows
-	// what is on air. Audibility follows the EAR, not the local process: a
-	// cast session with its media playing is listening too, even though the
-	// local player is stopped.
+	// A notification, a history-log line and the menu's Historique ring all
+	// mean "you heard this". The watcher keeps polling FIP while paused or
+	// stopped, so gate all three on actual playback: when nothing is audible
+	// you are not listening, so we stay silent and record nothing. The menu
+	// still updates above, so resuming shows what is on air. Audibility
+	// follows the EAR, not the local process: a cast session with its media
+	// playing is listening too, even though the local player is stopped. The
+	// ring used to fill before this gate: a paused evening lined the submenu
+	// with unheard tracks, contradicting the file log's own contract.
 	if !a.audible() {
 		return
+	}
+	if changed {
+		a.mu.Lock()
+		a.pushHistoryLocked(np)
+		a.mu.Unlock()
+		a.refreshHistoryMenu()
 	}
 
 	// The programme boundary is witnessed against lastShowConcept, the last
