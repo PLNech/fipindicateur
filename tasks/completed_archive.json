@@ -142,5 +142,11 @@
     "subject": "PROTO A: le menu SNI maison devient toute l'interface Linux",
     "completedAt": "2026-10-05",
     "learnings": "Porter ui_menu.go sur le dbusmenu maison se joue sur trois pièges: (1) le menuItem Linux doit rester nil-safe sur CHAQUE mutateur (les tests construisent des App nus et les entonnoirs de ui.go appellent sans garde; le struct{} no-op d'avant le garantissait); (2) un sync.Mutex ne se copie pas: mnu := m.it.menu puis mnu.mu.Lock(), jamais mu := m.it.menu.mu (go vet attrape); (3) gdbus call lit -1 comme une option: il faut le séparateur -- avant les arguments. Pour vérifier un SNI à côté d'une instance de production: l'instance tient le flock de XDG_RUNTIME_DIR (PID trouvé par lsof sur le fichier de verrou, jamais par nom), MPRIS refuse le doublon, donc stop propre, test, puis gtk-launch pour restaurer."
+  },
+  {
+    "id": "25",
+    "subject": "Roue editoriale des genres pour le zap precedent/suivant",
+    "completedAt": "2026-11-06",
+    "learnings": "Le cercle de zap etait l'ordre brut de stations.All (5 accords dissonants sur 13). Decision: roue editoriale de 6 duos affines + FIP a la couture (All reste canonique, Wheel() facade la navigation, menus en ordre de roue). Le voisinage data-driven (Held-Karp sur les arêtes station_change symetrisees, ~1,4M etats pour 13 noeuds) est differe jusqu'a assez de sessions: stats opt-in desactive sur le Mac, log complet sur le XPS omon + sauvegarde domovoy (volume bloque par blind-guard, data plus tard). TestWheelIsPermutation a attrape aussitot une cle inventee (monde vs world): le garde-fou paie sa place des le premier commit."
   }
 ]
