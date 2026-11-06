@@ -97,6 +97,12 @@ type MPV struct {
 	VolumeChanged func(pct float64)
 	// MuteChanged fires when the stream mute state (ao-mute) changes.
 	MuteChanged func(mute bool)
+	// StreamEnded fires when the loaded stream died under us: an END_FILE
+	// whose reason is EOF or ERROR. A user-driven stop (a new loadfile, Stop,
+	// teardown) never fires it. This is the player admitting silence: the
+	// playing flag was write-only before, so a dead icecast stream left the
+	// UI claiming playback over a frozen tray glyph. Set before Initialize.
+	StreamEnded func()
 	// PlaybackRestarted fires when playback (re)starts, i.e. when the audio
 	// output exists again. On a sink that remembers the per-app level
 	// (SinkRestoresVolume) this is the moment to READ ao-volume/ao-mute and
@@ -173,6 +179,14 @@ func (m *MPV) Initialize() error {
 	m.observe("core-idle", propCoreIdle, C.MPV_FORMAT_FLAG)
 	m.observe("ao-volume", propAoVolume, C.MPV_FORMAT_DOUBLE)
 	m.observe("ao-mute", propAoMute, C.MPV_FORMAT_FLAG)
+
+	// Seed the cached core-idle with the truth at this instant: nothing is
+	// loaded, so the core IS idle. The zero value (false = audio flowing) is
+	// a lie a reader could act on in the window before the observer's initial
+	// event lands (the animator's astats-failure counter trusts this cache).
+	m.mu.Lock()
+	m.coreIdle = true
+	m.mu.Unlock()
 
 	go m.eventLoop()
 	return nil
@@ -722,7 +736,22 @@ func (m *MPV) eventLoop() {
 
 		switch event.event_id {
 		case C.MPV_EVENT_END_FILE:
-			log.Println("player: end-file")
+			ef := (*C.mpv_event_end_file)(event.data)
+			reason := int(ef.reason)
+			log.Printf("player: end-file (reason %d)", reason)
+			if endFileReports(reason) {
+				// The stream died under us (eof on a live icecast relay, or
+				// an error). Clear the playing flag BEFORE notifying: the
+				// callback drives the UI, and a Play click racing it must
+				// see a stopped player, not the corpse's stale flag.
+				m.mu.Lock()
+				m.playing = false
+				cb := m.StreamEnded
+				m.mu.Unlock()
+				if cb != nil {
+					cb()
+				}
+			}
 		case C.MPV_EVENT_PLAYBACK_RESTART:
 			log.Println("player: playback-restart")
 			if m.PlaybackRestarted != nil {
@@ -732,6 +761,16 @@ func (m *MPV) eventLoop() {
 			m.onPropertyChange(event)
 		}
 	}
+}
+
+// endFileReports tells whether an END_FILE reason describes a stream that
+// died under us (eof or error), as opposed to one we dismissed ourselves:
+// stop (a new loadfile replaced the file, or MPV.Stop) and quit (teardown).
+// Only the dead ones clear the playing flag and fire StreamEnded; firing on
+// our own stops would make every Stop look like a crash and every quality
+// reload like a failure. Pure function, unit-tested.
+func endFileReports(reason int) bool {
+	return reason == int(C.MPV_END_FILE_REASON_EOF) || reason == int(C.MPV_END_FILE_REASON_ERROR)
 }
 
 func (m *MPV) onPropertyChange(event *C.mpv_event) {

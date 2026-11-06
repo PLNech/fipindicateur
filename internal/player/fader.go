@@ -52,6 +52,11 @@ type Fader struct {
 	VolumeChanged     func(pct float64)
 	MuteChanged       func(mute bool)
 	PlaybackRestarted func()
+	// StreamEnded fires when the current handle's stream died under us (see
+	// MPV.StreamEnded), or when a crossfade's incoming never produced audio
+	// within its wait budget: both mean silence the UI must not claim as
+	// playback. The UI resyncs to paused; play can then retry the station.
+	StreamEnded func()
 }
 
 // fade is one in-flight crossfade. cancel is closed (once) to request early
@@ -194,6 +199,15 @@ func (f *Fader) newHandle(initialVolume *int) *MPV {
 		}
 	}
 	m.PlaybackRestarted = func() { f.onHandlePlaybackRestart(m) }
+	m.StreamEnded = func() {
+		f.mu.Lock()
+		fire := m == f.current
+		cb := f.StreamEnded
+		f.mu.Unlock()
+		if fire && cb != nil {
+			cb()
+		}
+	}
 	return m
 }
 
@@ -359,7 +373,24 @@ func (f *Fader) fadeLoop(fd *fade, incoming, outgoing *MPV, restart <-chan struc
 		finish("cancelled while waiting for incoming audio")
 		return
 	case <-time.After(fadeWaitTimeout):
-		finish(fmt.Sprintf("incoming did not start within %s, hard cut", fadeWaitTimeout))
+		// The incoming never produced audio: a dead URL or a wedged device.
+		// The old exit snapped the incoming to full over its silence and
+		// closed the audible outgoing: a hard cut to nothing, with the UI
+		// still claiming playback. Tear both down and report the death, so
+		// the UI resyncs to paused and play can retry the station. A newer
+		// zap (superseded) owns the story then: it reports or plays itself.
+		if !fd.superseded {
+			incoming.Stop() // never produced audio; just drop it
+			outgoing.Close()
+			f.clearActive(fd)
+			log.Printf("player: crossfade: incoming did not start within %s, playback stopped", fadeWaitTimeout)
+			f.mu.Lock()
+			cb := f.StreamEnded
+			f.mu.Unlock()
+			if cb != nil {
+				cb()
+			}
+		}
 		return
 	}
 
@@ -399,10 +430,17 @@ func (f *Fader) clearActive(fd *fade) {
 	f.mu.Unlock()
 }
 
-// cancelFade requests cancellation of any running fade and blocks until its
-// goroutine has finished cleaning up (outgoing closed; incoming snapped to full
-// unless supersede, see fade.superseded). Safe to call with no fade active and
-// safe under concurrent callers.
+// fadeCancelWait bounds how long cancelFade waits for the fade goroutine to
+// drain (the outgoing's Close can take a beat on a wedged handle). Past the
+// bound the caller proceeds: the fade's cleanup is idempotent where it
+// matters (clearActive checks f.active, the volume writes land on handles
+// nobody reads), and a hung mpv teardown must not hang the tray goroutine.
+const fadeCancelWait = 2 * time.Second
+
+// cancelFade requests cancellation of any running fade and waits (bounded by
+// fadeCancelWait) for its goroutine to finish cleaning up (outgoing closed;
+// incoming snapped to full unless supersede, see fade.superseded). Safe to
+// call with no fade active and safe under concurrent callers.
 func (f *Fader) cancelFade(supersede bool) {
 	f.mu.Lock()
 	fd := f.active
@@ -411,7 +449,11 @@ func (f *Fader) cancelFade(supersede bool) {
 		return
 	}
 	fd.requestCancel(supersede)
-	<-fd.done
+	select {
+	case <-fd.done:
+	case <-time.After(fadeCancelWait):
+		log.Printf("player: crossfade: cancel did not settle within %s, proceeding", fadeCancelWait)
+	}
 }
 
 // Stop cancels any fade and stops the current handle.
