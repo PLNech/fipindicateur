@@ -54,6 +54,32 @@ var All = []Station{
 	{Key: "cultes", Slug: "fipcultes", Display: "Cultes", MetaID: 0, Color: "#ffd700"},
 }
 
+// wheelOrder is the zap cycle as an editorial circle: genres chained by
+// musical affinity in adjacent pairs (guitar, electric beats, Caribbean and
+// Africa, black-music roots, current pop, French repertoire), with FIP at
+// the seam where the two halves meet. Each adjacency narrates itself:
+// Metal-Electro (the loud electric extremes), Hip-Hop-Reggae (sound systems,
+// dancehall), Monde-Jazz (planetary improvisation), Groove-Pop (soul inside
+// pop), Nouveautes-Sacre francais (today's French scene), Cultes-FIP (the
+// house repertoire of film music and standards). All stays the canonical
+// catalogue order (MetaIDs, colours, storage); the wheel only shapes
+// navigation. Future refinement: re-fit the neighbourhood from observed
+// station_change transitions (internal/stats) once enough sessions are logged.
+var wheelOrder = []string{
+	"fip", "rock", "metal", "electro", "hiphop", "reggae", "world",
+	"jazz", "groove", "pop", "nouveautes", "sacrefrancais", "cultes",
+}
+
+// Wheel returns the stations in circular zap order (see wheelOrder). The
+// result is a fresh slice; callers may iterate and index into it freely.
+func Wheel() []Station {
+	out := make([]Station, 0, len(wheelOrder))
+	for _, k := range wheelOrder {
+		out = append(out, ByKey(k))
+	}
+	return out
+}
+
 // ByKey returns the station with the given key, or the default (fip) if not found.
 func ByKey(key string) Station {
 	for _, s := range All {

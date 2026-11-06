@@ -38,6 +38,28 @@ func TestStreamURL(t *testing.T) {
 	}
 }
 
+func TestWheelIsPermutation(t *testing.T) {
+	wheel := Wheel()
+	if len(wheel) != len(All) {
+		t.Fatalf("wheel has %d stations, All has %d", len(wheel), len(All))
+	}
+	seen := map[string]bool{}
+	for _, s := range wheel {
+		if seen[s.Key] {
+			t.Errorf("duplicate key %q in wheel", s.Key)
+		}
+		seen[s.Key] = true
+		if !Exists(s.Key) {
+			t.Errorf("wheel key %q not in All", s.Key)
+		}
+	}
+	for _, s := range All {
+		if !seen[s.Key] {
+			t.Errorf("station %q missing from wheel", s.Key)
+		}
+	}
+}
+
 func TestByKeyFallback(t *testing.T) {
 	if ByKey("does-not-exist").Key != "fip" {
 		t.Error("unknown key should fall back to fip")
