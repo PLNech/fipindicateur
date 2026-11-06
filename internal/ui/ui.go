@@ -896,6 +896,10 @@ func (a *App) setPlayingUI(playing bool) {
 	// cast session's own events (cast_start/stop, cast_pause/resume) are
 	// recorded at their sources; recording play/pause here too would feed the
 	// stats walk phantom pause/play edges around every zap on the device.
+	// The UI half follows the same local truth on purpose: « ▶ Play » and a
+	// paused glyph while the device plays, because the button's job there is
+	// to bring the sound back to this machine. The listening side of the app
+	// (notifications, history, stats) follows the ear through audible().
 	if a.castSession() == nil {
 		// Snapshot the station once: this runs on the mpv event goroutine too
 		// (a stream dying resyncs here), and startStation retunes a.current
@@ -926,7 +930,7 @@ func (a *App) setPlayingUI(playing bool) {
 		// zap, because only startStation fed the tint. The fade eases from
 		// the displayed tint, so re-aiming at the same color is invisible.
 		// setPlayingUI is local-only while playing (a cast start calls it
-		// with false), so a.current is the station being heard here.
+		// with false), so the station snapshot is what is being heard here.
 		a.anim.setTintTarget(icon.Legible(a.currentStation().Color, icon.PanelIsDark()), a.tintDuration())
 	} else {
 		a.anim.stop()

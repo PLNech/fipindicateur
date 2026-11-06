@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Un flux qui meurt (relais icecast, réseau) ne laisse plus l'app dans un état
+  zombie : l'icône animée se figeait sur ses tigettes, le menu gardait
+  « ⏸ Pause » et le premier clic sur Play « mettait en pause » un lecteur déjà
+  mort. La fin de flux (eof ou erreur, pas nos propres arrêts) resynchronise
+  maintenant l'état lecture ; pas de reconnexion automatique, le silence
+  s'annonce et vous décidez
+- Fondu enchaîné : si la station entrante ne démarre pas dans le délai
+  d'attente, la lecture s'arrête proprement et l'état se resynchronise, au
+  lieu de couper vers le silence en croyant jouer
+- Reprendre la lecture (bouton Play, touche média, « Cet ordinateur ») habille
+  à nouveau l'icône de la couleur de la station : la teinte ne suivait que les
+  zaps, une reprise dansait en gris neutre jusqu'au zap suivant
+- Une rafale de métadonnées de l'ancienne station ne traverse plus un zap :
+  l'écart est identifié et jeté au lieu de revendiquer un instant le label,
+  l'historique ou une notification
+- Le sous-menu Historique ne se remplit plus pendant une pause : il suivait
+  ce qui passait à l'antenne pendant que history.jsonl, lui, respectait
+  l'écoute réelle. Même contrat des deux côtés
+- Réactiver « Icône animée » quand elle s'est auto-désactivée cette session
+  prévient au lieu de cocher un réglage qui ne peut pas fonctionner
+- Sortie du fondu bornée : un mpv bloqué ne peut plus suspendre le clic du
+  tray plus de deux secondes
+
+### Changed
+- La configuration et la station courante se lisent et s'écrivent sous
+  verrou : l'écho de volume de mpv, les polls de métadonnées, l'animateur et
+  les clics du tray se marchaient dessus sans le savoir (les tests passent
+  sous `-race`)
+
 ## v0.8.0 · 2026-11-06 · La roue des genres et le tray natif macOS
 
 ### Removed
