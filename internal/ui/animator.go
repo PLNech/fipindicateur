@@ -126,24 +126,39 @@ func (an *animator) quantizedTint(now time.Time) color.NRGBA {
 
 // willRun reports whether start() would actually animate: used by the static
 // icon path to avoid repainting a placeholder the very next frame replaces
-// (the repaint read as a flash of the neutral glyph on every zap).
+// (the repaint read as a flash of the neutral glyph on every zap). The config
+// is read before an.mu: the animator never holds an.mu while taking the
+// config lock, so the two locks cannot order-invert against each other.
 func (an *animator) willRun() bool {
+	enabled := an.app.animatedIconEnabled()
 	an.mu.Lock()
 	defer an.mu.Unlock()
-	return !an.broken && an.app.cfg.AnimatedIcon
+	return !an.broken && enabled
+}
+
+// unavailable reports whether the animation was auto-disabled for this run
+// (astats proved unavailable while audio flowed). The animated-icon toggle
+// uses it to stay honest: a checkbox that checks itself over a dead
+// animation is a lie.
+func (an *animator) unavailable() bool {
+	an.mu.Lock()
+	defer an.mu.Unlock()
+	return an.broken
 }
 
 // start launches the animation loop if enabled, not already running, and not
-// auto-disabled. Idempotent.
+// auto-disabled. Idempotent. The config read stays outside an.mu (see
+// willRun).
 func (an *animator) start() {
+	enabled := an.app.animatedIconEnabled()
 	an.mu.Lock()
 	defer an.mu.Unlock()
-	if an.stopCh != nil || an.broken || !an.app.cfg.AnimatedIcon {
+	if an.stopCh != nil || an.broken || !enabled {
 		return
 	}
 	an.stopCh = make(chan struct{})
 	an.repaintCh = make(chan struct{}, 1)
-	go an.loop(an.stopCh)
+	go an.loop(an.stopCh, an.repaintCh)
 }
 
 // stop halts the animation loop. Idempotent. The caller decides which static
@@ -184,7 +199,7 @@ type frameKey struct {
 	tint color.NRGBA
 }
 
-func (an *animator) loop(stop chan struct{}) {
+func (an *animator) loop(stop, repaint <-chan struct{}) {
 	ticker := time.NewTicker(animInterval)
 	defer ticker.Stop()
 
@@ -199,7 +214,7 @@ func (an *animator) loop(stop chan struct{}) {
 		select {
 		case <-stop:
 			return
-		case <-an.repaintCh:
+		case <-repaint:
 			// The pixels under the frame identity changed (panel flip, cover
 			// cleared): lift the dedupe so the draw below really paints, and
 			// do it now rather than one tick late.
@@ -225,9 +240,15 @@ func (an *animator) loop(stop chan struct{}) {
 		} else {
 			errs++
 			if errs >= animMaxErrs {
+				// Retire the loop the same way stop() does (close then nil,
+				// under the lock): a bare nil left a start() racing the exit
+				// seeing a running loop that was already gone, and a request
+				// silently swallowed.
 				an.mu.Lock()
 				an.broken = true
+				close(an.stopCh)
 				an.stopCh = nil
+				an.repaintCh = nil
 				an.mu.Unlock()
 				log.Printf("ui: astats levels unavailable (%s), animated icon disabled for this run",
 					an.app.player.AudioLevelDiag())

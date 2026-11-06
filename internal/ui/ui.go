@@ -86,6 +86,15 @@ type App struct {
 	iconMu   sync.Mutex
 	lastIcon []byte
 
+	// cfgMu guards the mutable config fields against the goroutines that do
+	// not own them: mpv's event goroutine echoes volume/mute into the config,
+	// the animator reads AnimatedIcon every frame, metadata polls read the
+	// notification gates, all while tray click goroutines toggle the same
+	// fields. Writers hold the write lock around the field swap; readers
+	// snapshot under the read lock (or read through helpers). Save snapshots
+	// under the read lock too, so a concurrent toggle never tears a marshal.
+	cfgMu sync.RWMutex
+
 	// nowThrottle coalesces "now playing" label pushes to the tray so a burst
 	// of metadata updates cannot hammer the appindicator extension.
 	nowThrottle *throttle
@@ -910,11 +919,31 @@ func b2i(b bool) int {
 	return 0
 }
 
+// animatedIconEnabled reads the animated-icon setting for the animator's own
+// goroutines. The config carries no lock of its own (see cfgMu): this is the
+// one read that happens off the tray goroutines, every animation frame.
+func (a *App) animatedIconEnabled() bool {
+	a.cfgMu.RLock()
+	defer a.cfgMu.RUnlock()
+	return a.cfg.AnimatedIcon
+}
+
 func (a *App) toggleAnim() {
+	a.cfgMu.Lock()
 	a.cfg.AnimatedIcon = !a.cfg.AnimatedIcon
-	if a.cfg.AnimatedIcon {
+	on, timeout := a.cfg.AnimatedIcon, a.cfg.NotifTimeoutMs
+	a.cfgMu.Unlock()
+	if on {
 		a.mAnim.Check()
-		if a.player.IsPlaying() {
+		if a.anim.unavailable() {
+			// The animator auto-disabled itself earlier this run (astats
+			// proved unavailable while audio flowed). Checking the box over a
+			// dead animation is a lie; say so instead of pretending.
+			log.Printf("ui: icône animée demandée mais indisponible cette session (astats)")
+			if a.notif != nil {
+				a.notif.Notify("Icône animée", "Indisponible cette session : le niveau audio n'est pas lisible. Elle reviendra au prochain lancement.", "", timeout)
+			}
+		} else if a.player.IsPlaying() {
 			a.anim.start()
 		}
 	} else {
@@ -922,7 +951,7 @@ func (a *App) toggleAnim() {
 		a.anim.stop()
 		a.applyIconState(!a.player.IsPlaying())
 	}
-	a.rec.Record(events.Event{Kind: events.KindAnim, Value: b2i(a.cfg.AnimatedIcon)})
+	a.rec.Record(events.Event{Kind: events.KindAnim, Value: b2i(on)})
 	a.save()
 }
 
