@@ -97,7 +97,7 @@ func (a *App) ControlStatus() Status {
 		playing = a.player.IsPlaying()
 	}
 	return Status{
-		Station: a.current.Key,
+		Station: a.currentStation().Key,
 		Playing: playing,
 		Artist:  np.Artist,
 		Title:   np.Title,

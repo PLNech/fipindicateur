@@ -130,8 +130,11 @@ func (a *App) runVolumeSlider(start int) {
 	}
 	if ok {
 		// OK: state is already applied live; record exactly one event and persist.
-		a.cfg.Volume = clampPct(last)
-		a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: a.cfg.Volume})
+		final := clampPct(last)
+		a.cfgMu.Lock()
+		a.cfg.Volume = final
+		a.cfgMu.Unlock()
+		a.rec.Record(events.Event{Kind: events.KindVolume, Station: a.currentStation().Key, Value: final})
 		a.save()
 		a.applyVolumeUI()
 	} else {
@@ -146,7 +149,9 @@ func (a *App) runVolumeSlider(start int) {
 // guard (the same trick setVolume uses). Used for slider drag ticks and revert.
 func (a *App) applyVolumeLive(pct int) {
 	pct = clampPct(pct)
+	a.cfgMu.Lock()
 	a.cfg.Volume = pct
+	a.cfgMu.Unlock()
 	a.player.SetVolume(float64(pct))
 	if a.mpris != nil {
 		a.mpris.SetVolume(float64(pct) / 100)
@@ -161,7 +166,7 @@ func (a *App) openCrossfadeSlider() {
 		log.Printf("ui: a zenity dialog is already open, ignoring crossfade slider")
 		return
 	}
-	start := a.cfg.CrossfadeSecs
+	start := a.cfgSnapshot().CrossfadeSecs
 	go func() {
 		defer a.releaseDialog()
 		a.runCrossfadeSlider(start)

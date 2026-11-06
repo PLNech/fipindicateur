@@ -307,17 +307,17 @@ func (a *App) OnReady() {
 
 	a.buildUI()
 	if a.mpris != nil {
-		a.mpris.SetVolume(float64(a.cfg.Volume) / 100)
+		a.mpris.SetVolume(float64(a.cfgSnapshot().Volume) / 100)
 	}
 	// (icon already set at the top of OnReady, before the menu, to shrink the
 	// null-pixmap window at SNI registration.)
-	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.current.Key})
+	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.currentStation().Key})
 	// Autostart is not autoplay: launch tunes the antenna (station selected,
 	// icon, metadata polling) but only starts the stream when the user opted in
 	// with PlayOnStart. When off, startStation(_, false) leaves playback paused
 	// and the tray still indicates what is on air (metadata is API-driven, not
 	// stream-driven), so a first press of play resumes promptly.
-	a.startStation(a.current, a.cfg.PlayOnStart)
+	a.startStation(a.currentStation(), a.cfgSnapshot().PlayOnStart)
 
 	// One background device scan at startup so "Diffuser sur…" is populated
 	// by the time it is first opened. Runs entirely off the tray goroutine:
@@ -347,7 +347,7 @@ func (a *App) OnExit() {
 	a.castSess = nil
 	a.mu.Unlock()
 	if sess != nil {
-		a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+		a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.currentStation().Key})
 		done := make(chan struct{})
 		go func() { sess.Stop(); close(done) }()
 		select {
@@ -357,7 +357,7 @@ func (a *App) OnExit() {
 		}
 	}
 	a.flushVolumeRecord() // a drag's settled level must not die with the app
-	a.rec.Record(events.Event{Kind: events.KindAppStop, Station: a.current.Key})
+	a.rec.Record(events.Event{Kind: events.KindAppStop, Station: a.currentStation().Key})
 	a.rec.Close() // flushes the queued app_stop before we return
 	a.stopControlServer()
 	a.anim.stop()
@@ -389,10 +389,13 @@ func (a *App) startStation(s stations.Station, play bool) {
 	// (startCast captured its station at dial time). No-op when already
 	// casting: the cast-LOAD branch below re-tunes the device deliberately.
 	a.cancelPendingDial()
-	if a.current.Key != s.Key {
-		a.rec.Record(events.Event{Kind: events.KindStationChange, From: a.current.Key, To: s.Key})
+	prev := a.currentStation()
+	if prev.Key != s.Key {
+		a.rec.Record(events.Event{Kind: events.KindStationChange, From: prev.Key, To: s.Key})
 	}
+	a.mu.Lock()
 	a.current = s
+	a.mu.Unlock()
 
 	url := s.StreamURL(a.quality())
 	if sess := a.castSession(); sess != nil {
@@ -429,7 +432,7 @@ func (a *App) startStation(s stations.Station, play bool) {
 // hard cut (fondu 0) still eases the eye over a blink. One knob moves the
 // sound and the sight together.
 func (a *App) tintDuration() time.Duration {
-	d := time.Duration(a.cfg.CrossfadeSecs) * time.Second
+	d := time.Duration(a.cfgSnapshot().CrossfadeSecs) * time.Second
 	if d < minTintDur {
 		return minTintDur
 	}
@@ -437,7 +440,7 @@ func (a *App) tintDuration() time.Duration {
 }
 
 func (a *App) quality() stations.Quality {
-	if a.cfg.HiFi {
+	if a.cfgSnapshot().HiFi {
 		return stations.Hifi
 	}
 	return stations.Midfi
@@ -583,15 +586,18 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	// A programme starting takes precedence over the track banner for this tick:
 	// both share the one replace-in-place notification, so firing the track one
 	// too would instantly clobber the show announcement.
+	// Snapshot the notification gates: this runs on the metadata goroutine,
+	// while the Réglages toggles flip the same fields on click goroutines.
+	cfg := a.cfgSnapshot()
 	notifiedShow := false
-	if fresh && newConcept != "" && np.Show != nil && a.cfg.ShowNotifications {
+	if fresh && newConcept != "" && np.Show != nil && cfg.ShowNotifications {
 		a.notifyShow(*np.Show)
 		notifiedShow = true
 	}
-	if changed && a.cfg.Notifications && !notifiedShow {
+	if changed && cfg.Notifications && !notifiedShow {
 		a.notify(np)
 	}
-	if changed && a.cfg.HistoryFile {
+	if changed && cfg.HistoryFile {
 		a.appendHistFile(s, np)
 	}
 	// A trackless programme starting writes one show-start marker line to the
@@ -599,7 +605,7 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	// carries the show's display name into the report (identity lives in the
 	// histlog, never in the events log); the listening time itself is derived
 	// from the show_change boundaries, so the marker is identity, not duration.
-	if fresh && !hasTrack && np.Show != nil && a.cfg.HistoryFile {
+	if fresh && !hasTrack && np.Show != nil && cfg.HistoryFile {
 		a.appendHistFile(s, np)
 	}
 	// The programme boundary, recorded like the station-change Markov edge but
@@ -623,7 +629,7 @@ func (a *App) notifyShow(s metadata.Show) {
 	if s.Description != "" {
 		body = s.Description
 	}
-	a.notif.Notify(summary, body, "", a.cfg.NotifTimeoutMs)
+	a.notif.Notify(summary, body, "", a.cfgSnapshot().NotifTimeoutMs)
 }
 
 // refreshShowMenu updates the "émission en cours" item from the current show.
@@ -644,7 +650,7 @@ func (a *App) refreshShowMenu() {
 // The whole submenu hides when nothing is scheduled (e.g. on the webradios), so
 // there is never an empty "Calendrier" entry.
 func (a *App) refreshCalendarMenu() {
-	if !a.cfg.ShowCalendar {
+	if !a.cfgSnapshot().ShowCalendar {
 		return
 	}
 	a.mu.Lock()
@@ -729,7 +735,7 @@ func (a *App) recordTaste(verdict string) {
 	}
 	err := prefs.Append(a.prefsPath, prefs.Entry{
 		Verdict: verdict,
-		Station: a.current.Key,
+		Station: a.currentStation().Key,
 		Artist:  np.Artist,
 		Title:   np.Title,
 		Album:   np.Album,
@@ -741,7 +747,7 @@ func (a *App) recordTaste(verdict string) {
 		log.Printf("ui: prefs append: %v", err)
 		return
 	}
-	if a.cfg.Notifications && a.notif != nil {
+	if a.cfgSnapshot().Notifications && a.notif != nil {
 		summary := "C'est noté"
 		if verdict == prefs.Dislike {
 			summary = "Noté : pas pour vous"
@@ -755,7 +761,7 @@ func (a *App) recordTaste(verdict string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		iconPath := a.notif.FetchCover(ctx, np.CoverURL)
-		a.notif.Notify(summary, body, iconPath, a.cfg.NotifTimeoutMs)
+		a.notif.Notify(summary, body, iconPath, a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
@@ -764,6 +770,7 @@ func (a *App) recordTaste(verdict string) {
 // body. The station closes the line so a banner is never ambiguous after a
 // zap, and the listen link rides along for click-to-open on macOS.
 func (a *App) notify(np metadata.NowPlaying) {
+	timeout := a.cfgSnapshot().NotifTimeoutMs
 	body := ""
 	if np.Album != "" {
 		body = np.Album
@@ -777,7 +784,7 @@ func (a *App) notify(np metadata.NowPlaying) {
 		}
 		body += np.Label
 	}
-	if st := a.current.Display; st != "" {
+	if st := a.currentStation().Display; st != "" {
 		if body != "" {
 			body += " · "
 		}
@@ -786,7 +793,7 @@ func (a *App) notify(np metadata.NowPlaying) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	iconPath := a.notif.FetchCover(ctx, np.CoverURL)
-	a.notif.NotifyTrack(np.Title, np.Artist, body, iconPath, np.Link, a.cfg.NotifTimeoutMs)
+	a.notif.NotifyTrack(np.Title, np.Artist, body, iconPath, np.Link, timeout)
 }
 
 // pushHistoryLocked prepends np to the history ring (caller holds a.mu).
@@ -832,7 +839,7 @@ func (a *App) refreshHistoryMenu() {
 func (a *App) on(mi *menuItem, kind events.Kind, fn func()) {
 	go a.onClick(mi.ClickedCh, func() {
 		if kind != "" {
-			a.rec.Record(events.Event{Kind: kind, Station: a.current.Key})
+			a.rec.Record(events.Event{Kind: kind, Station: a.currentStation().Key})
 		}
 		fn()
 	})
@@ -860,7 +867,7 @@ func (a *App) togglePlay() {
 		a.player.Stop()
 		a.setPlayingUI(false)
 	} else {
-		a.player.Play(a.current.StreamURL(a.quality()))
+		a.player.Play(a.currentStation().StreamURL(a.quality()))
 		a.setPlayingUI(true)
 	}
 }
@@ -890,10 +897,14 @@ func (a *App) setPlayingUI(playing bool) {
 	// recorded at their sources; recording play/pause here too would feed the
 	// stats walk phantom pause/play edges around every zap on the device.
 	if a.castSession() == nil {
+		// Snapshot the station once: this runs on the mpv event goroutine too
+		// (a stream dying resyncs here), and startStation retunes a.current
+		// on click goroutines.
+		cur := a.currentStation()
 		if playing {
-			a.rec.Record(events.Event{Kind: events.KindPlay, Station: a.current.Key})
+			a.rec.Record(events.Event{Kind: events.KindPlay, Station: cur.Key})
 		} else {
-			a.rec.Record(events.Event{Kind: events.KindPause, Station: a.current.Key})
+			a.rec.Record(events.Event{Kind: events.KindPause, Station: cur.Key})
 		}
 	}
 	if playing {
@@ -916,7 +927,7 @@ func (a *App) setPlayingUI(playing bool) {
 		// the displayed tint, so re-aiming at the same color is invisible.
 		// setPlayingUI is local-only while playing (a cast start calls it
 		// with false), so a.current is the station being heard here.
-		a.anim.setTintTarget(icon.Legible(a.current.Color, icon.PanelIsDark()), a.tintDuration())
+		a.anim.setTintTarget(icon.Legible(a.currentStation().Color, icon.PanelIsDark()), a.tintDuration())
 	} else {
 		a.anim.stop()
 		a.applyIconState(true)
@@ -942,6 +953,25 @@ func (a *App) animatedIconEnabled() bool {
 	a.cfgMu.RLock()
 	defer a.cfgMu.RUnlock()
 	return a.cfg.AnimatedIcon
+}
+
+// cfgSnapshot returns a consistent copy of the config for readers that do not
+// own it: mpv's event goroutine (volume/mute echoes, stream death), the
+// metadata polls (notification gates), a cast dial, the animator. Copying a
+// plain struct under the read lock beats locking at every field touch.
+func (a *App) cfgSnapshot() config.Config {
+	a.cfgMu.RLock()
+	defer a.cfgMu.RUnlock()
+	return a.cfg
+}
+
+// currentStation snapshots the tuned station under a.mu. startStation
+// retunes it from tray click goroutines; the mpv event goroutine, the media
+// keys, the control socket and notification callbacks all read it.
+func (a *App) currentStation() stations.Station {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current
 }
 
 func (a *App) toggleAnim() {
@@ -973,7 +1003,7 @@ func (a *App) toggleAnim() {
 
 func (a *App) setStation(key string) {
 	s := stations.ByKey(key)
-	if s.Key == a.current.Key && a.player.IsPlaying() {
+	if s.Key == a.currentStation().Key && a.player.IsPlaying() {
 		return
 	}
 	for k, it := range a.stationMI {
@@ -983,15 +1013,17 @@ func (a *App) setStation(key string) {
 			it.Uncheck()
 		}
 	}
+	a.cfgMu.Lock()
 	a.cfg.Station = key
+	a.cfgMu.Unlock()
 	a.save()
 	// A zap confirms itself, whatever drove it (menu, hardware next/previous,
 	// `fip station`): from the keys there is no menu checkmark in sight, and
 	// the first track banner of the new station only lands after its metadata
 	// poll, or never during an émission. The banner rides the same
 	// replace-in-place channel, so the arriving track metadata replaces it.
-	if a.cfg.Notifications && a.notif != nil {
-		a.notif.Notify(s.Display, "En écoute", "", a.cfg.NotifTimeoutMs)
+	if a.cfgSnapshot().Notifications && a.notif != nil {
+		a.notif.Notify(s.Display, "En écoute", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 	a.startStation(s, true)
 }
@@ -1005,8 +1037,9 @@ func (a *App) setStation(key string) {
 func (a *App) zapStation(dir int) {
 	wheel := stations.Wheel()
 	n := len(wheel)
+	cur := a.currentStation()
 	for i, s := range wheel {
-		if s.Key == a.current.Key {
+		if s.Key == cur.Key {
 			a.setStation(wheel[(i+dir+n)%n].Key)
 			return
 		}
@@ -1014,13 +1047,16 @@ func (a *App) zapStation(dir int) {
 }
 
 func (a *App) toggleHiFi() {
+	a.cfgMu.Lock()
 	a.cfg.HiFi = !a.cfg.HiFi
-	if a.cfg.HiFi {
+	on := a.cfg.HiFi
+	a.cfgMu.Unlock()
+	if on {
 		a.mHiFi.Check()
 	} else {
 		a.mHiFi.Uncheck()
 	}
-	a.rec.Record(events.Event{Kind: events.KindHiFi, Value: b2i(a.cfg.HiFi)})
+	a.rec.Record(events.Event{Kind: events.KindHiFi, Value: b2i(on)})
 	a.save()
 	// Reload the stream at the new quality if playing. Stop first so this is a
 	// hard cut, not a crossfade: it is the same station at a different bitrate,
@@ -1030,7 +1066,7 @@ func (a *App) toggleHiFi() {
 	if sess := a.castSession(); sess != nil {
 		// Casting: re-LOAD at the new quality on the device; local playback
 		// stays paused. Same off-goroutine rule as the startStation seam.
-		url := a.current.StreamURL(a.quality())
+		url := a.currentStation().StreamURL(a.quality())
 		ctype := a.castContentType()
 		title := castTitle(a.current)
 		go func() {
@@ -1040,41 +1076,50 @@ func (a *App) toggleHiFi() {
 		}()
 	} else if a.player.IsPlaying() {
 		a.player.Stop()
-		a.player.Play(a.current.StreamURL(a.quality()))
+		a.player.Play(a.currentStation().StreamURL(a.quality()))
 	}
 }
 
 func (a *App) toggleNotif() {
+	a.cfgMu.Lock()
 	a.cfg.Notifications = !a.cfg.Notifications
-	if a.cfg.Notifications {
+	on, timeout := a.cfg.Notifications, a.cfg.NotifTimeoutMs
+	a.cfgMu.Unlock()
+	if on {
 		a.mNotif.Check()
 		// The toggle confirms itself with a real banner: it exercises the
 		// whole path (permission prompt on first use, then delivery) so the
 		// user knows at once whether the plumbing works, without waiting for
 		// the next track change. Any other toggle in the menu shows state in
 		// place; this one is about an output the menu cannot show.
-		a.notif.Notify("Notifications activées", "C'est le chemin qu'emprunteront les morceaux, les émissions et les diffusions.", "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify("Notifications activées", "C'est le chemin qu'emprunteront les morceaux, les émissions et les diffusions.", "", timeout)
 	} else {
 		a.mNotif.Uncheck()
 	}
-	a.rec.Record(events.Event{Kind: events.KindNotif, Value: b2i(a.cfg.Notifications)})
+	a.rec.Record(events.Event{Kind: events.KindNotif, Value: b2i(on)})
 	a.save()
 }
 
 func (a *App) toggleShowNotif() {
+	a.cfgMu.Lock()
 	a.cfg.ShowNotifications = !a.cfg.ShowNotifications
-	if a.cfg.ShowNotifications {
+	on := a.cfg.ShowNotifications
+	a.cfgMu.Unlock()
+	if on {
 		a.mShowNotif.Check()
 	} else {
 		a.mShowNotif.Uncheck()
 	}
-	a.rec.Record(events.Event{Kind: events.KindShowNotif, Value: b2i(a.cfg.ShowNotifications)})
+	a.rec.Record(events.Event{Kind: events.KindShowNotif, Value: b2i(on)})
 	a.save()
 }
 
 func (a *App) toggleShowCalendar() {
+	a.cfgMu.Lock()
 	a.cfg.ShowCalendar = !a.cfg.ShowCalendar
-	if a.cfg.ShowCalendar {
+	on := a.cfg.ShowCalendar
+	a.cfgMu.Unlock()
+	if on {
 		a.mShowCalendar.Check()
 		a.mCalendar.Show()
 		a.refreshCalendarMenu()
@@ -1082,7 +1127,7 @@ func (a *App) toggleShowCalendar() {
 		a.mShowCalendar.Uncheck()
 		a.mCalendar.Hide()
 	}
-	a.rec.Record(events.Event{Kind: events.KindShowCalendar, Value: b2i(a.cfg.ShowCalendar)})
+	a.rec.Record(events.Event{Kind: events.KindShowCalendar, Value: b2i(on)})
 	a.save()
 }
 
@@ -1100,7 +1145,7 @@ func (a *App) recordVolume(pct int) {
 	a.volRecOnce.Do(func() {
 		a.volRec = &volCoalescer{min: volumeRecordMin, record: a.rec.Record}
 	})
-	a.volRec.submit(events.Event{Kind: events.KindVolume, Station: a.current.Key, Value: pct})
+	a.volRec.submit(events.Event{Kind: events.KindVolume, Station: a.currentStation().Key, Value: pct})
 }
 
 // flushVolumeRecord empties any pending coalesced volume record (exit path,
@@ -1141,7 +1186,7 @@ func (a *App) activeVolume() (int, bool) {
 		}
 		return clampPct(int(math.Round(v.Level * 100))), true
 	}
-	return a.cfg.Volume, true
+	return a.cfgSnapshot().Volume, true
 }
 
 // toggleActiveMute is setActiveVolume's sibling for the mute switch: the
@@ -1184,15 +1229,16 @@ func (a *App) applyVolumeUI() {
 			}
 			return
 		}
-		a.mVolume.SetTitle(volumeLabel(a.cfg.Volume))
+		cfg := a.cfgSnapshot()
+		a.mVolume.SetTitle(volumeLabel(cfg.Volume))
 		for pct, it := range a.volMI {
-			if pct == a.cfg.Volume {
+			if pct == cfg.Volume {
 				it.Check()
 			} else {
 				it.Uncheck()
 			}
 		}
-		if a.cfg.Mute {
+		if cfg.Mute {
 			a.mMute.Check()
 		} else {
 			a.mMute.Uncheck()
@@ -1221,8 +1267,13 @@ func (a *App) setVolume(pct int) { a.setLocalVolume(clampPct(pct), true) }
 // device. publish is false when the change CAME from MPRIS: re-publishing the
 // value the client just wrote is pointless and invites an echo.
 func (a *App) setLocalVolume(pct int, publish bool) {
-	if pct != a.cfg.Volume {
+	a.cfgMu.Lock()
+	changed := pct != a.cfg.Volume
+	if changed {
 		a.cfg.Volume = pct
+	}
+	a.cfgMu.Unlock()
+	if changed {
 		a.recordVolume(pct)
 		a.save()
 		// ao-volume applies only while the AO is open; when it is not (e.g.
@@ -1237,10 +1288,13 @@ func (a *App) setLocalVolume(pct int, publish bool) {
 }
 
 func (a *App) toggleMute() {
+	a.cfgMu.Lock()
 	a.cfg.Mute = !a.cfg.Mute
-	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.current.Key, Value: b2i(a.cfg.Mute)})
+	mute := a.cfg.Mute
+	a.cfgMu.Unlock()
+	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.currentStation().Key, Value: b2i(mute)})
 	a.save()
-	a.player.SetMute(a.cfg.Mute)
+	a.player.SetMute(mute)
 	a.applyVolumeUI()
 }
 
@@ -1329,8 +1383,9 @@ func (a *App) reapplySavedVolume() {
 	if a.player == nil || player.SinkRestoresVolume() {
 		return
 	}
-	a.player.SetVolume(float64(a.cfg.Volume))
-	a.player.SetMute(a.cfg.Mute)
+	cfg := a.cfgSnapshot()
+	a.player.SetVolume(float64(cfg.Volume))
+	a.player.SetMute(cfg.Mute)
 }
 
 // onExternalVolume handles an ao-volume observer event: the PulseAudio stream
@@ -1343,10 +1398,15 @@ func (a *App) onExternalVolume(v float64) {
 		return
 	}
 	pct := clampPct(int(math.Round(v)))
-	if pct == a.cfg.Volume {
+	a.cfgMu.Lock()
+	changed := pct != a.cfg.Volume
+	if changed {
+		a.cfg.Volume = pct
+	}
+	a.cfgMu.Unlock()
+	if !changed {
 		return
 	}
-	a.cfg.Volume = pct
 	a.recordVolume(pct)
 	a.save()
 	a.applyVolumeUI()
@@ -1362,11 +1422,16 @@ func (a *App) onExternalMute(mute bool) {
 	if a.volumeSettling() {
 		return
 	}
-	if mute == a.cfg.Mute {
+	a.cfgMu.Lock()
+	changed := mute != a.cfg.Mute
+	if changed {
+		a.cfg.Mute = mute
+	}
+	a.cfgMu.Unlock()
+	if !changed {
 		return
 	}
-	a.cfg.Mute = mute
-	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.current.Key, Value: b2i(mute)})
+	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.currentStation().Key, Value: b2i(mute)})
 	a.save()
 	a.applyVolumeUI()
 }
@@ -1388,7 +1453,7 @@ func (a *App) SetVolumeFrac(v float64) {
 		a.setCastVolume(sess, pct)
 		return
 	}
-	if pct == a.cfg.Volume {
+	if pct == a.cfgSnapshot().Volume {
 		return
 	}
 	a.setLocalVolume(pct, false) // no publish back: the client already holds this value
@@ -1436,9 +1501,10 @@ func (a *App) applyCrossfadeUI() {
 	if a.mCrossfade == nil {
 		return
 	}
-	a.mCrossfade.SetTitle(crossfadeTitle(a.cfg.CrossfadeSecs, a.crossfadeMI == nil))
+	cfx := a.cfgSnapshot().CrossfadeSecs
+	a.mCrossfade.SetTitle(crossfadeTitle(cfx, a.crossfadeMI == nil))
 	for secs, it := range a.crossfadeMI {
-		if secs == a.cfg.CrossfadeSecs {
+		if secs == cfx {
 			it.Check()
 		} else {
 			it.Uncheck()
@@ -1457,8 +1523,10 @@ func (a *App) setCrossfade(secs int) {
 	if secs > 10 {
 		secs = 10
 	}
+	a.cfgMu.Lock()
 	a.cfg.CrossfadeSecs = secs
-	a.rec.Record(events.Event{Kind: events.KindCrossfade, Station: a.current.Key, Value: secs})
+	a.cfgMu.Unlock()
+	a.rec.Record(events.Event{Kind: events.KindCrossfade, Station: a.currentStation().Key, Value: secs})
 	a.save()
 	a.player.SetCrossfade(time.Duration(secs) * time.Second)
 	a.applyCrossfadeUI()
@@ -1486,8 +1554,9 @@ func ampPresetLabel(level int) string {
 
 // applyAmpUI syncs the amplification preset checkmarks with the current config.
 func (a *App) applyAmpUI() {
+	amp := a.cfgSnapshot().Amp
 	for level, it := range a.ampMI {
-		if level == a.cfg.Amp {
+		if level == amp {
 			it.Check()
 		} else {
 			it.Uncheck()
@@ -1503,16 +1572,21 @@ func (a *App) setAmp(level int) {
 	if level < 0 || level > 2 {
 		level = 0
 	}
+	a.cfgMu.Lock()
 	a.cfg.Amp = level
-	a.rec.Record(events.Event{Kind: events.KindAmp, Station: a.current.Key, Value: level})
+	a.cfgMu.Unlock()
+	a.rec.Record(events.Event{Kind: events.KindAmp, Station: a.currentStation().Key, Value: level})
 	a.save()
 	a.player.SetAmp(level)
 	a.applyAmpUI()
 }
 
 func (a *App) toggleHistFile() {
+	a.cfgMu.Lock()
 	a.cfg.HistoryFile = !a.cfg.HistoryFile
-	if a.cfg.HistoryFile {
+	on := a.cfg.HistoryFile
+	a.cfgMu.Unlock()
+	if on {
 		a.mHistFile.Check()
 	} else {
 		a.mHistFile.Uncheck()
@@ -1521,29 +1595,35 @@ func (a *App) toggleHistFile() {
 }
 
 func (a *App) toggleAutostart() {
+	a.cfgMu.Lock()
 	a.cfg.Autostart = !a.cfg.Autostart
-	if a.cfg.Autostart {
+	on := a.cfg.Autostart
+	a.cfgMu.Unlock()
+	if on {
 		a.mAuto.Check()
 	} else {
 		a.mAuto.Uncheck()
 	}
-	if err := config.SetAutostart(a.cfg.Autostart); err != nil {
+	if err := config.SetAutostart(on); err != nil {
 		log.Printf("ui: autostart: %v", err)
 	}
-	a.rec.Record(events.Event{Kind: events.KindAutostart, Value: b2i(a.cfg.Autostart)})
+	a.rec.Record(events.Event{Kind: events.KindAutostart, Value: b2i(on)})
 	a.save()
 }
 
 // togglePlayOnStart flips whether launch also starts the stream. It only
 // changes the next launch's behaviour; the current playback state is untouched.
 func (a *App) togglePlayOnStart() {
+	a.cfgMu.Lock()
 	a.cfg.PlayOnStart = !a.cfg.PlayOnStart
-	if a.cfg.PlayOnStart {
+	on := a.cfg.PlayOnStart
+	a.cfgMu.Unlock()
+	if on {
 		a.mPlayOnStart.Check()
 	} else {
 		a.mPlayOnStart.Uncheck()
 	}
-	a.rec.Record(events.Event{Kind: events.KindPlayOnStart, Value: b2i(a.cfg.PlayOnStart)})
+	a.rec.Record(events.Event{Kind: events.KindPlayOnStart, Value: b2i(on)})
 	a.save()
 }
 
@@ -1552,10 +1632,13 @@ func (a *App) togglePlayOnStart() {
 // mpv reinits the audio output live, so no stream reload. "auto" is stored as
 // an empty config value (mpv's default).
 func (a *App) setAudioDevice(name string) {
-	a.cfg.AudioDevice = name
+	a.cfgMu.Lock()
 	if name == "auto" {
 		a.cfg.AudioDevice = "" // store auto as empty, matching the config default
+	} else {
+		a.cfg.AudioDevice = name
 	}
+	a.cfgMu.Unlock()
 	a.save()
 	a.player.SetAudioDevice(name)
 	// Refresh checkmarks so only the chosen sink is ticked.
@@ -1580,7 +1663,7 @@ func (a *App) castSession() *cast.Session {
 // castContentType is the MIME type of the current stream quality, for the
 // device's LOAD request.
 func (a *App) castContentType() string {
-	if a.cfg.HiFi {
+	if a.cfgSnapshot().HiFi {
 		return "audio/aacp" // 192k AAC
 	}
 	return "audio/mpeg" // 128k MP3
@@ -1780,7 +1863,10 @@ const castLaunchRetryDelay = 2 * time.Second
 // this dial drops its result instead of grabbing the audio late.
 func (a *App) startCast(dev cast.Device, gen int) {
 	defer a.castDialDone(gen) // one dial at a time, whichever way this returns
-	station := a.current
+	// Snapshot the station off the tray goroutine: a zap retunes a.current
+	// concurrently, and this dial must LOAD what was clicked, not what is
+	// tuned by the time the receiver answers.
+	station := a.currentStation()
 	url := station.StreamURL(a.quality())
 	ctype := a.castContentType()
 
@@ -1838,7 +1924,7 @@ func (a *App) startCast(dev cast.Device, gen int) {
 	}
 	a.refreshCastMenu()
 	if a.cfg.Notifications && a.notif != nil {
-		a.notif.Notify("Diffusion en cours", "La station joue sur « "+dev.Name+" ».", "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify("Diffusion en cours", "La station joue sur « "+dev.Name+" ».", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
@@ -1888,10 +1974,10 @@ func (a *App) stopCasting(resume bool) {
 		return
 	}
 	go sess.Stop() // the network goodbye is best-effort, off the tray goroutine
-	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.currentStation().Key})
 	a.refreshCastMenu()
 	if resume {
-		a.player.Play(a.current.StreamURL(a.quality()))
+		a.player.Play(a.currentStation().StreamURL(a.quality()))
 		a.setPlayingUI(true)
 	}
 }
@@ -1905,7 +1991,7 @@ func (a *App) castFailed(dev cast.Device, err error) {
 	log.Printf("ui: cast: %s (%s:%d): %v", dev.Name, dev.Addr, dev.Port, err)
 	a.refreshCastMenu()
 	if a.notif != nil {
-		a.notif.Notify("Diffusion impossible", "Impossible de diffuser sur cet appareil. L'appareil a peut-être besoin de quelques secondes : réessayez.", "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify("Diffusion impossible", "Impossible de diffuser sur cet appareil. L'appareil a peut-être besoin de quelques secondes : réessayez.", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
@@ -1924,14 +2010,14 @@ func (a *App) onCastError(err error) {
 	}
 	log.Printf("ui: cast session lost: %v", err)
 	sess.Close()
-	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.current.Key})
+	a.rec.Record(events.Event{Kind: events.KindCastStop, Station: a.currentStation().Key})
 	// Nothing is audible anywhere now (the device died, local stayed paused):
 	// record the pause so the stats walk closes the session instead of
 	// believing the cast is still going, and paint the paused state.
 	a.setPlayingUI(false)
 	a.refreshCastMenu()
 	if a.notif != nil {
-		a.notif.Notify("Diffusion interrompue", "La connexion avec l'appareil a été perdue.", "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify("Diffusion interrompue", "La connexion avec l'appareil a été perdue.", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
@@ -2011,7 +2097,7 @@ func (a *App) toggleCastMuted(sess *cast.Session) {
 		log.Printf("ui: cast mute: %v", err)
 		return
 	}
-	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.current.Key, Value: b2i(muted)})
+	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.currentStation().Key, Value: b2i(muted)})
 }
 
 // --- statistics (opt-in listening analytics) ---
@@ -2021,13 +2107,16 @@ func (a *App) toggleCastMuted(sess *cast.Session) {
 // that keeps it (on the way on: after enabling; on the way off: before
 // disabling), so the toggle itself always lands in the log.
 func (a *App) toggleStats() {
+	a.cfgMu.Lock()
 	a.cfg.Stats = !a.cfg.Stats
-	if a.cfg.Stats {
+	on := a.cfg.Stats
+	a.cfgMu.Unlock()
+	if on {
 		a.mStats.Check()
 		a.rec.SetEnabled(true)
-		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.current.Key, Value: 1})
+		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.currentStation().Key, Value: 1})
 	} else {
-		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.current.Key, Value: 0})
+		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.currentStation().Key, Value: 0})
 		a.mStats.Uncheck()
 		a.rec.SetEnabled(false)
 	}
@@ -2099,7 +2188,7 @@ func (a *App) clearStatsData() {
 		return
 	}
 	if a.notif != nil {
-		a.notif.Notify("Statistiques effacées", "Le journal events.jsonl a été supprimé.", "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify("Statistiques effacées", "Le journal events.jsonl a été supprimé.", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
@@ -2153,12 +2242,12 @@ func (a *App) clearPrefsData() {
 		log.Printf("ui: prefs clear: %v", err)
 		return
 	}
-	a.rec.Record(events.Event{Kind: events.KindPrefsClear, Station: a.current.Key})
+	a.rec.Record(events.Event{Kind: events.KindPrefsClear, Station: a.currentStation().Key})
 	// The like/dislike menu items carry no cached verdict state (they only toggle
 	// enabled once a track is known), so there is nothing on them to reset after
 	// a delete. They stay enabled: you can still record a fresh verdict.
-	if a.cfg.Notifications && a.notif != nil {
-		a.notif.Notify("Goûts effacés", "Le journal prefs.jsonl a été supprimé.", "", a.cfg.NotifTimeoutMs)
+	if a.cfgSnapshot().Notifications && a.notif != nil {
+		a.notif.Notify("Goûts effacés", "Le journal prefs.jsonl a été supprimé.", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
@@ -2221,20 +2310,23 @@ func (a *App) runUpdateCheck(startup bool) {
 
 func (a *App) notifyUpdate(summary, body string) {
 	if a.notif != nil {
-		a.notif.Notify(summary, body, "", a.cfg.NotifTimeoutMs)
+		a.notif.Notify(summary, body, "", a.cfgSnapshot().NotifTimeoutMs)
 		return
 	}
 	log.Printf("ui: update: %s - %s", summary, body)
 }
 
 func (a *App) toggleUpdateStartup() {
+	a.cfgMu.Lock()
 	a.cfg.UpdateStartup = !a.cfg.UpdateStartup
-	if a.cfg.UpdateStartup {
+	on := a.cfg.UpdateStartup
+	a.cfgMu.Unlock()
+	if on {
 		a.mUpdateStartup.Check()
 	} else {
 		a.mUpdateStartup.Uncheck()
 	}
-	a.rec.Record(events.Event{Kind: events.KindUpdateStartup, Value: b2i(a.cfg.UpdateStartup)})
+	a.rec.Record(events.Event{Kind: events.KindUpdateStartup, Value: b2i(on)})
 	a.save()
 }
 
@@ -2296,7 +2388,7 @@ func (a *App) applyIcon() { a.setIcon(icon.Rest(false, color.NRGBA{})) }
 func (a *App) applyIconState(paused bool) {
 	var tint color.NRGBA
 	if !paused {
-		tint = icon.Legible(a.current.Color, icon.PanelIsDark())
+		tint = icon.Legible(a.currentStation().Color, icon.PanelIsDark())
 	}
 	a.setIcon(icon.Rest(paused, tint))
 }
@@ -2338,7 +2430,12 @@ func (a *App) setIcon(b []byte) {
 }
 
 func (a *App) save() {
-	if err := a.cfg.Save(); err != nil {
+	// Snapshot under cfgMu: Save marshals the whole struct, and a toggle
+	// flipping a field mid-marshal would tear the JSON.
+	a.cfgMu.RLock()
+	err := a.cfg.Save()
+	a.cfgMu.RUnlock()
+	if err != nil {
 		log.Printf("ui: save config: %v", err)
 	}
 }
@@ -2365,7 +2462,7 @@ func (a *App) Play() {
 		return
 	}
 	a.cancelPendingDial() // play here: a dial in flight must not answer later
-	a.player.Play(a.current.StreamURL(a.quality()))
+	a.player.Play(a.currentStation().StreamURL(a.quality()))
 	a.setPlayingUI(true)
 }
 
