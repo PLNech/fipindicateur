@@ -420,7 +420,7 @@ func (a *App) startStation(s stations.Station, play bool) {
 	updates := a.meta.Watch(ctx, s)
 	go func() {
 		for np := range updates {
-			a.onNowPlaying(np)
+			a.onNowPlaying(s, np)
 		}
 	}()
 }
@@ -451,8 +451,12 @@ func showConcept(s *metadata.Show) string {
 	return s.ConceptUUID
 }
 
-// onNowPlaying handles a metadata update.
-func (a *App) onNowPlaying(np metadata.NowPlaying) {
+// onNowPlaying handles a metadata update from station s's watcher. The
+// station rides along because the watcher's channel can outlive the zap that
+// cancelled it: one update already in flight (the channel buffers one) would
+// otherwise land after the new watcher started and briefly claim the label,
+// the history and a notification for a station we already left.
+func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	// A trackless update can still carry the programme on air: some émissions
 	// (continuous mixes like "Fip Tape") expose no per-song grain in livemeta,
 	// and the Radio France streams send no inline ICY titles either, so during
@@ -463,6 +467,12 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		return
 	}
 	a.mu.Lock()
+	if s.Key != a.current.Key {
+		// Stale: a zap cancelled this watcher mid-flight. The new station's
+		// watcher owns the label now.
+		a.mu.Unlock()
+		return
+	}
 	changed := hasTrack && (np.Artist != a.now.Artist || np.Title != a.now.Title)
 	// trackCleared: a show-only update replaced a known track (the programme
 	// took over the antenna), so the stale track must leave the label.
@@ -495,7 +505,7 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		if np.Artist != "" {
 			label = np.Artist + " · " + np.Title
 		}
-		log.Printf("now playing [%s]: %s", a.current.Key, label)
+		log.Printf("now playing [%s]: %s", s.Key, label)
 
 		// Dedupe + debounce the label push (SetTitle + SetTooltip) so a burst
 		// cannot hammer the appindicator extension.
@@ -525,7 +535,7 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		// No track is known during this programme: the show title becomes the
 		// tray label, better than a stale track from before it started. Same
 		// throttle as the track label, so the anti-churn contract holds.
-		log.Printf("on air [%s]: %s (émission sans titrage)", a.current.Key, np.Show.Title)
+		log.Printf("on air [%s]: %s (émission sans titrage)", s.Key, np.Show.Title)
 		a.nowThrottle.update(np.Show.Title)
 		a.setNowArt(np)       // trackless: np carries no cover, this clears the icon
 		a.mVoirLink.Disable() // no track, no track link
@@ -578,7 +588,7 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 		a.notify(np)
 	}
 	if changed && a.cfg.HistoryFile {
-		a.appendHistFile(np)
+		a.appendHistFile(s, np)
 	}
 	// A trackless programme starting writes one show-start marker line to the
 	// histlog: a bare show/show_concept tag with no artist and no title. It
@@ -586,7 +596,7 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	// histlog, never in the events log); the listening time itself is derived
 	// from the show_change boundaries, so the marker is identity, not duration.
 	if fresh && !hasTrack && np.Show != nil && a.cfg.HistoryFile {
-		a.appendHistFile(np)
+		a.appendHistFile(s, np)
 	}
 	// The programme boundary, recorded like the station-change Markov edge but
 	// keyed on the stable conceptUuid. Ambient (FIP drives it, not the user), so
@@ -594,7 +604,7 @@ func (a *App) onNowPlaying(np metadata.NowPlaying) {
 	// these boundaries with the playback segments to accumulate time per show,
 	// which is the only measure during émissions without a tracklist.
 	if fresh {
-		a.rec.Record(events.Event{Kind: events.KindShowChange, Station: a.current.Key, From: prevWitnessed, To: newConcept})
+		a.rec.Record(events.Event{Kind: events.KindShowChange, Station: s.Key, From: prevWitnessed, To: newConcept})
 	}
 }
 
@@ -659,8 +669,10 @@ func (a *App) refreshCalendarMenu() {
 }
 
 // appendHistFile writes the track to the local jsonl log. Best-effort: any
-// error is logged once and never affects playback.
-func (a *App) appendHistFile(np metadata.NowPlaying) {
+// error is logged once and never affects playback. The station rides in from
+// the metadata update: a stale update from the previous zap is dropped before
+// this runs, and a.current could already name the new station.
+func (a *App) appendHistFile(s stations.Station, np metadata.NowPlaying) {
 	if a.histPath == "" {
 		p, err := histlog.DefaultPath()
 		if err != nil {
@@ -670,7 +682,7 @@ func (a *App) appendHistFile(np metadata.NowPlaying) {
 		a.histPath = p
 	}
 	entry := histlog.Entry{
-		Station: a.current.Key,
+		Station: s.Key,
 		Artist:  np.Artist,
 		Title:   np.Title,
 		Album:   np.Album,
