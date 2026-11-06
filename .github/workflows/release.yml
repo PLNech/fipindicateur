@@ -132,7 +132,7 @@ jobs:
     env:
       # Pinned libmpv dev drop (reproducibility beats freshness). Bump this one
       # line to move to a newer shinchiro build; the cache key follows the URL.
-      MPV_DEV_URL: https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z
+      MPV_DEV_URL: https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261106/mpv-dev-x86_64-20261106-git-9028187538.7z
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -150,7 +150,7 @@ jobs:
         if: steps.mpv-dev.outputs.cache-hit != 'true'
         run: |
           mkdir -p build/windows/mpv-dev
-          curl -L -o mpv-dev.7z "$MPV_DEV_URL"
+          curl -fL --retry 3 -o mpv-dev.7z "$MPV_DEV_URL"
           7z x mpv-dev.7z -obuild/windows/mpv-dev
       - name: Cross-build Windows binary
         run: make windows VERSION=${GITHUB_REF_NAME}
