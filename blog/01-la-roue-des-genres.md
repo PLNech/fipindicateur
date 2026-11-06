@@ -43,7 +43,7 @@
 Sacré Fr      Metal
 Nouveautés    Electro
    Pop      Hip-Hop
-    Groove — Reggae
+    Groove--Reggae
       Jazz    Monde
         (→ Jazz)
 ```

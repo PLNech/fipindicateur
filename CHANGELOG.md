@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.0 · 2026-11-06 · La roue des genres et le tray natif macOS
 
 ### Removed
 - Le panneau webkit2gtk disparaît pour de bon : le paquet `internal/drawer`
