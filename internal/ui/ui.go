@@ -230,6 +230,11 @@ func (a *App) OnReady() {
 		// On restart we READ the stream state and sync the UI. PulseAudio
 		// owns volume persistence; we never restore a stored level onto it.
 		PlaybackRestarted: a.onPlaybackRestart,
+		// A stream that dies under us (icecast drop, dead relay) resyncs the
+		// UI to paused instead of leaving a frozen glyph and a lying menu.
+		// No auto-reconnect: silence is announced, the user decides (a play
+		// click rejoins the live edge; a zap moves on).
+		StreamEnded: a.onStreamEnded,
 	}
 	if err := a.player.Initialize(); err != nil {
 		log.Fatalf("ui: player init: %v", err)
@@ -1255,6 +1260,20 @@ func (a *App) onPlaybackRestart() {
 			a.onExternalMute(mu)
 		}
 	})
+}
+
+// onStreamEnded handles the player admitting silence: the loaded stream died
+// under us (eof or error on the current handle, or a crossfade's incoming
+// that never started). While casting, the local handle is stopped by design
+// and the ear is on the device, so a local stream death there is noise, not
+// news. Otherwise the play state MUST resync: this is the path that used to
+// leave a frozen glyph, a lying menu and a play button needing two presses.
+func (a *App) onStreamEnded() {
+	if a.castSession() != nil {
+		return
+	}
+	log.Printf("ui: stream ended, resyncing to paused")
+	a.setPlayingUI(false)
 }
 
 // reapplySavedVolume writes the cached level back onto the local stream, on
