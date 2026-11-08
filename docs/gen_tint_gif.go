@@ -24,6 +24,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 
 	"github.com/PLNech/fipindicateur/internal/icon"
 	"github.com/PLNech/fipindicateur/internal/stations"
@@ -143,28 +145,28 @@ func writeGIF(path string) error {
 	rock := icon.Legible("#f93446", true) // Rock brand ink, made legible on dark
 	jazz := icon.Legible("#13898d", true) // Jazz brand ink, made legible on dark
 
-	// Shared palette: index 0 is the panel background, then one entry per
-	// quantized crossfade step (so every frame's ink is an exact palette match).
-	pal := color.Palette{panelBG}
 	stepColor := make([]color.NRGBA, tintSteps)
 	for step := 0; step < tintSteps; step++ {
 		qt := float64(step) / float64(tintSteps-1)
-		c := icon.Lerp(rock, jazz, smoothstep(qt))
-		stepColor[step] = c
-		pal = append(pal, c)
+		stepColor[step] = icon.Lerp(rock, jazz, smoothstep(qt))
 	}
-	stepIndex := func(step int) uint8 { return uint8(1 + step) } // palette index
 
 	holdFrames := holdSec * animFPS
 	crossFrames := crossfadeSec * animFPS
 
-	g := &gif.GIF{LoopCount: 0} // 0 == loop forever
+	// Pass 1: flatten every frame over the panel background and collect the
+	// exact colors used, so the palette can carry them all losslessly.
 	frame := 0
+	var flats []*image.NRGBA
+	used := map[color.NRGBA]bool{}
 	add := func(step int) {
-		p := composite(decodeBars(barsAt(frame), stepColor[step]), stepIndex(step), pal)
-		g.Image = append(g.Image, p)
-		g.Delay = append(g.Delay, 100/animFPS) // centiseconds per frame
-		g.Disposal = append(g.Disposal, gif.DisposalNone)
+		flat := flatten(decodeBars(barsAt(frame), stepColor[step]))
+		flats = append(flats, flat)
+		for by := 0; by < base; by++ {
+			for bx := 0; bx < base; bx++ {
+				used[flat.NRGBAAt(bx, by)] = true
+			}
+		}
 		frame++
 	}
 
@@ -180,6 +182,43 @@ func writeGIF(path string) error {
 		add(tintSteps - 1)
 	}
 
+	// Shared palette: index 0 is the panel background, then one entry per
+	// quantized crossfade step (so every frame's ink is an exact palette
+	// match), then the remaining flattened colors (the halo rim's blends).
+	pal := color.Palette{panelBG}
+	for _, c := range stepColor {
+		pal = append(pal, c)
+	}
+	var extra []color.NRGBA
+	for c := range used {
+		if c != panelBG && !slices.Contains(stepColor, c) {
+			extra = append(extra, c)
+		}
+	}
+	sort.Slice(extra, func(i, j int) bool {
+		a, b := extra[i], extra[j]
+		return a.R < b.R || (a.R == b.R && (a.G < b.G || (a.G == b.G && a.B < b.B)))
+	})
+	for _, c := range extra {
+		pal = append(pal, c)
+	}
+
+	// Pass 2: palettize. Every flattened color is in the palette, so Index
+	// reproduces the frame exactly.
+	g := &gif.GIF{LoopCount: 0} // 0 == loop forever
+	canvas := (base + 2*pad) * scale
+	for _, flat := range flats {
+		p := image.NewPaletted(image.Rect(0, 0, canvas, canvas), pal)
+		for by := 0; by < base; by++ {
+			for bx := 0; bx < base; bx++ {
+				blit(p, (pad+bx)*scale, (pad+by)*scale, flat.NRGBAAt(bx, by), pal)
+			}
+		}
+		g.Image = append(g.Image, p)
+		g.Delay = append(g.Delay, 100/animFPS) // centiseconds per frame
+		g.Disposal = append(g.Disposal, gif.DisposalNone)
+	}
+
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -192,25 +231,35 @@ func writeGIF(path string) error {
 	return nil
 }
 
-// composite paints one glyph frame onto the padded, upscaled paletted canvas:
-// background everywhere, ink pixels (alpha > 0) become inkIdx.
-func composite(bars *image.NRGBA, inkIdx uint8, pal color.Palette) *image.Paletted {
-	canvas := base + 2*pad
-	out := image.NewPaletted(image.Rect(0, 0, canvas*scale, canvas*scale), pal)
-	// out is zero-filled == palette index 0 == panel background.
+// flatten blends one glyph frame over the panel background: the exact pixels
+// the tray would draw, ink and phantom rim alike (the rim is a real pixel
+// color at partial alpha, not the ink).
+func flatten(bars *image.NRGBA) *image.NRGBA {
+	out := image.NewNRGBA(image.Rect(0, 0, base, base))
 	for by := 0; by < base; by++ {
 		for bx := 0; bx < base; bx++ {
-			if bars.NRGBAAt(bx, by).A == 0 {
-				continue
+			px := bars.NRGBAAt(bx, by)
+			switch {
+			case px.A == 0:
+				px = panelBG
+			case px.A != 0xFF:
+				a := float64(px.A) / 255
+				px = color.NRGBA{
+					R: uint8(float64(px.R)*a + float64(panelBG.R)*(1-a)),
+					G: uint8(float64(px.G)*a + float64(panelBG.G)*(1-a)),
+					B: uint8(float64(px.B)*a + float64(panelBG.B)*(1-a)),
+					A: 0xFF,
+				}
 			}
-			blit(out, (pad+bx)*scale, (pad+by)*scale, inkIdx)
+			out.SetNRGBA(bx, by, px)
 		}
 	}
 	return out
 }
 
-// blit fills a scale x scale block with the given palette index.
-func blit(p *image.Paletted, x0, y0 int, idx uint8) {
+// blit fills a scale x scale block with the given color's palette index.
+func blit(p *image.Paletted, x0, y0 int, c color.NRGBA, pal color.Palette) {
+	idx := uint8(pal.Index(c))
 	for dy := 0; dy < scale; dy++ {
 		for dx := 0; dx < scale; dx++ {
 			p.SetColorIndex(x0+dx, y0+dy, idx)
@@ -232,16 +281,12 @@ func writeStrip(path string) error {
 
 	for n, s := range stations.All {
 		tint := icon.Legible(s.Color, true)
-		bars := decodeBars(pose, tint)
+		flat := flatten(decodeBars(pose, tint))
 		ox := (gap + n*(tile+gap)) * scale
 		oy := gap * scale
 		for by := 0; by < base; by++ {
 			for bx := 0; bx < base; bx++ {
-				px := bars.NRGBAAt(bx, by)
-				if px.A == 0 {
-					continue
-				}
-				blitNRGBA(out, ox+bx*scale, oy+by*scale, tint)
+				blitNRGBA(out, ox+bx*scale, oy+by*scale, flat.NRGBAAt(bx, by))
 			}
 		}
 	}

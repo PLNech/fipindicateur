@@ -27,6 +27,15 @@
   tray plus de deux secondes
 
 ### Changed
+- Les couleurs de station sur le tray ne se délavent plus. L'encre garde
+  désormais la saturation maximale de sa teinte (le teal Jazz passe de
+  S=0,76 terne à un teal franc, le hip-hop d'un gris-mauve S=0,15 à un
+  violet assumé) et seule la luminosité bouge, juste assez pour tenir le
+  contraste 3:1 sur le panel. L'ancien mélange vers le blanc atteignait le
+  même ratio en transformant les marques en pastels
+- Le liseré fantôme autour du glyphe devient noir sous une encre colorée (il
+  creuse le fond au lieu de l'éclaircir, et la couleur paraît plus dense) ;
+  le liseré blanc accordé aux encres neutres ne bouge pas
 - La configuration et la station courante se lisent et s'écrivent sous
   verrou : l'écho de volume de mpv, les polls de métadonnées, l'animateur et
   les clics du tray se marchaient dessus sans le savoir (les tests passent
