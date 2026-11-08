@@ -71,6 +71,27 @@ func TestLegibleContrast(t *testing.T) {
 	}
 }
 
+// TestLegibleStaysVivid pins the saturation contract: Legible boosts every
+// chromatic brand ink to (near) full HSL saturation on both panels. The old
+// toward-white mixing hit the same 3:1 ratio but landed the timid brands in
+// pastels (hip-hop at S=0.15): legibility must never again be bought with
+// the color itself.
+func TestLegibleStaysVivid(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		for _, s := range stations.All {
+			_, brandS, _ := hslOf(ParseHex(s.Color))
+			if brandS < 0.3 {
+				continue // achromatic input: nothing to boost
+			}
+			_, gotS, _ := hslOf(Legible(s.Color, dark))
+			if gotS < 0.9 {
+				t.Errorf("station %q: Legible saturation %.2f < 0.9 (brand %.2f, dark=%v)",
+					s.Key, gotS, brandS, dark)
+			}
+		}
+	}
+}
+
 // TestRetint pins the prototype-branding pass: every non-transparent pixel
 // moves toward the brand hue by the asked fraction (alpha preserved),
 // transparent pixels stay transparent, and a non-PNG input comes back
