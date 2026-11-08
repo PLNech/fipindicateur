@@ -162,3 +162,4 @@
     "learnings": "L'icone qui 's'arrete' etait un etat zombie: END_FILE ne faisait que journaliser, playing restait true, IsPlaying mentait, le menu aussi. Le fix structurant est un callback StreamEnded filtre par raison (eof/erreur, pas nos stop) + resync via setPlayingUI; tout le reste (double clic play, station morte inclicable) tombe gratis. Les 'autres bugs d'etat' etaient surtout des races sans verrou: config ecrite depuis le goroutine mpv, lue par l'animateur, retournee par les clics. Pattern qui tient: snapshot (cfgSnapshot/currentStation) plutot que verrouiller chaque acces. -race sur les paquets touches, pas partout: c'est lui qui fera foi au prochain cycle."
   }
 ]
+{"ts":"2026-11-08","task":"tray icon colors: Legible keeps full HSL saturation (lightness-only nudge for 3:1), black phantom rim under colored ink, white rim kept for neutral inks; docs strip/gif now composite the real rim pixels","commit":"cdadbac"}
