@@ -84,8 +84,8 @@ static void placeStatusItemDefault(void) {
 
 @end
 
-// TraySliderView is the custom view behind the Volume submenu's first entry:
-// an NSSlider with a little padding. A menu item's custom view receives the
+// TraySliderView is the custom view behind the top-level slider item: an
+// NSSlider with a little padding. A menu item's custom view receives the
 // mouse events during tracking (that is what NSMenuItem.view exists for),
 // which is how menu-bar audio apps host a live slider. Continuous: every drag
 // tick reports to Go, which applies the level and lets the events coalescer
@@ -339,24 +339,27 @@ static void placeStatusItemDefault(void) {
     }
 }
 
-// insertSlider hosts a slider item as the FIRST entry of the parent's
-// submenu: the volume slider lives at the top of the Volume submenu, above
-// the mute toggle and the preset checkboxes. The submenu is reached by tag
-// traversal (findItem), never by index, so a cast-list refresh cannot shift
-// it out from under us.
+// insertSlider hosts a slider item in the ROOT menu, immediately before the
+// anchor item (spec[0], its tag): the volume slider is a top-level entry, so
+// adjusting it is one click to open the menu and one drag, with no submenu
+// hop. The Volume submenu keeps the mute toggle and the preset checkboxes.
+// The anchor is found by tag, never by index, so a cast-list refresh cannot
+// shift the insertion point out from under us; a missing anchor appends at
+// the end rather than dropping the slider.
 - (void)insertSlider:(NSArray *)spec {
-    int parent = [spec[0] intValue];
+    int before = [spec[0] intValue];
     int sliderID = [spec[1] intValue];
     int value = [spec[2] intValue];
-    NSMenuItem *parentItem = [self findItem:parent inMenu:menu];
-    if (parentItem == nil || !parentItem.hasSubmenu) {
-        return;
-    }
     NSMenuItem *item = [[NSMenuItem alloc] init];
     item.title = @"";
     item.view = [[TraySliderView alloc] initWithID:sliderID value:value];
     item.tag = sliderID;
-    [parentItem.submenu insertItem:item atIndex:0];
+    NSUInteger idx = [menu indexOfItemWithTag:before];
+    if (idx == NSNotFound) {
+        [menu addItem:item];
+    } else {
+        [menu insertItem:item atIndex:idx];
+    }
 }
 
 - (void)setSliderState:(NSArray *)args {

@@ -10,7 +10,7 @@
 // separators, tooltips and hide/disable, with clicks delivered on each item's
 // ClickedCh. On top of the parity surface sit the two volume gestures: the
 // status item's scroll wheel (SetScrollHook, deltas folded into unit steps)
-// and the inline NSSlider hosted by a submenu's first entry (Item.InsertSlider).
+// and the inline NSSlider hosted as a top-level menu entry (InsertSlider).
 //
 // Threading: AppKit lives on the process main thread. cmd/fipindicateur pins
 // the main goroutine with runtime.LockOSThread before ui.Run, and Run blocks
@@ -46,7 +46,7 @@ extern void traySetItemTooltip(int itemID, char *tip);
 extern void traySetItemEnabled(int itemID, short enabled);
 extern void traySetItemChecked(int itemID, short checked);
 extern void traySetItemHidden(int itemID, short hidden);
-extern void trayInsertSlider(int parentID, int sliderID, int value);
+extern void trayInsertSlider(int beforeID, int sliderID, int value);
 extern void traySetSliderState(int sliderID, int value, short enabled);
 extern void trayAppearanceChanged(void);
 */
@@ -404,7 +404,7 @@ func trayScrollWheel(deltaY C.double, precise C.int) {
 // --- inline volume slider (M3) ---
 
 // Slider is an inline NSSlider hosted as a menu item's custom view, the
-// darwin edition of the volume control that lives inside the Volume submenu.
+// darwin edition of the volume control, at the top level of the tray menu.
 // User drags arrive on the onChange callback (one dedicated goroutine, latest
 // pending value wins: a fast drag applies the freshest level, never a stale
 // one, and never blocks the menu's tracking loop); SetValue moves the handle
@@ -426,18 +426,25 @@ type Slider struct {
 // that keeps a wheel notch from inventing a master-volume level.
 const sliderNeutral = 50
 
-// InsertSlider hosts a 0..100 NSSlider as the first entry of the receiver's
-// submenu. The slider is continuous: every drag tick fires onChange with the
-// new level, which lands on the same write path as the menu presets; the
-// events log is coalesced per gesture by App.recordVolume, so only the write
-// is per tick.
-func (it *Item) InsertSlider(value int, onChange func(int)) *Slider {
+// InsertSlider hosts a 0..100 NSSlider as a top-level menu entry, inserted
+// immediately before before (the Volume item: one click opens the menu, one
+// drag sets the level, no submenu hop; the Volume submenu keeps the mute
+// toggle and the presets). A nil before appends the slider at the end, the
+// same nil-safe discipline as the item mutators. The slider is continuous:
+// every drag tick fires onChange with the new level, which lands on the same
+// write path as the menu presets; the events log is coalesced per gesture by
+// App.recordVolume, so only the write is per tick.
+func InsertSlider(before *Item, value int, onChange func(int)) *Slider {
 	s := &Slider{fn: onChange, wake: make(chan struct{}, 1)}
 	mu.Lock()
 	s.id = nextID.Add(1)
 	sliders[s.id] = s
 	mu.Unlock()
-	C.trayInsertSlider(C.int(it.id), C.int(s.id), C.int(value))
+	beforeID := 0
+	if before != nil {
+		beforeID = int(before.id)
+	}
+	C.trayInsertSlider(C.int(beforeID), C.int(s.id), C.int(value))
 	go s.pump()
 	return s
 }

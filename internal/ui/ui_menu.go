@@ -125,11 +125,12 @@ func (a *App) buildMenu() {
 		p := pct
 		a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
 	}
-	// The native slider on macOS (the hand-rolled tray hosts an NSSlider as
-	// this submenu's first entry, above the mute toggle). It writes through
-	// the same chokepoint as the presets below (setActiveVolume, which
-	// records at source, drag ticks coalesced by recordVolume); a no-op
-	// elsewhere (volumeui_other.go).
+	// The native slider on macOS (the hand-rolled tray hosts an NSSlider as a
+	// top-level entry, inserted just above this Volume item: one click opens
+	// the menu, one drag sets the level). It writes through the same
+	// chokepoint as the presets below (setActiveVolume, which records at
+	// source, drag ticks coalesced by recordVolume); a no-op elsewhere
+	// (volumeui_other.go).
 	a.addVolumeSlider()
 	// A real slider, when zenity is present. Absent on macOS/Windows and
 	// minimal installs, so the item is only added when the binary exists (no
