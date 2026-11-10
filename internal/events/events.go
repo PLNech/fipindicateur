@@ -1,5 +1,6 @@
 // Package events records user actions to a local append-only JSONL log, one
-// JSON object per line. Opt-in (default off), local-only, no network ever.
+// JSON object per line. Gated by the single config.History switch (default
+// on), local-only, no network ever.
 //
 // Events describe behaviour (what you did: play, pause, zap between stations,
 // change volume), not track identity (that lives in internal/histlog). The
@@ -58,8 +59,8 @@ const (
 	KindOpenFip       Kind = "open_fip"
 	KindOpenAbout     Kind = "open_about"
 	KindStatsView     Kind = "stats_view"
-	KindStatsToggle   Kind = "stats_toggle" // Value = 1 on, 0 off
-	KindPrefsClear    Kind = "prefs_clear"  // deleted prefs.jsonl (taste verdicts)
+	KindHistoryToggle Kind = "history_toggle" // Value = 1 on, 0 off
+	KindPrefsClear    Kind = "prefs_clear"    // deleted prefs.jsonl (taste verdicts)
 	KindRestart       Kind = "restart"
 	KindUpdateCheck   Kind = "update_check"
 	KindUpdateStartup Kind = "update_startup_toggle" // Value = 1 on, 0 off
@@ -288,10 +289,10 @@ func (r *Recorder) Close() {
 	r.enabled = false
 }
 
-// Clear deletes the events log (the "Effacer les statistiques" data right).
-// It removes only events.jsonl, never history.jsonl. A missing file is not an
-// error. The writer is briefly stopped and restarted if it was running, so we
-// never race a delete against an in-flight append.
+// Clear deletes the events log, half of the "Effacer l'historique" data right
+// (histlog.Clear removes history.jsonl, the other half). A missing file is not
+// an error. The writer is briefly stopped and restarted if it was running, so
+// we never race a delete against an in-flight append.
 func (r *Recorder) Clear() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

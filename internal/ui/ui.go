@@ -106,7 +106,7 @@ type App struct {
 	volRecOnce sync.Once
 	volRec     *volCoalescer
 
-	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
+	histClearArmed  bool // two-click confirm state for "Effacer l.historique…"
 	prefsClearArmed bool // two-click confirm state for "Effacer mes goûts"
 
 	// volSettleUntil bounds the grace window after a playback restart during
@@ -157,11 +157,10 @@ type App struct {
 	mShowCalendar  *menuItem
 	mAuto          *menuItem
 	mPlayOnStart   *menuItem
-	mHistFile      *menuItem
+	mHistToggle    *menuItem // the single local-history switch (Réglages)
 	mAnim          *menuItem
 	audioMI        map[string]*menuItem // audio-output items, keyed by device name ("auto" = automatic)
-	mStats         *menuItem
-	mStatsClear    *menuItem
+	mHistClear     *menuItem
 	mPrefsClear    *menuItem
 	mUpdateStartup *menuItem
 	mCastLocal     *menuItem   // "Cet ordinateur", checked when not casting
@@ -195,7 +194,7 @@ func New() *App {
 		cfg:       cfg,
 		meta:      metadata.NewManager(),
 		wiki:      wiki.NewResolver(),
-		rec:       events.NewRecorder(cfg.Stats),
+		rec:       events.NewRecorder(cfg.History),
 		stationMI: map[string]*menuItem{},
 	}
 }
@@ -597,7 +596,7 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	if changed && cfg.Notifications && !notifiedShow {
 		a.notify(np)
 	}
-	if changed && cfg.HistoryFile {
+	if changed && cfg.History {
 		a.appendHistFile(s, np)
 	}
 	// A trackless programme starting writes one show-start marker line to the
@@ -605,7 +604,7 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	// carries the show's display name into the report (identity lives in the
 	// histlog, never in the events log); the listening time itself is derived
 	// from the show_change boundaries, so the marker is identity, not duration.
-	if fresh && !hasTrack && np.Show != nil && cfg.HistoryFile {
+	if fresh && !hasTrack && np.Show != nil && cfg.History {
 		a.appendHistFile(s, np)
 	}
 	// The programme boundary, recorded like the station-change Markov edge but
@@ -1585,15 +1584,26 @@ func (a *App) setAmp(level int) {
 	a.applyAmpUI()
 }
 
-func (a *App) toggleHistFile() {
+// toggleHistory flips the single local-history switch (history.jsonl track
+// log + events.jsonl behaviour log) and starts/stops the recorder at runtime.
+// The histlog appends are synchronous, gated at their call sites on the same
+// config value, so one flip covers both writers. The history_toggle event is
+// recorded while recording is still active on the edge that keeps it (on the
+// way on: after enabling; on the way off: before disabling), so the toggle
+// itself always lands in the log.
+func (a *App) toggleHistory() {
 	a.cfgMu.Lock()
-	a.cfg.HistoryFile = !a.cfg.HistoryFile
-	on := a.cfg.HistoryFile
+	a.cfg.History = !a.cfg.History
+	on := a.cfg.History
 	a.cfgMu.Unlock()
 	if on {
-		a.mHistFile.Check()
+		a.mHistToggle.Check()
+		a.rec.SetEnabled(true)
+		a.rec.Record(events.Event{Kind: events.KindHistoryToggle, Station: a.currentStation().Key, Value: 1})
 	} else {
-		a.mHistFile.Uncheck()
+		a.rec.Record(events.Event{Kind: events.KindHistoryToggle, Station: a.currentStation().Key, Value: 0})
+		a.mHistToggle.Uncheck()
+		a.rec.SetEnabled(false)
 	}
 	a.save()
 }
@@ -2104,28 +2114,7 @@ func (a *App) toggleCastMuted(sess *cast.Session) {
 	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.currentStation().Key, Value: b2i(muted)})
 }
 
-// --- statistics (opt-in listening analytics) ---
-
-// toggleStats flips the opt-in and starts/stops the recorder at runtime. The
-// stats_toggle event is recorded while recording is still active on the edge
-// that keeps it (on the way on: after enabling; on the way off: before
-// disabling), so the toggle itself always lands in the log.
-func (a *App) toggleStats() {
-	a.cfgMu.Lock()
-	a.cfg.Stats = !a.cfg.Stats
-	on := a.cfg.Stats
-	a.cfgMu.Unlock()
-	if on {
-		a.mStats.Check()
-		a.rec.SetEnabled(true)
-		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.currentStation().Key, Value: 1})
-	} else {
-		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.currentStation().Key, Value: 0})
-		a.mStats.Uncheck()
-		a.rec.SetEnabled(false)
-	}
-	a.save()
-}
+// --- statistics (local listening analytics, one switch in Réglages) ---
 
 // viewStats builds the local report and opens it in the browser. It runs in a
 // goroutine so the tray never blocks on report generation or the short-lived
@@ -2155,49 +2144,71 @@ func (a *App) openDataDir() {
 	open.URL("file://" + dir)
 }
 
-// clearStatsConfirm deletes events.jsonl with a two-click confirmation (a tray
-// menu has no dialog). First click arms and relabels; a second click within a
-// short window deletes. It removes only events.jsonl, never history.jsonl.
-func (a *App) clearStatsConfirm() {
+// clearHistoryConfirm deletes the local listening logs with a two-click
+// confirmation (a tray menu has no dialog). First click arms and relabels; a
+// second click within a short window deletes. One entry covers both files:
+// history.jsonl and events.jsonl share the single History setting, so they
+// share the erase. Nothing is recorded afterwards: a toggle event right after
+// the wipe would resurrect events.jsonl behind a "cleared" notice.
+func (a *App) clearHistoryConfirm() {
 	a.mu.Lock()
-	armed := a.statsClearArmed
-	a.statsClearArmed = !armed // arm on first click, disarm on the confirming click
+	armed := a.histClearArmed
+	a.histClearArmed = !armed // arm on first click, disarm on the confirming click
 	a.mu.Unlock()
 
 	if !armed {
-		a.mStatsClear.SetTitle("Confirmer l'effacement ?")
+		a.mHistClear.SetTitle("Confirmer l'effacement ?")
 		go func() {
 			time.Sleep(5 * time.Second)
 			a.mu.Lock()
-			still := a.statsClearArmed
-			a.statsClearArmed = false
+			still := a.histClearArmed
+			a.histClearArmed = false
 			a.mu.Unlock()
 			if still {
-				a.mStatsClear.SetTitle("Effacer les statistiques…")
+				a.mHistClear.SetTitle("Effacer l'historique…")
 			}
 		}()
 		return
 	}
 
-	a.mStatsClear.SetTitle("Effacer les statistiques…")
-	a.clearStatsData()
+	a.mHistClear.SetTitle("Effacer l'historique…")
+	a.clearHistoryData()
 }
 
-// clearStatsData is the CONFIRMED "Effacer les statistiques" action: it
-// deletes only events.jsonl, never history.jsonl. Called by the
-// menu's two-click confirm.
-func (a *App) clearStatsData() {
+// clearHistoryData is the CONFIRMED "Effacer l'historique" action: it deletes
+// both listening logs, events.jsonl and history.jsonl (prefs.jsonl keeps its
+// own entry and its own consent). Called by the menu's two-click confirm.
+func (a *App) clearHistoryData() {
 	if err := a.rec.Clear(); err != nil {
-		log.Printf("ui: stats clear: %v", err)
+		log.Printf("ui: history clear: %v", err)
+		return
+	}
+	if err := histlog.Clear(a.historyPath()); err != nil {
+		log.Printf("ui: history clear: %v", err)
 		return
 	}
 	if a.notif != nil {
-		a.notif.Notify("Statistiques effacées", "Le journal events.jsonl a été supprimé.", "", a.cfgSnapshot().NotifTimeoutMs)
+		a.notif.Notify("Historique effacé", "Les journaux history.jsonl et events.jsonl ont été supprimés.", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
+// historyPath resolves the histlog path once (best-effort), mirroring
+// appendHistFile. On failure it returns the plain default so a clear attempt
+// still tries the standard location.
+func (a *App) historyPath() string {
+	if a.histPath == "" {
+		p, err := histlog.DefaultPath()
+		if err != nil {
+			log.Printf("ui: history file path: %v", err)
+			return ""
+		}
+		a.histPath = p
+	}
+	return a.histPath
+}
+
 // clearPrefsConfirm deletes prefs.jsonl (the taste verdicts) with the same
-// two-click confirmation as clearStatsConfirm: first click arms and relabels, a
+// two-click confirmation as clearHistoryConfirm: first click arms and relabels, a
 // second click within a short window deletes. It removes only prefs.jsonl,
 // never events.jsonl or history.jsonl. The KindPrefsClear behaviour event is
 // recorded at source on the confirming click only (not on the arming click, so

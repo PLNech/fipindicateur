@@ -253,8 +253,11 @@ func (a *App) buildMenu() {
 	// antenna silently, and you press play when you want sound.
 	a.mPlayOnStart = settings.AddSubMenuItemCheckbox("Lecture au lancement", "Démarrer la lecture au lancement (sinon l'antenne est en pause)", a.cfg.PlayOnStart)
 	a.on(a.mPlayOnStart, "", a.togglePlayOnStart)
-	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
-	a.on(a.mHistFile, "", a.toggleHistFile)
+	// Historique d'écoute: the single local switch. One checkbox gates both
+	// files, history.jsonl (titres) and events.jsonl (comportement); the
+	// Statistiques submenu below covers see / locate / erase.
+	a.mHistToggle = settings.AddSubMenuItemCheckbox("Historique d'écoute (local)", "Journal local : titres joués et actions (history.jsonl, events.jsonl). Rien ne quitte la machine", a.cfg.History)
+	a.on(a.mHistToggle, "", a.toggleHistory)
 	a.mAnim = settings.AddSubMenuItemCheckbox("Icône animée", "Barres qui suivent le niveau audio", a.cfg.AnimatedIcon)
 	a.on(a.mAnim, "", a.toggleAnim)
 
@@ -286,17 +289,15 @@ func (a *App) buildMenu() {
 		a.on(it, events.KindAudioDevice, func() { a.setAudioDevice("auto") })
 	}
 
-	// Statistiques d'écoute: opt-in (default off), local-only. The toggle
-	// gates the recorder; the submenu lets you see, locate and delete the data.
-	a.mStats = settings.AddSubMenuItemCheckbox("Statistiques d'écoute (local)", "Journal d'actions local pour vos statistiques (events.jsonl)", a.cfg.Stats)
-	a.on(a.mStats, "", a.toggleStats)
+	// Statistiques d'écoute: local-only, default on via the single Historique
+	// toggle above. The submenu lets you see, locate and delete the data.
 	statsMenu := settings.AddSubMenuItem("Statistiques", "Voir et gérer vos statistiques d'écoute")
 	mStatsView := statsMenu.AddSubMenuItem("Voir le rapport", "Ouvrir le rapport d'écoute dans le navigateur")
 	a.on(mStatsView, events.KindStatsView, a.viewStats)
 	mStatsFolder := statsMenu.AddSubMenuItem("Ouvrir le dossier de données", "Dossier ~/.local/share/fipindicateur")
 	a.on(mStatsFolder, "", a.openDataDir)
-	a.mStatsClear = statsMenu.AddSubMenuItem("Effacer les statistiques…", "Supprimer events.jsonl (l'historique des titres n'est pas touché)")
-	a.on(a.mStatsClear, "", a.clearStatsConfirm)
+	a.mHistClear = statsMenu.AddSubMenuItem("Effacer l'historique…", "Supprimer history.jsonl et events.jsonl (vos goûts ne sont pas touchés)")
+	a.on(a.mHistClear, "", a.clearHistoryConfirm)
 	// Taste verdicts (J'aime / Pas pour moi) persist to a separate file,
 	// prefs.jsonl, with its own consent. It gets its own delete affordance so
 	// the "see / edit / delete" promise covers every local log.
