@@ -27,6 +27,18 @@
   tray plus de deux secondes
 
 ### Changed
+- L'historique d'écoute passe en activé par défaut, avec un seul réglage : la
+  case « Historique d'écoute (local) » des Réglages pilote d'un coup les deux
+  journaux locaux, `history.jsonl` (les titres) et `events.jsonl` (les
+  actions). Les deux vivent sur la machine, rien ne quitte jamais le réseau ;
+  le rapport est là quand on le cherche, au lieu d'attendre un opt-in que
+  personne ne trouvait. L'ancienne paire (history_file, stats) part avec le
+  prochain enregistrement de la configuration. Un message unique annonce le
+  changement à la première relance : son clic ouvre le rapport directement sur
+  la rubrique confidentialité. « Effacer l'historique… » couvre les deux
+  fichiers d'une seule confirmation ; « Effacer mes goûts… » garde son entrée
+  et son consentement propres. Qui préfère le silence décoche la case, et les
+  journaux s'arrêtent net
 - Les couleurs de station sur le tray ne se délavent plus. L'encre garde
   désormais la saturation maximale de sa teinte (le teal Jazz passe de
   S=0,76 terne à un teal franc, le hip-hop d'un gris-mauve S=0,15 à un

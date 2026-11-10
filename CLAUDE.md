@@ -51,17 +51,24 @@ When you add a feature with a new user action: define the `Kind`, wire it via
 
 ## Privacy by design (non-negotiable)
 
-- **Opt-in, default off.** `config.Stats` gates the recorder; nothing is written
-  until the user enables "Statistiques d'ecoute (local)".
+- **Local by default, one switch.** `config.History` (default on, since
+  2026-11) gates both logs: `history.jsonl` (track titles) and `events.jsonl`
+  (behaviour). Local-only data does not need to be opted into to be safe, but
+  it must be *announced*: the one-shot `HistoryOnboarded` banner names what is
+  logged and how to turn it off, and links the report's privacy section. The
+  retired opt-in pair (`history_file`, `stats`) loads as unknown keys and is
+  dropped at the next Save.
 - **Local only, no network telemetry, ever.** Events are appended to
   `~/.local/share/fipindicateur/events.jsonl`. The report is a self-contained
   offline HTML page (system fonts, inline everything, no CDN); it is served over
   an ephemeral `127.0.0.1` port only because Snap Firefox cannot open `file://`
   under hidden dirs.
 - **See / edit / delete.** The Statistiques submenu opens the report, opens the
-  data folder, and deletes the log (two-click confirm). `Recorder.Clear` removes
-  only `events.jsonl`, never `history.jsonl` (a separate consent, a separate
-  file). Users can also just delete or grep the JSONL by hand.
+  data folder, and "Effacer l'historique…" deletes both logs behind a two-click
+  confirm (`events.Recorder.Clear` + `histlog.Clear`). `prefs.jsonl` (taste
+  verdicts) keeps its own entry and its own consent: clicking J'aime IS the
+  consent, and erasing history never touches it. Users can also just delete or
+  grep the JSONL by hand.
 - Events record **behaviour** (play, pause, zap, volume), never track identity
   (artist/title stay in `internal/histlog`), to avoid duplicating listening PII.
 
@@ -94,10 +101,10 @@ cmd/fipindicateur   entrypoint + subcommand dispatch (stats, version)
 internal/ui         tray menu (the whole UI), wiring, the App.on telemetry chokepoint
 internal/sni        hand-rolled StatusNotifierItem + dbusmenu (the Linux tray)
 internal/cast       Chromecast discovery + session (cgo-free, stdlib only)
-internal/events     opt-in event log + async Recorder
+internal/events     local event log (config.History) + async Recorder
 internal/stats      pure derivation + embedded self-contained HTML report
 internal/config     persisted settings (~/.config/fipindicateur/config.json)
-internal/histlog    opt-in track-change log (separate from events)
+internal/histlog    track-change log (same History switch as events)
 internal/prefs      explicit taste signals (like/dislike); click IS the consent
 internal/update     GitHub-releases update check (read-only, no self-replace)
 internal/version    build version (ldflags-stamped)
