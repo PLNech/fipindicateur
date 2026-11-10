@@ -36,7 +36,7 @@ type Config struct {
 	// the banner appears exactly once per install, not at every launch.
 	HistoryOnboarded bool `json:"history_onboarded"`
 	UpdateStartup    bool `json:"update_startup"` // check GitHub for a newer release at launch (opt-in)
-	AnimatedIcon  bool `json:"animated_icon"`  // audio-responsive VU tray icon
+	AnimatedIcon     bool `json:"animated_icon"`  // audio-responsive VU tray icon
 	// CrossfadeSecs is the equal-power crossfade duration when zapping between
 	// stations while playing. 0 disables it (hard cut, the old behaviour);
 	// clamped to [0,10]. Absent in an older config means the 4s default.
