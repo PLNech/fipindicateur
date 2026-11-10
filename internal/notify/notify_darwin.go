@@ -123,7 +123,9 @@ import (
 // Actions wires banner interactions back into the app. Like and Dislike are
 // the banner buttons on the track banner: pressing one is a click like the
 // menu item, so the app records it the same way (the click IS the consent).
-// Open receives the track link when the user clicks the banner body. Denied
+// Open receives the track link when the user clicks the banner body. Default
+// fires when the user clicks the body of a plain (non-track) banner posted
+// with NotifyAction, so a notice can open the thing it talks about. Denied
 // fires when the system reports notification permission denied and a banner
 // was dropped: the app can then point the user at System Settings, the only
 // place the switch lives.
@@ -132,6 +134,7 @@ type Actions struct {
 	Dislike func()
 	Open    func(link string)
 	Denied  func()
+	Default func()
 }
 
 // Notifier sends replace-in-place desktop notifications.
@@ -157,8 +160,23 @@ func New(a Actions) *Notifier {
 
 // Notify posts a plain banner (system notices: cast, statistics, updates),
 // replacing the previous one. timeoutMs is ignored: macOS decides how long a
-// banner stays. No action buttons: a notice is not a verdict to make.
+// banner stays. No action buttons: a notice is not a verdict to make. It also
+// retires any NotifyAction click: only the newest actionable banner acts.
 func (n *Notifier) Notify(summary, body, iconPath string, timeoutMs int) {
+	mu.Lock()
+	actions.Default = nil
+	mu.Unlock()
+	n.push(summary, "", body, iconPath, "", timeoutMs)
+}
+
+// NotifyAction posts a plain banner whose body click routes to fn (the
+// delegate's default action for non-track banners). timeoutMs is ignored,
+// like Notify.
+func (n *Notifier) NotifyAction(summary, body, iconPath string, timeoutMs int, actionLabel string, fn func()) {
+	_ = actionLabel // macOS banners are click-to-act on the body; no inline button needed
+	mu.Lock()
+	actions.Default = fn
+	mu.Unlock()
 	n.push(summary, "", body, iconPath, "", timeoutMs)
 }
 
@@ -228,6 +246,15 @@ func notifyOnOpen() {
 	if link != "" && a.Open != nil {
 		a.Open(link)
 	}
+}
+
+//export notifyOnDefault
+func notifyOnDefault() {
+	withActions(func(a Actions) {
+		if a.Default != nil {
+			a.Default()
+		}
+	})
 }
 
 //export notifyOnDenied

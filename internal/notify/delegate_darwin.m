@@ -12,6 +12,7 @@
 extern void notifyOnLike(void);
 extern void notifyOnDislike(void);
 extern void notifyOnOpen(void);
+extern void notifyOnDefault(void);
 
 static NSString * const TrackCategory = @"track";
 
@@ -28,9 +29,14 @@ static NSString * const TrackCategory = @"track";
 		notifyOnLike();
 	} else if ([aid isEqualToString:@"dislike"]) {
 		notifyOnDislike();
-	} else if ([cat isEqualToString:TrackCategory] &&
-	           [aid isEqualToString:UNNotificationDefaultActionIdentifier]) {
-		notifyOnOpen();
+	} else if ([aid isEqualToString:UNNotificationDefaultActionIdentifier]) {
+		if ([cat isEqualToString:TrackCategory]) {
+			notifyOnOpen();
+		} else {
+			// A plain notice posted with NotifyAction: the body click acts.
+			// Notices posted without one leave the Go callback nil (no-op).
+			notifyOnDefault();
+		}
 	}
 	completionHandler();
 }

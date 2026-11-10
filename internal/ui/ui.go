@@ -311,6 +311,9 @@ func (a *App) OnReady() {
 	// (icon already set at the top of OnReady, before the menu, to shrink the
 	// null-pixmap window at SNI registration.)
 	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.currentStation().Key})
+	// The one-shot default-on notice, after the menu exists: a click opens the
+	// report, so it must be reachable by the time the banner shows.
+	a.onboardHistory()
 	// Autostart is not autoplay: launch tunes the antenna (station selected,
 	// icon, metadata polling) but only starts the stream when the user opted in
 	// with PlayOnStart. When off, startStation(_, false) leaves playback paused
@@ -2120,17 +2123,52 @@ func (a *App) toggleCastMuted(sess *cast.Session) {
 // goroutine so the tray never blocks on report generation or the short-lived
 // HTTP server. Works whether or not recording is currently enabled, as long as
 // a log exists (you can view, then delete).
-func (a *App) viewStats() {
+func (a *App) viewStats() { a.viewStatsAt("") }
+
+// viewStatsAt is viewStats, opened on an anchor: the onboarding banner lands
+// the reader straight on the privacy section (fin) that names the files.
+func (a *App) viewStatsAt(fragment string) {
 	go func() {
 		html, _, err := stats.Generate(time.Now())
 		if err != nil {
 			log.Printf("ui: stats generate: %v", err)
 			return
 		}
-		if err := stats.ServeAndOpen(html); err != nil {
+		if err := stats.ServeAndOpen(html, fragment); err != nil {
 			log.Printf("ui: stats serve: %v", err)
 		}
 	}()
+}
+
+// onboardHistory shows the one-shot default-on notice. History is on for
+// every install since the single-switch flip; the banner names what is
+// logged, where it lives and how to turn it off, and clicking it opens the
+// report straight on the privacy section. Shown exactly once per install
+// (HistoryOnboarded is set and saved when the banner is posted, not when it
+// is clicked). The banner itself is ambient: no event is recorded for
+// showing it; the click is a KindStatsView like any report opening.
+func (a *App) onboardHistory() {
+	if a.cfgSnapshot().HistoryOnboarded {
+		return
+	}
+	a.cfgMu.Lock()
+	a.cfg.HistoryOnboarded = true
+	a.cfgMu.Unlock()
+	a.save()
+	if a.notif == nil {
+		return
+	}
+	cfg := a.cfgSnapshot()
+	a.notif.NotifyAction(
+		"Historique d'écoute activé",
+		"Titres joués et actions sont notés localement (history.jsonl, events.jsonl). Rien ne quitte la machine. Pour tout effacer ou désactiver : Réglages · Historique d'écoute.",
+		"", cfg.NotifTimeoutMs,
+		"Voir le rapport",
+		func() {
+			a.rec.Record(events.Event{Kind: events.KindStatsView, Station: a.currentStation().Key})
+			a.viewStatsAt("fin")
+		},
+	)
 }
 
 // openDataDir opens the data folder (events.jsonl, history.jsonl) in the file
