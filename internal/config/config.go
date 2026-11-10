@@ -24,10 +24,18 @@ type Config struct {
 	// launching (or autostart at login) tunes and indicates the antenna without
 	// making noise; the user presses play (menu, media keys, or the fip CLI) to
 	// listen. Autostart is not autoplay.
-	PlayOnStart   bool `json:"play_on_start"`
-	HistoryFile   bool `json:"history_file"`   // append track changes to a local jsonl log
-	Stats         bool `json:"stats"`          // opt-in local listening analytics (events.jsonl)
-	UpdateStartup bool `json:"update_startup"` // check GitHub for a newer release at launch (opt-in)
+	PlayOnStart bool `json:"play_on_start"`
+	// History is the single switch for the local listening log: history.jsonl
+	// (track titles) and events.jsonl (behaviour) share it. Default on: both
+	// files stay on this machine, never any network, so the report is there
+	// when you look for it and the menu offers see / erase / off. The retired
+	// opt-in pair history_file and stats (until 2026-11) reads as unknown keys
+	// and is dropped at the next Save: every install lands on the new default.
+	History bool `json:"history"`
+	// HistoryOnboarded marks the one-shot "local history" notice as shown, so
+	// the banner appears exactly once per install, not at every launch.
+	HistoryOnboarded bool `json:"history_onboarded"`
+	UpdateStartup    bool `json:"update_startup"` // check GitHub for a newer release at launch (opt-in)
 	AnimatedIcon  bool `json:"animated_icon"`  // audio-responsive VU tray icon
 	// CrossfadeSecs is the equal-power crossfade duration when zapping between
 	// stations while playing. 0 disables it (hard cut, the old behaviour);
@@ -63,8 +71,8 @@ func Default() Config {
 		ShowCalendar:      true,
 		Autostart:         false,
 		PlayOnStart:       false,
-		HistoryFile:       false,
-		Stats:             false,
+		History:           true,
+		HistoryOnboarded:  false,
 		UpdateStartup:     false,
 		AnimatedIcon:      true,
 		CrossfadeSecs:     4,
