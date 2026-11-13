@@ -17,15 +17,23 @@ const livemetaStaleAfter = 3 * time.Minute
 type Manager struct {
 	livemeta *LivemetaProvider
 	icy      *ICYProvider
+	peek     *Peeker
 }
 
 // NewManager builds a Manager with default providers.
 func NewManager() *Manager {
-	return &Manager{
-		livemeta: NewLivemeta(),
-		icy:      NewICY(),
-	}
+	lm := NewLivemeta()
+	return &Manager{livemeta: lm, icy: NewICY(), peek: newPeeker(lm)}
 }
+
+// StartPeek begins following every station's on-air track in the background
+// (see Peeker), until ctx ends.
+func (m *Manager) StartPeek(ctx context.Context, all []stations.Station) {
+	m.peek.Start(ctx, all)
+}
+
+// Peeked is what the last livemeta answer says is on air at key, if fresh.
+func (m *Manager) Peeked(key string) (NowPlaying, bool) { return m.peek.Latest(key) }
 
 // PushTitle forwards an icecast title to the ICY provider.
 func (m *Manager) PushTitle(title string) { m.icy.PushTitle(title) }
