@@ -94,9 +94,9 @@ struct PlayGlyph: Shape {
     }
 }
 
-/// Stand-in sleeve until the snapshot carries the fetched cover
-/// (internal/notify/cover.go already caches it as a PNG).
-struct MockCover: View {
+/// The sleeve shown while a track has no cover (a programme without tracks,
+/// a cover still downloading, a fetch that failed): never an empty square.
+struct BlankSleeve: View {
     var body: some View {
         GeometryReader { g in
             let s = g.size.width
@@ -153,7 +153,16 @@ private struct Hero: View {
         let s = model.s
         let night = Theme.nuit
         ZStack(alignment: .bottomLeading) {
-            MockCover()
+            if let cover = model.cover {
+                Image(nsImage: cover)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: PopoverView.width, height: PopoverView.width)
+                    .clipped()
+                    .transition(.opacity)
+            } else {
+                BlankSleeve()
+            }
             LinearGradient(
                 stops: [.init(color: night.bg.opacity(0.55), location: 0), .init(color: .clear, location: 0.22),
                         .init(color: .clear, location: 0.48), .init(color: night.bg.opacity(0.94), location: 1)],

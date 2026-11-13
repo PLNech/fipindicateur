@@ -9,6 +9,9 @@ package ui
 // items delegate to (actions.go), so nothing it does can escape telemetry.
 
 import (
+	"context"
+	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/PLNech/fipindicateur/internal/popover"
@@ -25,6 +28,46 @@ var (
 	popoverActions chan popoverAction
 	popoverDirty   chan struct{}
 )
+
+// popoverCover remembers the one cover the popover shows: the URL it was
+// asked for and, once fetched, the cached PNG's path. The fetch is the
+// banner's (notify.FetchCover, cached by URL), so a track that already
+// notified costs a disk stat.
+var popoverCover struct {
+	sync.Mutex
+	url, path string
+}
+
+// coverFor returns the cached path for url, or "" while it is unknown, in
+// which case one fetch is started and the popover is marked stale when it
+// lands. A URL asked twice is fetched once; a failed fetch is not retried
+// until the track changes (the blank sleeve stays).
+func (a *App) coverFor(url string) string {
+	popoverCover.Lock()
+	defer popoverCover.Unlock()
+	if url == popoverCover.url {
+		return popoverCover.path
+	}
+	popoverCover.url, popoverCover.path = url, ""
+	if url == "" || a.notif == nil {
+		return ""
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		path := a.notif.FetchCover(ctx, url)
+		popoverCover.Lock()
+		current := popoverCover.url == url // a zap may have moved on
+		if current {
+			popoverCover.path = path
+		}
+		popoverCover.Unlock()
+		if current && path != "" {
+			a.syncPopover()
+		}
+	}()
+	return ""
+}
 
 // wirePopover connects the three directions: click to toggle, actions in,
 // snapshots out. Called once from buildUI, after registerActions.
@@ -91,6 +134,7 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 		Album:   np.Album,
 		Label:   np.Label,
 		Year:    np.Year,
+		Cover:   a.coverFor(np.CoverURL),
 	}
 	for _, st := range stations.Wheel() {
 		s.Stations = append(s.Stations, popover.Station{Key: st.Key, Name: st.Display, Color: st.Color})

@@ -30,6 +30,7 @@ type Snapshot struct {
 	Year     int       `json:"year"`
 	Label    string    `json:"label"`
 	Show     string    `json:"show"`
+	Cover    string    `json:"cover"` // path of the cached cover PNG, "" when none yet
 	Start    float64   `json:"start"` // unix seconds, 0 when unknown
 	End      float64   `json:"end"`
 	Volume   int       `json:"volume"` // 0..100, the active sink's

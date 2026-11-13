@@ -35,6 +35,7 @@ struct Snapshot: Codable {
     var year = 0
     var label = ""
     var show = ""
+    var cover = "" // path of the cached cover PNG
     var start: Double = 0
     var end: Double = 0
     var volume = 60
@@ -71,6 +72,18 @@ private func goFipAction(_ id: UnsafePointer<CChar>, _ arg: UnsafePointer<CChar>
 final class FipModel {
     static let shared = FipModel()
     var s = Snapshot()
+    /// The decoded cover, kept apart from the snapshot so a volume tick does
+    /// not read the file again: it only changes when the path does.
+    private(set) var cover: NSImage?
+    private var coverPath = ""
+
+    func apply(_ snap: Snapshot) {
+        if snap.cover != coverPath {
+            coverPath = snap.cover
+            cover = snap.cover.isEmpty ? nil : NSImage(contentsOfFile: snap.cover)
+        }
+        s = snap
+    }
 
     func send(_ action: Action, _ arg: String = "") {
         action.rawValue.withCString { id in arg.withCString { a in goFipAction(id, a) } }
@@ -118,7 +131,7 @@ public func fipuiPushState(_ json: UnsafePointer<CChar>) -> Int32 {
     guard let snap = try? JSONDecoder().decode(Snapshot.self, from: data) else {
         return 0
     }
-    DispatchQueue.main.async { FipModel.shared.s = snap }
+    DispatchQueue.main.async { FipModel.shared.apply(snap) }
     return 1
 }
 
