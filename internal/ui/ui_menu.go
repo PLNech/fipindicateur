@@ -73,6 +73,7 @@ func (a *App) buildUI() {
 	a.wireTrayScroll()
 	a.wirePanelFlip()
 	a.buildMenu()
+	a.wirePopover() // no-op unless built with the swiftui tag on darwin
 }
 
 func (a *App) buildMenu() {

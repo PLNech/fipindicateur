@@ -79,11 +79,13 @@ final class FipModel {
 
 // MARK: - Popover
 
-private final class PopoverController {
+private final class PopoverController: NSObject, NSPopoverDelegate {
     static let shared = PopoverController()
+    private var closedAt = Date.distantPast
     private lazy var popover: NSPopover = {
         let p = NSPopover()
         p.behavior = .transient
+        p.delegate = self
         p.contentViewController = NSHostingController(rootView: PopoverView(model: .shared))
         return p
     }()
@@ -93,13 +95,17 @@ private final class PopoverController {
             popover.performClose(nil)
             return
         }
+        // A transient popover closes itself on the very click that lands on
+        // the status item; without this guard that click would reopen it.
+        if Date().timeIntervalSince(closedAt) < 0.25 { return }
         // A menu bar agent is never the active app: without this the popover
-        // opens behind the key window's focus and a click elsewhere does not
-        // dismiss it.
+        // does not take the keyboard and a click elsewhere does not dismiss it.
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }
+
+    func popoverDidClose(_: Notification) { closedAt = Date() }
 }
 
 // MARK: - C surface

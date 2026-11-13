@@ -388,6 +388,7 @@ func (a *App) OnExit() {
 // A change of station (from != to) is recorded as the Markov transition edge;
 // the initial start (from == to) is not a transition.
 func (a *App) startStation(s stations.Station, play bool) {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	if a.watchCancel != nil {
 		a.watchCancel()
 	}
@@ -467,6 +468,7 @@ func showConcept(s *metadata.Show) string {
 // otherwise land after the new watcher started and briefly claim the label,
 // the history and a notification for a station we already left.
 func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	// A trackless update can still carry the programme on air: some émissions
 	// (continuous mixes like "Fip Tape") expose no per-song grain in livemeta,
 	// and the Radio France streams send no inline ICY titles either, so during
@@ -892,6 +894,7 @@ func (a *App) audible() bool {
 }
 
 func (a *App) setPlayingUI(playing bool) {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	// The single chokepoint for playback state: menu toggle, MPRIS, media keys
 	// and station switches all pass through here, so recording play/pause here
 	// captures every source. Redundant same-state events are deduplicated in
@@ -1219,6 +1222,7 @@ func (a *App) toggleActiveMute() {
 // audible. An unreported level shows as « Volume (appareil) », never as an
 // invented number.
 func (a *App) applyVolumeUI() {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	// The darwin inline slider mirrors the ACTIVE sink wherever the volume UI
 	// syncs; a no-op seam off darwin (volumeui_other.go). known=false (a cast
 	// device that has not reported a level) grays it out instead of
