@@ -13,6 +13,11 @@ make lint     # gofmt check, em-dash ban, go vet, go test, go build (the CI gate
 make install  # user-level install (binary + launcher + icons), no sudo
 ```
 
+`make swiftui` / `swiftui-run` / `swiftui-test` build the opt-in macOS popover
+(build tag `swiftui`, macOS 14+, Command Line Tools are enough). The Swift
+sources in `internal/popover/fipui/swift` compile to a generated `.syso`; the
+default build never sees that package and needs no Swift toolchain.
+
 `fipindicateur stats [--out file.html] [--no-open]` builds the local listening
 report. `fipindicateur version` prints the stamped version.
 
@@ -42,6 +47,12 @@ user action without it being measurable**:
   the accurate value: play/pause in `setPlayingUI` (the single chokepoint for
   menu + MPRIS + media keys), volume/mute in their setters (including external
   pavucontrol changes), station changes in `startStation` (the Markov edge).
+- An action a second surface can trigger (the SwiftUI popover) is registered
+  once in `registerActions` (`internal/ui/actions.go`) with its kind; the
+  menu item delegates with `a.on(item, "", a.firing(id))` and the popover
+  reaches it through **`App.fire(id, arg)`**. Swift can only leave through
+  `FipModel.send(Action)`; **`TestPopoverActionsRegistered` fails the build
+  if the Swift `Action` enum names an id the registry lacks.**
 - App lifecycle (`app_start`/`app_stop`) records in `OnReady`/`OnExit`.
 - New action kinds go in `internal/events` (the `Kind` constants) and must be
   wired in `ui.go`; `TestActionKindsWired` checks none is left dangling.
@@ -100,6 +111,7 @@ identity (13 stations exceed any categorical palette).
 cmd/fipindicateur   entrypoint + subcommand dispatch (stats, version)
 internal/ui         tray menu (the whole UI), wiring, the App.on telemetry chokepoint
 internal/sni        hand-rolled StatusNotifierItem + dbusmenu (the Linux tray)
+internal/popover    macOS SwiftUI popover: Snapshot contract + tagged cgo bridge (fipui/)
 internal/cast       Chromecast discovery + session (cgo-free, stdlib only)
 internal/events     local event log (config.History) + async Recorder
 internal/stats      pure derivation + embedded self-contained HTML report
