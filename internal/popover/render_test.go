@@ -59,6 +59,7 @@ func TestRenderCard(t *testing.T) {
 	}{
 		{"card", "card-nuit.png", true}, {"card", "card-papier.png", false},
 		{"settings", "reglages-nuit.png", true}, {"settings", "reglages-papier.png", false},
+		{"settings-appli", "reglages-appli-nuit.png", true},
 	} {
 		name, dark, view := r.name, r.dark, r.view
 		path := filepath.Join(dir, name)

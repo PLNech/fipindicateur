@@ -59,7 +59,7 @@ const (
 	KindOpenFip       Kind = "open_fip"
 	KindOpenAbout     Kind = "open_about"
 	KindStatsView     Kind = "stats_view"
-	KindSettingsOpen  Kind = "settings_open"  // opened the Réglages window (macOS card build)
+	KindSettingsOpen  Kind = "settings_open"  // turned the card to Réglages (macOS card build)
 	KindHistoryToggle Kind = "history_toggle" // Value = 1 on, 0 off
 	KindPrefsClear    Kind = "prefs_clear"    // deleted prefs.jsonl (taste verdicts)
 	KindRestart       Kind = "restart"

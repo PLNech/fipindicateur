@@ -128,6 +128,16 @@ struct CardView: View {
 
     var body: some View {
         let t = Theme.of(scheme)
+        let turn = model.settingsUp ? 180.0 : 0
+        // Two faces of one card: the antenna in front, Réglages on the back,
+        // which takes exactly the front's size.
+        front(t)
+            .modifier(Flip(angle: turn, back: false))
+            .overlay(SettingsFace(model: model, t: t).modifier(Flip(angle: turn, back: true)))
+            .animation(.spring(duration: 0.6, bounce: 0.18), value: model.settingsUp)
+    }
+
+    private func front(_ t: Theme) -> some View {
         VStack(spacing: 8) {
             HStack(alignment: .top, spacing: 14) {
                 Sleeve(model: model, t: t)
@@ -290,8 +300,8 @@ private struct Transport: View {
     }
 }
 
-/// The volume fader. The mute button is the VU meter: two amber bars that
-/// follow the level, struck out when muted.
+/// The volume fader. The mute button is the meter: the tray glyph's four
+/// bars, frame for frame, in the station's colour; stubs when silent.
 private struct Fader: View {
     let model: FipModel
     let meter: Meter
@@ -301,11 +311,16 @@ private struct Fader: View {
         let s = model.s
         HStack(spacing: 12) {
             Button { model.send(.muteToggle) } label: {
-                HStack(alignment: .bottom, spacing: 3) {
-                    bar(s.muted || !s.playing ? 0.12 : 0.25 + meter.level * 0.75)
-                    bar(s.muted || !s.playing ? 0.12 : 0.18 + meter.level * 0.55)
+                HStack(alignment: .bottom, spacing: 2) {
+                    ForEach(0..<4, id: \.self) { i in
+                        bar(s.muted || !s.playing ? 0 : meter.bars[i])
+                    }
                 }
-                .frame(width: 14, height: 18, alignment: .bottom)
+                .frame(width: 18, height: 18, alignment: .bottom)
+                .opacity(s.muted ? 0.45 : 1)
+                // Frames arrive at 6 a second: gliding between them reads as
+                // one continuous motion.
+                .animation(.linear(duration: 1.0 / 6), value: meter.bars)
             }
             .buttonStyle(.plain)
             .help(s.muted ? "Rétablir le son" : "Couper le son")
@@ -341,7 +356,8 @@ private struct Fader: View {
     }
 
     private func bar(_ h: Double) -> some View {
-        RoundedRectangle(cornerRadius: 1).fill(t.amber).frame(width: 4, height: 18 * min(max(h, 0.1), 1))
+        RoundedRectangle(cornerRadius: 1).fill(t.station(model.s.current.color))
+            .frame(width: 3, height: 18 * min(max(h, 0.14), 1))
     }
 }
 

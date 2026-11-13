@@ -27,7 +27,7 @@ extern void fipui_toggle(void *anchor);
 extern void fipui_close(void);
 extern void fipui_show_settings(void);
 extern int fipui_is_shown(void);
-extern void fipui_set_level(double level);
+extern void fipui_set_bars(double a, double b, double c, double d);
 extern int fipui_debug_fire(const char *id, const char *arg);
 extern int fipui_debug_render(const char *view, const char *path, const char *json, int dark);
 */
@@ -91,11 +91,13 @@ func Close() { C.fipui_close() }
 // Shown reports whether the card is up. Safe from any goroutine.
 func Shown() bool { return C.fipui_is_shown() == 1 }
 
-// SetLevel feeds the VU meter (0..1). Cheap, and ignored while the card is
-// hidden.
-func SetLevel(level float64) { C.fipui_set_level(C.double(level)) }
+// SetBars feeds the meter one frame of four bar heights (0..1). Cheap, and
+// ignored while the card is hidden.
+func SetBars(b [4]float64) {
+	C.fipui_set_bars(C.double(b[0]), C.double(b[1]), C.double(b[2]), C.double(b[3]))
+}
 
-// ShowSettings brings the Réglages window forward (created on first use).
+// ShowSettings turns the card to its Réglages face, showing it if needed.
 func ShowSettings() { C.fipui_show_settings() }
 
 // DebugRender draws a view ("card" or "settings") for a JSON snapshot into a

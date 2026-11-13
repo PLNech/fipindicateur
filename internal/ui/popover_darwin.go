@@ -18,6 +18,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/tray"
 	"github.com/PLNech/fipindicateur/internal/version"
+	"github.com/PLNech/fipindicateur/internal/vu"
 )
 
 type popoverAction struct{ id, arg string }
@@ -105,6 +106,9 @@ func (a *App) wirePopover() {
 	tray.SetPrimaryClick(func(anchor unsafe.Pointer) {
 		a.syncPopover() // the fader must show the active sink's level now
 		popover.Toggle(anchor)
+		if a.player.IsPlaying() {
+			a.anim.startForCard()
+		}
 	})
 	a.syncPopover()
 }
@@ -177,16 +181,25 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 // land on the very corner the card occupies.
 func (a *App) popoverShown() bool { return popover.Shown() }
 
-// popoverLevel feeds the card's VU meter at the animator's pace.
-func popoverLevel(level float64) { popover.SetLevel(level) }
+// popoverBars hands the card the frame the tray glyph is drawing: the same
+// four heights, scaled to 0..1.
+func popoverBars(h vu.Heights) {
+	var b [vu.Bars]float64
+	for i, v := range h {
+		b[i] = float64(v) / vu.MaxHeight
+	}
+	popover.SetBars(b)
+}
 
 // hasPopover: the menu shrinks to a short list, the settings move to the
-// Réglages window.
+// back of the card.
 const hasPopover = true
 
-// openSettings puts the card away and brings the Réglages window forward.
+// openSettings turns the card to its Réglages face, showing it if needed.
 func (a *App) openSettings() {
-	popover.Close()
 	a.syncPopover()
 	popover.ShowSettings()
+	if a.player.IsPlaying() {
+		a.anim.startForCard()
+	}
 }

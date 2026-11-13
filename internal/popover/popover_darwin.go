@@ -22,11 +22,12 @@ func Toggle(anchor unsafe.Pointer) { fipui.Toggle(anchor) }
 // Close puts the card away if it is up.
 func Close() { fipui.Close() }
 
-// SetLevel feeds the VU meter (0..1).
-func SetLevel(level float64) { fipui.SetLevel(level) }
+// SetBars feeds the card's meter one frame: the tray glyph's four bar
+// heights, each 0..1.
+func SetBars(b [4]float64) { fipui.SetBars(b) }
 
 // Shown reports whether the card is up. Safe from any goroutine.
 func Shown() bool { return fipui.Shown() }
 
-// ShowSettings brings the Réglages window forward.
+// ShowSettings turns the card to its Réglages face, showing it if needed.
 func ShowSettings() { fipui.ShowSettings() }

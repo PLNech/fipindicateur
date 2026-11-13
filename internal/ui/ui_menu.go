@@ -206,11 +206,11 @@ func (a *App) buildMenu() {
 	a.mCalendar.Hide()
 
 	// Réglages
-	// With the card (macOS swiftui build) the settings live in a window: one
-	// item opens it, and the submenus it replaces are built all the same,
+	// With the card (macOS swiftui build) the settings live on its back: one
+	// item turns it over, and the submenus it replaces are built all the same,
 	// then hidden, so every handler keeps its checkbox to tick.
 	if hasPopover {
-		window := addMenuItem("Réglages…", "Ouvrir la fenêtre de réglages")
+		window := addMenuItem("Réglages…", "Ouvrir les réglages")
 		a.on(window, "", a.firing(actOpenSettings))
 		a.mVolume.Hide() // the card has the fader
 	}

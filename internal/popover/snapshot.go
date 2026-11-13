@@ -39,13 +39,13 @@ type Snapshot struct {
 	Settings Settings  `json:"settings"`
 }
 
-// AudioDevice is one output the Réglages window offers.
+// AudioDevice is one output Réglages offers.
 type AudioDevice struct {
 	Name  string `json:"name"` // mpv's device name, "auto" for the default
 	Label string `json:"label"`
 }
 
-// Settings is what the Réglages window shows. It only displays: every change
+// Settings is what the back of the card (Réglages) shows. It only displays: every change
 // goes back as an action and comes round again in the next snapshot.
 type Settings struct {
 	HiFi              bool          `json:"hifi"`

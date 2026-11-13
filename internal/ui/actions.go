@@ -31,7 +31,7 @@ const (
 	actOpenWiki    = "open_wiki"
 	actStatsView   = "stats_view"
 
-	// The Réglages window. Toggles take no arg: Go flips its own state, the
+	// Réglages, the back of the card. Toggles take no arg: Go flips its own state, the
 	// surface never tells it what the value is.
 	actOpenSettings  = "open_settings"
 	actHiFi          = "hifi_toggle"

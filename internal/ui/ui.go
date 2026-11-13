@@ -1042,7 +1042,9 @@ func (a *App) toggleAnim() {
 		}
 	} else {
 		a.mAnim.Uncheck()
-		a.anim.stop()
+		if !a.popoverShown() {
+			a.anim.stop() // with the card up the loop keeps feeding its meter
+		}
 		a.applyIconState(!a.player.IsPlaying())
 	}
 	a.rec.Record(events.Event{Kind: events.KindAnim, Value: b2i(on)})

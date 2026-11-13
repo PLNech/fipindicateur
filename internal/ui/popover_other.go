@@ -2,6 +2,8 @@
 
 package ui
 
+import "github.com/PLNech/fipindicateur/internal/vu"
+
 // The SwiftUI popover exists only on darwin behind the swiftui build tag
 // (popover_darwin.go). Everywhere else the seams the shared code calls are
 // no-ops and the tray menu stays the whole UI.
@@ -12,7 +14,7 @@ func (a *App) syncPopover() {}
 
 func (a *App) popoverShown() bool { return false }
 
-func popoverLevel(float64) {}
+func popoverBars(vu.Heights) {}
 
 // hasPopover: no card on this build, the menu carries every setting.
 const hasPopover = false

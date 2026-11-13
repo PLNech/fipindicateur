@@ -151,9 +151,18 @@ func (an *animator) unavailable() bool {
 // willRun).
 func (an *animator) start() {
 	enabled := an.app.animatedIconEnabled()
+	an.launch(enabled || an.app.popoverShown())
+}
+
+// startForCard launches the loop for the card's meter even with the tray
+// animation off: the card shows the same four bars, from the same frames.
+// The loop retires by itself once neither reader wants them.
+func (an *animator) startForCard() { an.launch(true) }
+
+func (an *animator) launch(wanted bool) {
 	an.mu.Lock()
 	defer an.mu.Unlock()
-	if an.stopCh != nil || an.broken || !enabled {
+	if an.stopCh != nil || an.broken || !wanted {
 		return
 	}
 	an.stopCh = make(chan struct{})
@@ -208,7 +217,10 @@ func (an *animator) loop(stop, repaint <-chan struct{}) {
 		last  = frameKey{h: vu.Heights{255}} // sentinel: first real frame draws
 		frame int
 		errs  int
+		idle  int        // ticks with no reader at all (icon off, card down)
+		sent  vu.Heights // the frame the card holds
 	)
+	sent[0] = 255 // sentinel: the first frame reaches the card
 
 	for {
 		select {
@@ -232,7 +244,6 @@ func (an *animator) loop(stop, repaint <-chan struct{}) {
 		if ok {
 			errs = 0
 			level = vu.LevelFromDB(db)
-			popoverLevel(level)
 		} else if an.app.player.CoreIdle() {
 			// Core idle is not an astats failure: only count misses while
 			// audio actually flows, otherwise a slow stream start would
@@ -272,6 +283,37 @@ func (an *animator) loop(stop, repaint <-chan struct{}) {
 		frame++
 		h := vu.Envelope(prev, target)
 		prev = h
+
+		// Two readers of the one frame: the card's meter (when it is up) and
+		// the tray glyph (when the animation is on). Both get the same
+		// heights on the same tick, each only when its own copy is stale.
+		card := an.app.popoverShown()
+		if card && h != sent {
+			popoverBars(h)
+			sent = h
+		} else if !card {
+			sent[0] = 255
+		}
+		if !an.app.animatedIconEnabled() {
+			// The loop only runs for the card here. Once the card is gone
+			// for a couple of seconds (it opens asynchronously, hence the
+			// grace), retire as stop() does.
+			last = frameKey{h: vu.Heights{255}}
+			if card {
+				idle = 0
+			} else if idle++; idle > 2*animFPS {
+				an.mu.Lock()
+				if an.stopCh != nil {
+					close(an.stopCh)
+					an.stopCh = nil
+					an.repaintCh = nil
+				}
+				an.mu.Unlock()
+				return
+			}
+			continue
+		}
+		idle = 0
 
 		fk := frameKey{h: h, tint: an.quantizedTint(time.Now())}
 		if fk != last {

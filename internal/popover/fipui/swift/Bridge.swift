@@ -4,10 +4,10 @@
 // The whole contract between the two languages is a handful of C symbols:
 //
 //   Go -> Swift   fipui_push_state(json)   one Snapshot, any thread
-//   Go -> Swift   fipui_set_level(v)       the VU level, at the animator's pace
+//   Go -> Swift   fipui_set_bars(a,b,c,d)  the tray glyph's four bars, same frames
 //   Go -> Swift   fipui_toggle(anchor)     show or close the card
 //   Go -> Swift   fipui_close()            close it
-//   Go -> Swift   fipui_show_settings()    bring the Réglages window forward
+//   Go -> Swift   fipui_show_settings()    turn the card to its Réglages face
 //   Go -> Swift   fipui_is_shown()         is it up (Go then skips its banners)
 //   Swift -> Go   goFipAction(id, arg)     every user action, one entry point
 //   Go -> Swift   fipui_debug_*            the link test's round trip and renders
@@ -66,20 +66,18 @@ enum Action: String, CaseIterable {
     case station, stationNext = "station_next", stationPrev = "station_prev"
     case openWiki = "open_wiki"
     case openReport = "stats_view"
-    // The Réglages window.
+    // Réglages, the back of the card.
     case openSettings = "open_settings"
     case hifiToggle = "hifi_toggle"
     case crossfade, amp
     case audioDevice = "audio_device"
     case notifToggle = "notif_toggle"
     case showNotifToggle = "show_notif_toggle"
-    case showCalendarToggle = "show_calendar_toggle"
     case animToggle = "anim_toggle"
     case playOnStartToggle = "play_on_start_toggle"
     case historyToggle = "history_toggle"
     case updateStartupToggle = "update_startup_toggle"
     case updateCheck = "update_check"
-    case openDataDir = "open_data_dir"
     case clearHistory = "clear_history"
     case clearPrefs = "clear_prefs"
     case openAbout = "open_about"
@@ -94,6 +92,11 @@ final class FipModel {
     var s = Snapshot()
     /// The decoded cover, kept apart from the snapshot so a volume tick does
     /// not read the file again: it only changes when the path does.
+    /// Which face of the card is up. View state, not product state: Go only
+    /// asks for the back to be shown (the measured open_settings action).
+    var settingsUp = false
+    /// The page of Réglages on show (0 Écoute, 1 Appli).
+    var settingsPage = 0
     private(set) var cover: NSImage?
     private var coverPath = ""
 
@@ -110,12 +113,13 @@ final class FipModel {
     }
 }
 
-/// The VU level lives apart from the snapshot: it moves several times a
-/// second and must only redraw the two bars that read it.
+/// The meter lives apart from the snapshot: it moves several times a second
+/// and must only redraw the bars that read it. The four heights (0..1) are
+/// the very frame Go's animator draws in the tray glyph.
 @Observable
 final class Meter {
     static let shared = Meter()
-    var level: Double = 0
+    var bars: [Double] = [0, 0, 0, 0]
 }
 
 // MARK: - The card (a temporary panel where notifications appear)
@@ -150,8 +154,17 @@ private final class CardController {
         isShown ? close() : show(on: anchor.window?.screen ?? NSScreen.main)
     }
 
+    /// Turns the card to its Réglages face, bringing it up first if needed
+    /// (the menu's Réglages… item, with the card closed).
+    func showSettings() {
+        if !isShown { show(on: NSScreen.main) }
+        FipModel.shared.settingsUp = true
+    }
+
     private func show(on screen: NSScreen?) {
         guard let screen else { return }
+        FipModel.shared.settingsUp = false
+        Meter.shared.bars = [0, 0, 0, 0]
         let host = NSHostingView(rootView: CardView(model: .shared, meter: .shared))
         let size = host.fittingSize
         // visibleFrame excludes the menu bar: the card hangs just under it,
@@ -231,10 +244,10 @@ public func fipuiClose() {
     onMain { CardController.shared.close() }
 }
 
-/// Brings the Réglages window forward.
+/// Turns the card to its Réglages face (and shows it if it was closed).
 @_cdecl("fipui_show_settings")
 public func fipuiShowSettings() {
-    onMain { SettingsController.shared.show() }
+    onMain { CardController.shared.showSettings() }
 }
 
 /// 1 while the card is up, from any thread. Go skips the banners that would
@@ -244,12 +257,12 @@ public func fipuiIsShown() -> Int32 {
     CardController.shownAnyThread ? 1 : 0
 }
 
-/// The VU level (0..1). Dropped while the card is hidden: nothing reads it.
-@_cdecl("fipui_set_level")
-public func fipuiSetLevel(_ level: Double) {
-    DispatchQueue.main.async {
-        if CardController.shared.isShown { Meter.shared.level = level }
-    }
+/// One frame of the meter: four bar heights (0..1). Dropped, without a hop
+/// to the main thread, while the card is hidden: nothing reads it.
+@_cdecl("fipui_set_bars")
+public func fipuiSetBars(_ a: Double, _ b: Double, _ c: Double, _ d: Double) {
+    guard CardController.shownAnyThread else { return }
+    DispatchQueue.main.async { Meter.shared.bars = [a, b, c, d] }
 }
 
 /// Fires an action exactly as a control would, for the Go link test. Returns
@@ -261,7 +274,7 @@ public func fipuiDebugFire(_ id: UnsafePointer<CChar>, _ arg: UnsafePointer<CCha
     return 1
 }
 
-/// Renders a view ("card" or "settings") offscreen to a PNG at 2x, in one
+/// Renders a view ("card", "settings" or "settings-appli") offscreen to a PNG at 2x, in one
 /// appearance, for a snapshot: the same view the app hosts, so a layout can
 /// be looked at without a click. Returns 1 when the file was written.
 @_cdecl("fipui_debug_render")
@@ -272,11 +285,12 @@ public func fipuiDebugRender(_ view: UnsafePointer<CChar>, _ path: UnsafePointer
     else { return 0 }
     model.apply(snap)
     let meter = Meter()
-    meter.level = 0.6
+    meter.bars = [0.55, 0.9, 0.7, 0.35]
     let scheme: ColorScheme = dark != 0 ? .dark : .light
-    let root = String(cString: view) == "settings"
-        ? AnyView(SettingsView(model: model)) : AnyView(CardView(model: model, meter: meter))
-    let host = NSHostingView(rootView: root.environment(\.colorScheme, scheme))
+    let which = String(cString: view)
+    model.settingsUp = which.hasPrefix("settings")
+    model.settingsPage = which == "settings-appli" ? 1 : 0
+    let host = NSHostingView(rootView: CardView(model: model, meter: meter).environment(\.colorScheme, scheme))
     let size = host.fittingSize
     let rect = NSRect(origin: .zero, size: size)
     host.frame = rect
