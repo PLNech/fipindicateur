@@ -60,7 +60,6 @@ struct SettingsFace: View {
                         .frame(width: 22, height: 22)
                 }
                 .buttonStyle(PressStyle())
-                .keyboardShortcut(.cancelAction)
                 .help("Retour à l'antenne")
                 Text("Réglages").font(.system(size: 14, weight: .heavy))
                 Spacer()

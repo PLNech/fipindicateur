@@ -128,7 +128,11 @@ final class Meter {
 /// keyboard (space, escape) while it is up.
 private final class CardPanel: NSPanel {
     override var canBecomeKey: Bool { true }
-    override func cancelOperation(_: Any?) { CardController.shared.close() }
+    /// Escape peels one layer: Réglages back to the antenna, then the card away.
+    override func cancelOperation(_: Any?) { CardController.shared.escape() }
+    override func keyDown(with e: NSEvent) {
+        if !CardController.shared.handle(e) { super.keyDown(with: e) }
+    }
 }
 
 /// The card is a menu in spirit: it appears top-right under the menu bar
@@ -148,6 +152,59 @@ private final class CardController {
     static var shownAnyThread: Bool {
         get { lock.lock(); defer { lock.unlock() }; return up }
         set { lock.lock(); up = newValue; lock.unlock() }
+    }
+
+    // MARK: keys and auto-hide
+
+    /// A card left up silently swallows every banner (Go skips them while it
+    /// is shown), so it puts itself away after this long with no hover, key
+    /// or drag. Réglages on show keeps it open: someone is reading.
+    private static let idleLimit: TimeInterval = 8
+    private var idleTimer: Timer?
+    private var lastActivity = Date()
+
+    private func bump() { lastActivity = Date() }
+
+    private func startIdleTimer() {
+        idleTimer?.invalidate()
+        bump()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, let p = self.panel else { return }
+            // Polling the pointer covers hover, drag and scroll in one test.
+            if p.frame.contains(NSEvent.mouseLocation) || FipModel.shared.settingsUp { self.bump() }
+            if Date().timeIntervalSince(self.lastActivity) > Self.idleLimit { self.close() }
+        }
+    }
+
+    func escape() {
+        if FipModel.shared.settingsUp { FipModel.shared.settingsUp = false } else { close() }
+    }
+
+    /// The card's keys, all through the same actions the controls fire:
+    /// space play/pause, left and right the neighbouring stations, up and
+    /// down the volume, M mute, Cmd-comma Réglages. On the Réglages face
+    /// only Cmd-comma applies: the arrows belong to its slider.
+    func handle(_ e: NSEvent) -> Bool {
+        bump()
+        let model = FipModel.shared
+        let mods = e.modifierFlags.intersection([.command, .control, .option])
+        let key = e.charactersIgnoringModifiers?.lowercased() ?? ""
+        if mods == .command, key == "," {
+            if !model.settingsUp { model.send(.openSettings) }
+            return true
+        }
+        guard mods.isEmpty, !model.settingsUp else { return false }
+        switch e.keyCode {
+        case 49: model.send(.playToggle)
+        case 123: model.send(.stationPrev)
+        case 124: model.send(.stationNext)
+        case 126: model.send(.volume, String(min(model.s.volume + 5, 100)))
+        case 125: model.send(.volume, String(max(model.s.volume - 5, 0)))
+        default:
+            guard key == "m" else { return false }
+            model.send(.muteToggle)
+        }
+        return true
     }
 
     func toggle(anchor: NSView) {
@@ -186,6 +243,7 @@ private final class CardController {
         p.animator().alphaValue = 1
         panel = p
         Self.shownAnyThread = true
+        startIdleTimer()
 
         // Clicks in other apps (global) and in our own windows outside the
         // card (local) dismiss it. A click on our status item is neither: it
@@ -203,6 +261,8 @@ private final class CardController {
     }
 
     func close() {
+        idleTimer?.invalidate()
+        idleTimer = nil
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
         panel?.orderOut(nil)
