@@ -163,3 +163,4 @@
   }
 ]
 {"ts":"2026-11-08","task":"tray icon colors: Legible keeps full HSL saturation (lightness-only nudge for 3:1), black phantom rim under colored ink, white rim kept for neutral inks; docs strip/gif now composite the real rim pixels","commit":"cdadbac"}
+{"ts":"2026-11-13","task":"SwiftUI popover M1: action registry (App.fire) shared by menu and popover, Swift linked into the Go binary behind the swiftui tag, left click opens the popover","commit":"9ade6bf","learning":"Linking Swift into a cgo binary: ship one -wmo object as a .syso (hashed by the build cache, an -l archive is not), move __LLVM,__swift_modhash out with ld -r -rename_section (ld -r alone keeps it for a single input, Go rejects it as LTO), and tag every Go file of the syso package or the default go test ./... trips on it. Not verified: real clicks on the live popover."}
