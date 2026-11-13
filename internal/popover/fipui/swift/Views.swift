@@ -346,7 +346,6 @@ private struct Fader: View {
 private struct Dial: View {
     let model: FipModel
     let t: Theme
-    static let pitch: CGFloat = 78
     /// How far a throw carries, per point of predicted travel.
     private static let carry: CGFloat = 1.7
 
@@ -359,21 +358,22 @@ private struct Dial: View {
         let s = model.s
         let n = max(s.stations.count, 1)
         let cur = s.stations.firstIndex { $0.key == s.station } ?? 0
+        let scale = DialScale(s.stations)
         HStack(spacing: 2) {
             step("chevron.left", "Station précédente", .stationPrev)
-            DialFace(pos: pos, stations: s.stations, needle: t.station(s.current.color), t: t) { i in
+            DialFace(pos: pos, stations: s.stations, scale: scale, needle: t.station(s.current.color), t: t) { i in
                 tune(to: nearest(i, n), stations: s.stations)
             }
             .contentShape(Rectangle())
             .simultaneousGesture(DragGesture(minimumDistance: 4)
                 .onChanged { v in
                     if grabbed == nil { grabbed = pos }
-                    pos = (grabbed ?? pos) - v.translation.width / Self.pitch
+                    pos = scale.pos(scale.x(grabbed ?? pos) - v.translation.width)
                 }
                 .onEnded { v in
                     let from = grabbed ?? pos
                     grabbed = nil
-                    let landing = from - v.predictedEndTranslation.width * Self.carry / Self.pitch
+                    let landing = scale.pos(scale.x(from) - v.predictedEndTranslation.width * Self.carry)
                     tune(to: landing.rounded(), stations: s.stations)
                 })
             step("chevron.right", "Station suivante", .stationNext)
@@ -416,11 +416,60 @@ private struct Dial: View {
     }
 }
 
+/// Where each station sits on the scale, in points. Names differ a lot in
+/// length ("FIP", "Sacré français"), so evenly spaced stations collide: each
+/// one takes the room its name needs at its largest (under the needle) plus
+/// a gap.
+struct DialScale {
+    /// Centre of station i, plus one closing entry: the length of a turn.
+    let centers: [Double]
+    private static let gap = 26.0
+
+    init(_ stations: [Station]) {
+        let font = NSFont.systemFont(ofSize: 16, weight: .heavy)
+        let w = stations.map { Double(($0.name as NSString).size(withAttributes: [.font: font]).width) }
+        var c = [0.0]
+        for i in w.indices { c.append(c[i] + (w[i] + w[(i + 1) % w.count]) / 2 + Self.gap) }
+        centers = c
+    }
+
+    var n: Int { centers.count - 1 }
+    var length: Double { centers[n] }
+
+    /// Points along the scale for a position in stations (unbounded both ways).
+    func x(_ pos: Double) -> Double {
+        guard n > 0 else { return 0 }
+        let turns = (pos / Double(n)).rounded(.down)
+        let p = pos - turns * Double(n)
+        let i = min(Int(p), n - 1)
+        return turns * length + centers[i] + (p - Double(i)) * (centers[i + 1] - centers[i])
+    }
+
+    /// The inverse: the position in stations under a point of the scale.
+    func pos(_ x: Double) -> Double {
+        guard n > 0 else { return 0 }
+        let turns = (x / length).rounded(.down)
+        let r = x - turns * length
+        var i = 0
+        while i < n - 1, centers[i + 1] <= r { i += 1 }
+        return turns * Double(n) + Double(i) + (r - centers[i]) / (centers[i + 1] - centers[i])
+    }
+
+    /// Signed distance in points from the needle (at here) to a point of the
+    /// scale, by the shortest way round.
+    func offset(_ at: Double, from here: Double) -> Double {
+        guard length > 0 else { return 0 }
+        let d = (at - here + length / 2).truncatingRemainder(dividingBy: length)
+        return (d < 0 ? d + length : d) - length / 2
+    }
+}
+
 /// The sliding scale itself. Animatable on pos, so a coast is drawn frame by
 /// frame as a real scroll instead of each label jumping to its new place.
 private struct DialFace: View, Animatable {
     var pos: Double
     let stations: [Station]
+    let scale: DialScale
     let needle: Color
     let t: Theme
     let pick: (Int) -> Void
@@ -431,31 +480,29 @@ private struct DialFace: View, Animatable {
     }
 
     var body: some View {
-        let n = Double(max(stations.count, 1))
-        let pitch = Dial.pitch
+        let here = scale.x(pos)
         GeometryReader { g in
             let mid = g.size.width / 2
             ZStack {
                 ForEach(Array(stations.enumerated()), id: \.element.key) { i, st in
-                    // Signed distance to the needle, wrapped to half a turn.
-                    let d = (Double(i) - pos + n / 2).truncatingRemainder(dividingBy: n)
-                    let off = (d < 0 ? d + n : d) - n / 2
-                    let near = max(0, 1 - abs(off)) // 1 under the needle, 0 a station away
+                    let off = scale.offset(scale.centers[i], from: here)
+                    let near = max(0, 1 - abs(off) / 48) // 1 under the needle
                     Text(st.name)
                         .font(.system(size: 12 + 4 * near, weight: near > 0.5 ? .heavy : .medium))
                         .foregroundStyle(near > 0.5 ? t.ink : t.muted)
                         .fixedSize()
-                        .opacity(max(0, 1 - abs(off) * 0.45))
-                        .position(x: mid + off * pitch, y: 12)
+                        .opacity(max(0, 1 - abs(off) / 190))
+                        .position(x: mid + off, y: 12)
                         .onTapGesture { pick(i) }
                 }
-                let frac = pos - pos.rounded(.down)
-                ForEach(-16...16, id: \.self) { i in
-                    // Every fifth graduation is a station; the scale has no
-                    // absolute origin, only the fraction slides.
+                // A long graduation under each station, four short ones on
+                // the way to the next.
+                ForEach(0..<(scale.n * 5), id: \.self) { k in
+                    let i = k / 5
+                    let at = scale.centers[i] + Double(k % 5) / 5 * (scale.centers[i + 1] - scale.centers[i])
                     Rectangle().fill(t.hairline)
-                        .frame(width: 1, height: i % 5 == 0 ? 9 : 5)
-                        .position(x: mid + (Double(i) - frac * 5) * pitch / 5, y: i % 5 == 0 ? 33 : 35)
+                        .frame(width: 1, height: k % 5 == 0 ? 9 : 5)
+                        .position(x: mid + scale.offset(at, from: here), y: k % 5 == 0 ? 33 : 35)
                 }
                 Rectangle().fill(needle).frame(width: 2, height: 14).position(x: mid, y: 31)
             }

@@ -38,11 +38,11 @@ func TestRenderCard(t *testing.T) {
 		dir = t.TempDir()
 	}
 	snap := Snapshot{
-		Playing: true, Station: "jazz",
+		Playing: true, Station: "nouveautes",
 		Stations: []Station{
 			{"fip", "FIP", "#e2007a"}, {"rock", "Rock", "#b61f24"}, {"jazz", "Jazz", "#0d5c8c"},
 			{"groove", "Groove", "#c8102e"}, {"monde", "Monde", "#2e8b57"}, {"nouveautes", "Nouveautés", "#f0a500"},
-			{"reggae", "Reggae", "#3a7d44"}, {"electro", "Electro", "#5b2a86"}, {"metal", "Metal", "#333333"},
+			{"sacre", "Sacré français", "#1f4e9c"}, {"electro", "Electro", "#5b2a86"}, {"metal", "Metal", "#333333"},
 		},
 		Title: "Mystery of Love", Artist: "Dorothy Ashby", Album: "Afro-Harping", Year: 1968, Label: "Cadet",
 		Show: "Club Jazzafip", Cover: os.Getenv("FIPUI_RENDER_COVER"),
