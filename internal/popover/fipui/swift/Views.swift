@@ -249,13 +249,16 @@ private struct Transport: View {
 
     var body: some View {
         let s = model.s
+        // The accent is the antenna's: the tuned station's colour, made
+        // legible for the theme, tints what is live (play, J'aime, fader).
+        let accent = t.station(s.current.color)
         HStack(spacing: 10) {
             Button { model.send(.playToggle) } label: {
                 ZStack {
-                    Circle().fill(s.playing ? t.fip : .clear)
+                    Circle().fill(s.playing ? accent : .clear)
                     Circle().stroke(s.playing ? .clear : t.hairline, lineWidth: 1)
                     PlayGlyph(playing: s.playing)
-                        .fill(s.playing ? Theme.nuit.bg : t.ink)
+                        .fill(s.playing ? (t.dark ? Theme.nuit.bg : Theme.papier.bg) : t.ink)
                         .frame(width: 12, height: 13)
                         .offset(x: s.playing ? 0 : 1.5)
                 }
@@ -266,7 +269,7 @@ private struct Transport: View {
             .help(s.playing ? "Pause" : "Lecture")
             Spacer()
             verdict(rising: false, on: s.verdict < 0, tint: t.amber, help: "Pas pour moi", .dislike)
-            verdict(rising: true, on: s.verdict > 0, tint: t.fip, help: "J'aime ce morceau", .like)
+            verdict(rising: true, on: s.verdict > 0, tint: accent, help: "J'aime ce morceau", .like)
         }
     }
 
@@ -320,7 +323,7 @@ private struct Fader: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(t.raised)
                         .overlay(RoundedRectangle(cornerRadius: 3).stroke(t.hairline, lineWidth: 1))
-                        .overlay(Rectangle().fill(t.fip).frame(width: 2, height: 12))
+                        .overlay(Rectangle().fill(t.station(model.s.current.color)).frame(width: 2, height: 12))
                         .frame(width: 14, height: 22)
                         .position(x: x, y: g.size.height / 2)
                 }
