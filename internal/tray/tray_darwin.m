@@ -20,6 +20,7 @@ extern void trayItemSelected(int id);
 extern void trayScrollWheel(double deltaY, int precise);
 extern void traySliderChanged(int sliderID, int value);
 extern void trayMenuOpen(void);
+extern void trayPrimaryClick(void *anchor);
 extern void trayAppearanceChanged(void);
 
 // The autosave name hands position persistence to AppKit: it stores the
@@ -54,6 +55,11 @@ static void placeStatusItemDefault(void) {
 @interface TrayScrollView : NSView
 @end
 
+// primaryClick is the primary-click mode switch (main thread only).
+// presentTrayMenu asks the delegate, defined further down, for the menu.
+static BOOL primaryClick = NO;
+static void presentTrayMenu(void);
+
 @implementation TrayScrollView
 
 // scrollWheel hands the raw gesture to Go (trayScrollWheel): precise trackpad
@@ -70,11 +76,26 @@ static void placeStatusItemDefault(void) {
 // Clicks are not consumed: the status item presents its menu on the button's
 // mouse down, so the gesture is handed straight down the responder chain (the
 // overlay's next responder is the button itself).
+//
+// Primary-click mode (trayEnablePrimaryClick, off by default) splits the
+// gesture here instead, where every click on the item already lands: a plain
+// left click goes to Go with the button as anchor (a popover opens under it),
+// a right or control click presents the menu.
 - (void)mouseDown:(NSEvent *)event {
-    [[self nextResponder] mouseDown:event];
+    if (!primaryClick) {
+        [[self nextResponder] mouseDown:event];
+    } else if (event.modifierFlags & NSEventModifierFlagControl) {
+        presentTrayMenu();
+    } else {
+        trayPrimaryClick((__bridge void *)[self superview]);
+    }
 }
 
 - (void)rightMouseDown:(NSEvent *)event {
+    if (primaryClick) {
+        presentTrayMenu();
+        return;
+    }
     [[self nextResponder] rightMouseDown:event];
 }
 
@@ -189,6 +210,24 @@ static void placeStatusItemDefault(void) {
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app {
     (void)app;
     return YES;
+}
+
+// setPrimaryClick switches the item between its two click behaviors. Off
+// (the default): the menu lives on the item and any click opens it. On: the
+// item carries no menu, so AppKit stops presenting one by itself and the
+// scroll overlay routes the clicks (see TrayScrollView).
+- (void)setPrimaryClick:(NSNumber *)on {
+    primaryClick = on.boolValue;
+    statusItem.menu = primaryClick ? nil : menu;
+}
+
+// presentMenu shows the menu in primary-click mode: attached for the length
+// of one synthesized click (performClick tracks the menu and returns when it
+// closes), then detached again so the next left click stays ours.
+- (void)presentMenu {
+    statusItem.menu = menu;
+    [statusItem.button performClick:nil];
+    statusItem.menu = primaryClick ? nil : menu;
 }
 
 - (void)menuHandler:(id)sender {
@@ -387,6 +426,7 @@ static void placeStatusItemDefault(void) {
 
 @end
 
+
 static TrayAppDelegate *owner = nil;
 
 // onMain marshals one unit of AppKit work to the main thread and waits: the
@@ -427,6 +467,14 @@ void trayRegister(void) {
 
 void trayRunLoop(void) {
     [NSApp run];
+}
+
+static void presentTrayMenu(void) {
+    [owner presentMenu];
+}
+
+void trayEnablePrimaryClick(short on) {
+    onMain(@selector(setPrimaryClick:), @(on != 0));
 }
 
 void trayQuit(void) {

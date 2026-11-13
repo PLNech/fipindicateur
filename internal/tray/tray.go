@@ -48,6 +48,7 @@ extern void traySetItemChecked(int itemID, short checked);
 extern void traySetItemHidden(int itemID, short hidden);
 extern void trayInsertSlider(int beforeID, int sliderID, int value);
 extern void traySetSliderState(int sliderID, int value, short enabled);
+extern void trayEnablePrimaryClick(short on);
 extern void trayAppearanceChanged(void);
 */
 import "C"
@@ -528,6 +529,40 @@ func trayMenuOpen() {
 	menuOpenMu.Unlock()
 	if fn != nil {
 		fn()
+	}
+}
+
+// --- primary click (a popover under the item) ---
+
+var (
+	primaryMu sync.Mutex
+	primaryFn func(anchor unsafe.Pointer)
+)
+
+// SetPrimaryClick changes what a click on the status item does. With a
+// non-nil fn, a plain left click calls fn on the main thread with the item's
+// button (an NSView*, alive for the life of the process) as anchor, and the
+// menu moves to the right click and the control click. With nil, every click
+// opens the menu again: the default, and the only behavior of a build that
+// never calls this. Call it after Run has started the app (from onReady).
+func SetPrimaryClick(fn func(anchor unsafe.Pointer)) {
+	primaryMu.Lock()
+	primaryFn = fn
+	primaryMu.Unlock()
+	on := C.short(0)
+	if fn != nil {
+		on = 1
+	}
+	C.trayEnablePrimaryClick(on)
+}
+
+//export trayPrimaryClick
+func trayPrimaryClick(anchor unsafe.Pointer) {
+	primaryMu.Lock()
+	fn := primaryFn
+	primaryMu.Unlock()
+	if fn != nil {
+		fn(anchor)
 	}
 }
 
