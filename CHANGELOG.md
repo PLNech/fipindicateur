@@ -15,6 +15,17 @@
   dentée) : deux pages, Écoute et Appli. La carte est liée dans le même
   binaire, sans second processus, et chacun de ses contrôles passe par le
   registre d'actions qui alimente déjà le menu : rien n'échappe à la mesure.
+  Au clavier, carte ouverte : espace lecture/pause, ←/→ station voisine,
+  ↑/↓ volume, M muet, ⌘, réglages ; Échap revient de Réglages puis ferme.
+  Laissée seule 8 s (hors survol), elle se range : ouverte, elle fait taire
+  toutes les bannières. Celles-ci deviennent des cartons d'antenne (morceau,
+  émission, zap, verdict) : une petite carte de la même famille sous la barre
+  de menus, 5 s, la pochette ou une tuile à la couleur de la station, un filet
+  qui se vide ; elle ne prend jamais le clavier ni le pointeur et cède la
+  place à la carte. À savoir : ce n'est plus une notification système, donc
+  « Ne pas déranger » ne la masque pas. Dans cette construction, le menu
+  n'embarque plus les échelles de préréglages (volume, fondu, amplification)
+  ni le curseur de volume du menu : la carte les remplace.
   La construction par défaut ne change pas et n'a pas besoin de Swift
 
 ### Fixed
