@@ -79,9 +79,15 @@ type App struct {
 
 	histPath  string // resolved once; empty if unresolvable
 	prefsPath string // resolved once; empty if unresolvable
-	anim      animator
-	wiki      *wiki.Resolver
-	rec       *events.Recorder
+
+	// taste is the last verdict given and the track it was given to (guarded
+	// by mu): a surface that shows the verdict as a state (the popover's
+	// latched glyph) asks tasteFor, and the latch falls off by itself when
+	// the track changes. Display only: prefs.jsonl stays the record.
+	taste struct{ artist, title, verdict string }
+	anim  animator
+	wiki  *wiki.Resolver
+	rec   *events.Recorder
 
 	// iconMu guards lastIcon, the last bytes handed to systray.SetIcon. The
 	// static-icon path (setPlayingUI) and the animator goroutine both set the
@@ -756,6 +762,10 @@ func (a *App) recordTaste(verdict string) {
 		log.Printf("ui: prefs append: %v", err)
 		return
 	}
+	a.mu.Lock()
+	a.taste.artist, a.taste.title, a.taste.verdict = np.Artist, np.Title, verdict
+	a.mu.Unlock()
+	a.syncPopover()
 	if a.cfgSnapshot().Notifications && a.notif != nil {
 		summary := "C'est noté"
 		if verdict == prefs.Dislike {
@@ -772,6 +782,24 @@ func (a *App) recordTaste(verdict string) {
 		iconPath := a.notif.FetchCover(ctx, np.CoverURL)
 		a.notif.Notify(summary, body, iconPath, a.cfgSnapshot().NotifTimeoutMs)
 	}
+}
+
+// tasteFor is the verdict latched on np: +1 liked, -1 disliked, 0 none (or a
+// verdict given to another track).
+func (a *App) tasteFor(np metadata.NowPlaying) int {
+	a.mu.Lock()
+	t := a.taste
+	a.mu.Unlock()
+	if np.Empty() || t.artist != np.Artist || t.title != np.Title {
+		return 0
+	}
+	switch t.verdict {
+	case prefs.Like:
+		return 1
+	case prefs.Dislike:
+		return -1
+	}
+	return 0
 }
 
 // notify posts the track banner. macOS splits the fields across the banner's

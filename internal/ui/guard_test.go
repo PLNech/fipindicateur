@@ -6,6 +6,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/PLNech/fipindicateur/internal/metadata"
+	"github.com/PLNech/fipindicateur/internal/prefs"
 )
 
 // TestSingleOnClickCallSite enforces the "measurable by design" invariant: the
@@ -225,5 +228,26 @@ func TestFireUnknownAction(t *testing.T) {
 	a.registerActions()
 	if a.fire("no_such_action", "") {
 		t.Fatal("fire reported an unknown action as run")
+	}
+}
+
+// The latched verdict belongs to one track: it must not follow the listener
+// onto the next one, and an empty track never carries a verdict.
+func TestTasteForLatchesOnTheTrack(t *testing.T) {
+	a := &App{}
+	liked := metadata.NowPlaying{Artist: "A", Title: "T"}
+	a.taste.artist, a.taste.title, a.taste.verdict = "A", "T", prefs.Like
+	if got := a.tasteFor(liked); got != 1 {
+		t.Fatalf("liked track: got %d, want 1", got)
+	}
+	if got := a.tasteFor(metadata.NowPlaying{Artist: "A", Title: "Autre"}); got != 0 {
+		t.Fatalf("next track inherited the verdict: %d", got)
+	}
+	a.taste.verdict = prefs.Dislike
+	if got := a.tasteFor(liked); got != -1 {
+		t.Fatalf("disliked track: got %d, want -1", got)
+	}
+	if got := a.tasteFor(metadata.NowPlaying{}); got != 0 {
+		t.Fatalf("empty track carries a verdict: %d", got)
 	}
 }

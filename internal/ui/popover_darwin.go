@@ -117,9 +117,7 @@ func (a *App) syncPopover() {
 	}
 }
 
-// popoverSnapshot reads the App's state into the popover's contract. The
-// verdict and the VU level are not carried yet: the App keeps no latched
-// taste verdict, and the level needs its own cadence.
+// popoverSnapshot reads the App's state into the popover's contract.
 func (a *App) popoverSnapshot() popover.Snapshot {
 	cur := a.currentStation()
 	a.mu.Lock()
@@ -135,6 +133,7 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 		Label:   np.Label,
 		Year:    np.Year,
 		Cover:   a.coverFor(np.CoverURL),
+		Verdict: a.tasteFor(np),
 	}
 	for _, st := range stations.Wheel() {
 		s.Stations = append(s.Stations, popover.Station{Key: st.Key, Name: st.Display, Color: st.Color})
