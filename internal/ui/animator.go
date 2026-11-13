@@ -232,6 +232,7 @@ func (an *animator) loop(stop, repaint <-chan struct{}) {
 		if ok {
 			errs = 0
 			level = vu.LevelFromDB(db)
+			popoverLevel(level)
 		} else if an.app.player.CoreIdle() {
 			// Core idle is not an astats failure: only count misses while
 			// audio actually flows, otherwise a slow stream start would

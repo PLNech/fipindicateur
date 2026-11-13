@@ -156,3 +156,11 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 	}
 	return s
 }
+
+// popoverShown reports whether the card is up. While it is, the banners that
+// would only repeat it (new track, new show, zap, verdict) are skipped: they
+// land on the very corner the card occupies.
+func (a *App) popoverShown() bool { return popover.Shown() }
+
+// popoverLevel feeds the card's VU meter at the animator's pace.
+func popoverLevel(level float64) { popover.SetLevel(level) }

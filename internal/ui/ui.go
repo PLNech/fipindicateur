@@ -636,6 +636,9 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 // notifyShow announces a programme starting on the antenna. Best-effort, like
 // the track notification, and reusing the same replace-in-place channel.
 func (a *App) notifyShow(s metadata.Show) {
+	if a.popoverShown() {
+		return
+	}
 	summary := s.Title
 	if summary == "" {
 		summary = "Nouvelle émission"
@@ -766,7 +769,8 @@ func (a *App) recordTaste(verdict string) {
 	a.taste.artist, a.taste.title, a.taste.verdict = np.Artist, np.Title, verdict
 	a.mu.Unlock()
 	a.syncPopover()
-	if a.cfgSnapshot().Notifications && a.notif != nil {
+	// With the card up, the wave that lights is the acknowledgement.
+	if a.cfgSnapshot().Notifications && a.notif != nil && !a.popoverShown() {
 		summary := "C'est noté"
 		if verdict == prefs.Dislike {
 			summary = "Noté : pas pour vous"
@@ -807,6 +811,9 @@ func (a *App) tasteFor(np metadata.NowPlaying) int {
 // body. The station closes the line so a banner is never ambiguous after a
 // zap, and the listen link rides along for click-to-open on macOS.
 func (a *App) notify(np metadata.NowPlaying) {
+	if a.popoverShown() {
+		return // the card is up and already shows the track
+	}
 	timeout := a.cfgSnapshot().NotifTimeoutMs
 	body := ""
 	if np.Album != "" {
@@ -1063,7 +1070,7 @@ func (a *App) setStation(key string) {
 	// the first track banner of the new station only lands after its metadata
 	// poll, or never during an émission. The banner rides the same
 	// replace-in-place channel, so the arriving track metadata replaces it.
-	if a.cfgSnapshot().Notifications && a.notif != nil {
+	if a.cfgSnapshot().Notifications && a.notif != nil && !a.popoverShown() {
 		a.notif.Notify(s.Display, "En écoute", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 	a.startStation(s, true)

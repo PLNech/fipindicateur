@@ -9,3 +9,7 @@ package ui
 func (a *App) wirePopover() {}
 
 func (a *App) syncPopover() {}
+
+func (a *App) popoverShown() bool { return false }
+
+func popoverLevel(float64) {}
