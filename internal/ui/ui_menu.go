@@ -120,11 +120,17 @@ func (a *App) buildMenu() {
 	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
 	a.on(a.mMute, "", a.firing(actMuteToggle)) // records the resulting state at source
 	a.volMI = map[int]*menuItem{}
-	for _, pct := range volumePresets {
-		it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
-		a.volMI[pct] = it
-		p := pct
-		a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
+	// The card has the fader (and the status item its scroll wheel): in the
+	// card build the preset ladder, the inline slider and the zenity slider
+	// are not built at all. Only Muet stays, hidden with its submenu, so the
+	// mute handler still has a checkbox to tick.
+	if !hasPopover {
+		for _, pct := range volumePresets {
+			it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
+			a.volMI[pct] = it
+			p := pct
+			a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
+		}
 	}
 	// The native slider on macOS (the hand-rolled tray hosts an NSSlider as a
 	// top-level entry, inserted just above this Volume item: one click opens
@@ -132,13 +138,15 @@ func (a *App) buildMenu() {
 	// chokepoint as the presets below (setActiveVolume, which records at
 	// source, drag ticks coalesced by recordVolume); a no-op elsewhere
 	// (volumeui_other.go).
-	a.addVolumeSlider()
+	if !hasPopover {
+		a.addVolumeSlider()
+	}
 	// A real slider, when zenity is present. Absent on macOS/Windows and
 	// minimal installs, so the item is only added when the binary exists (no
 	// dead item). The resulting volume change is the measurable action,
 	// recorded once at source on OK inside runVolumeSlider, so this click
 	// carries no Kind.
-	if zenityAvailable() {
+	if !hasPopover && zenityAvailable() {
 		slider := a.mVolume.AddSubMenuItem("Régler au curseur…", "Curseur de volume (zenity)")
 		a.on(slider, "", a.openVolumeSlider)
 	}
@@ -224,7 +232,11 @@ func (a *App) buildMenu() {
 	// opens a 0..10s slider; without it, a preset-checkbox submenu is the fallback
 	// (macOS / minimal installs). Either way setCrossfade records KindCrossfade at
 	// source, so the a.on click carries no Kind.
-	if zenityAvailable() {
+	if hasPopover {
+		// The card's slider drives it (the crossfade action): the item only
+		// keeps a title for applyCrossfadeUI to write, no ladder, no dialog.
+		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, true), "")
+	} else if zenityAvailable() {
 		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, true), "Durée du fondu entre stations (curseur zenity)")
 		a.on(a.mCrossfade, "", a.openCrossfadeSlider)
 	} else {
@@ -240,13 +252,16 @@ func (a *App) buildMenu() {
 	// Amplification (loudness preamp in the mpv filter chain): the FIP streams
 	// sit ~4.5 dB below streaming-platform loudness (measured -18.5 LUFS vs
 	// ~-14). Radio presets, no slider: the loudness barely varies.
-	a.mAmp = settings.AddSubMenuItem("Amplification", "Amplification du flux (les radios FIP jouent plus discret que les plateformes)")
+	// In the card build the three segments of Réglages replace the ladder.
 	a.ampMI = map[int]*menuItem{}
-	for _, lvl := range ampPresets {
-		it := a.mAmp.AddSubMenuItemCheckbox(ampPresetLabel(lvl), "", lvl == a.cfg.Amp)
-		a.ampMI[lvl] = it
-		l := lvl
-		a.on(it, "", func() { a.setAmp(l) }) // setAmp records KindAmp at source
+	if !hasPopover {
+		a.mAmp = settings.AddSubMenuItem("Amplification", "Amplification du flux (les radios FIP jouent plus discret que les plateformes)")
+		for _, lvl := range ampPresets {
+			it := a.mAmp.AddSubMenuItemCheckbox(ampPresetLabel(lvl), "", lvl == a.cfg.Amp)
+			a.ampMI[lvl] = it
+			l := lvl
+			a.on(it, "", func() { a.setAmp(l) }) // setAmp records KindAmp at source
+		}
 	}
 	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
 	a.on(a.mNotif, "", a.toggleNotif)
