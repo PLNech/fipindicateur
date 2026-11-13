@@ -70,6 +70,7 @@ type App struct {
 	now      metadata.NowPlaying
 	history  []metadata.NowPlaying
 	upcoming []metadata.Show // upcoming programmes, for the calendar submenu
+	zapPeek  zapPeek         // the track the last zap banner named
 
 	// lastShowConcept is the conceptUuid of the programme we last notified for,
 	// so a show is announced once at its start and not re-announced for every
@@ -216,6 +217,8 @@ func New() *App {
 func (a *App) OnReady() {
 	readyT0 := time.Now()
 	a.current = stations.ByKey(a.cfg.Station)
+	// Know what is on air everywhere, so a zap can name its destination's track.
+	a.meta.StartPeek(context.Background(), stations.All)
 
 	// Set a valid icon as the very first thing, before building the menu: the
 	// StatusNotifierItem is registered by the systray runtime the instant it is
@@ -825,6 +828,9 @@ func (a *App) notify(np metadata.NowPlaying) {
 	if a.popoverShown() {
 		return // the card is up and already shows the track
 	}
+	if a.zapPeeked(np) {
+		return // the zap banner just named it
+	}
 	timeout := a.cfgSnapshot().NotifTimeoutMs
 	body := ""
 	if np.Album != "" {
@@ -1102,11 +1108,56 @@ func (a *App) setStation(key string) {
 	// poll, or never during an émission. The banner rides the same
 	// replace-in-place channel, so the arriving track metadata replaces it.
 	if a.cfgSnapshot().Notifications && a.notif != nil && !a.popoverShown() {
-		if !a.carton(popover.Carton{Kind: "zap", Title: s.Display, Subtitle: "En écoute"}) {
-			a.notif.Notify(s.Display, "En écoute", "", a.cfgSnapshot().NotifTimeoutMs)
-		}
+		go a.zapBanner(s)
 	}
 	a.startStation(s, true)
+}
+
+// zapBanner announces a zap. When the peeker already knows the track on air
+// at the destination it names it at once, so the track banner that follows
+// the first poll is not needed (zapPeeked mutes it); otherwise it falls back
+// to "En écoute".
+func (a *App) zapBanner(s stations.Station) {
+	timeout := a.cfgSnapshot().NotifTimeoutMs
+	np, ok := a.meta.Peeked(s.Key)
+	if !ok {
+		c := popover.Carton{Kind: "zap", Title: s.Display, Subtitle: "En écoute", Station: s.Display, Color: s.Color}
+		if !a.carton(c) {
+			a.notif.Notify(s.Display, "En écoute", "", timeout)
+		}
+		return
+	}
+	a.mu.Lock()
+	a.zapPeek = zapPeek{key: s.Key, artist: np.Artist, title: np.Title, at: time.Now()}
+	a.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cover := a.notif.FetchCover(ctx, np.CoverURL)
+	c := popover.Carton{Kind: "zap", Title: np.Title, Subtitle: np.Artist, Detail: trackDetail(np), Cover: cover,
+		Station: s.Display, Color: s.Color}
+	if !a.carton(c) {
+		body := np.Title
+		if np.Artist != "" {
+			body = np.Artist + " · " + np.Title
+		}
+		a.notif.Notify(s.Display, body, "", timeout)
+	}
+}
+
+// zapPeek remembers the track a zap banner already named.
+type zapPeek struct {
+	key, artist, title string
+	at                 time.Time
+}
+
+// zapPeeked reports whether np is the track the last zap banner already
+// announced for the tuned station (within a minute), so it is not announced
+// a second time when the watcher's first poll lands.
+func (a *App) zapPeeked(np metadata.NowPlaying) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	z := a.zapPeek
+	return z.key == a.current.Key && z.artist == np.Artist && z.title == np.Title && time.Since(z.at) < time.Minute
 }
 
 // zapStation switches to the next (dir 1) or previous (dir -1) webradio in

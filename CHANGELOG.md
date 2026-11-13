@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Un zap annonce tout de suite le morceau en cours à la station d'arrivée
+  (titre, artiste, pochette) au lieu de « En écoute » puis du titre une
+  interrogation plus tard : l'appli suit désormais en tâche de fond ce qui
+  passe sur chaque station, avec la même source publique et le même rythme que
+  la station écoutée, sans rien envoyer sur toi. Inconnu, on retombe sur
+  « En écoute ».
 - macOS, expérimental (`make swiftui`, macOS 14+) : un clic gauche sur
   l'icône ouvre une carte SwiftUI en haut à droite de l'écran, sous la barre
   de menus : pochette, lecture, J'aime / Pas pour moi qui restent allumés sur

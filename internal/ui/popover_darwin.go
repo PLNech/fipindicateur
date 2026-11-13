@@ -182,11 +182,13 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 func (a *App) popoverShown() bool { return popover.Shown() }
 
 // carton drops a carton d'antenne in place of the system banner. The station
-// is the tuned one at the call, the cover a path Go already cached. True
+// is the tuned one at the call unless the caller names one (a zap names its destination, not yet tuned), the cover a path Go already cached. True
 // means it was handled here: the caller sends no system banner.
 func (a *App) carton(c popover.Carton) bool {
-	st := a.currentStation()
-	c.Station, c.Color = st.Display, st.Color
+	if c.Station == "" {
+		st := a.currentStation()
+		c.Station, c.Color = st.Display, st.Color
+	}
 	popover.ShowCarton(c)
 	return true
 }
