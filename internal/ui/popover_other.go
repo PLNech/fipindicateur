@@ -13,3 +13,8 @@ func (a *App) syncPopover() {}
 func (a *App) popoverShown() bool { return false }
 
 func popoverLevel(float64) {}
+
+// hasPopover: no card on this build, the menu carries every setting.
+const hasPopover = false
+
+func (a *App) openSettings() {}

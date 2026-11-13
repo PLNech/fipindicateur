@@ -48,10 +48,22 @@ func TestRenderCard(t *testing.T) {
 		Show: "Club Jazzafip", Cover: os.Getenv("FIPUI_RENDER_COVER"),
 		Start: 1, End: 2, Volume: 62, Verdict: 1,
 	}
-	for name, dark := range map[string]bool{"card-nuit.png": true, "card-papier.png": false} {
+	snap.Settings = Settings{
+		HiFi: true, Crossfade: 4, Amp: 1, AudioDevice: "auto",
+		AudioDevices:  []AudioDevice{{"auto", "Automatique"}, {"coreaudio/x", "Haut-parleurs MacBook Pro"}},
+		Notifications: true, ShowNotifications: true, AnimatedIcon: true, History: true, Version: "v0.8.0",
+	}
+	for _, r := range []struct {
+		view, name string
+		dark       bool
+	}{
+		{"card", "card-nuit.png", true}, {"card", "card-papier.png", false},
+		{"settings", "reglages-nuit.png", true}, {"settings", "reglages-papier.png", false},
+	} {
+		name, dark, view := r.name, r.dark, r.view
 		path := filepath.Join(dir, name)
 		ok := make(chan bool, 1)
-		onMain <- func() { ok <- fipui.DebugRender(path, snap.JSON(), dark) }
+		onMain <- func() { ok <- fipui.DebugRender(view, path, snap.JSON(), dark) }
 		if !<-ok {
 			t.Fatalf("no render for %s", name)
 		}

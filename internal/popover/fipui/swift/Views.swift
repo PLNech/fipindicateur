@@ -208,6 +208,11 @@ private struct Billing: View {
                 }
                 .buttonStyle(.plain)
                 .help("Rapport d'écoute")
+                Button { model.send(.openSettings) } label: {
+                    Image(systemName: "gearshape").font(.system(size: 12)).frame(width: 22, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help("Réglages")
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(t.muted)

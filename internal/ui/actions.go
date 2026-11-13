@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"github.com/PLNech/fipindicateur/internal/events"
+	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 )
@@ -29,6 +30,26 @@ const (
 	actStationPrev = "station_prev"
 	actOpenWiki    = "open_wiki"
 	actStatsView   = "stats_view"
+
+	// The Réglages window. Toggles take no arg: Go flips its own state, the
+	// surface never tells it what the value is.
+	actOpenSettings  = "open_settings"
+	actHiFi          = "hifi_toggle"
+	actCrossfade     = "crossfade" // arg: seconds, 0..10
+	actAmp           = "amp"       // arg: a level of ampPresets
+	actAudioDevice   = "audio_device"
+	actNotif         = "notif_toggle"
+	actShowNotif     = "show_notif_toggle"
+	actShowCalendar  = "show_calendar_toggle"
+	actAnim          = "anim_toggle"
+	actPlayOnStart   = "play_on_start_toggle"
+	actHistory       = "history_toggle"
+	actUpdateStartup = "update_startup_toggle"
+	actUpdateCheck   = "update_check"
+	actOpenDataDir   = "open_data_dir"
+	actClearHistory  = "clear_history" // already confirmed by the surface's dialog
+	actClearPrefs    = "clear_prefs"   // idem
+	actOpenAbout     = "open_about"
 )
 
 // recorded wraps fn with the telemetry decision: a fixed kind is recorded
@@ -97,4 +118,38 @@ func (a *App) registerActions() {
 	a.act(actStationPrev, "", func(string) { a.zapStation(-1) })
 	a.act(actOpenWiki, events.KindOpenWiki, func(string) { a.openNow() })
 	a.act(actStatsView, events.KindStatsView, func(string) { a.viewStats() })
+
+	// Réglages. The setters and toggles record at source, as from the menu.
+	a.act(actOpenSettings, events.KindSettingsOpen, func(string) { a.openSettings() })
+	a.act(actHiFi, "", func(string) { a.toggleHiFi() })
+	a.act(actCrossfade, "", func(arg string) {
+		if secs, err := strconv.Atoi(arg); err == nil && secs >= 0 && secs <= 10 {
+			a.setCrossfade(secs)
+		}
+	})
+	a.act(actAmp, "", func(arg string) {
+		if lvl, err := strconv.Atoi(arg); err == nil && lvl >= 0 && lvl < len(ampPresets) {
+			a.setAmp(lvl)
+		}
+	})
+	a.act(actAudioDevice, "", func(arg string) {
+		// Only a device the menu offers: an unknown name would be handed to
+		// mpv as is.
+		if _, ok := a.audioMI[arg]; ok {
+			a.rec.Record(events.Event{Kind: events.KindAudioDevice, Station: a.currentStation().Key})
+			a.setAudioDevice(arg)
+		}
+	})
+	a.act(actNotif, "", func(string) { a.toggleNotif() })
+	a.act(actShowNotif, "", func(string) { a.toggleShowNotif() })
+	a.act(actShowCalendar, "", func(string) { a.toggleShowCalendar() })
+	a.act(actAnim, "", func(string) { a.toggleAnim() })
+	a.act(actPlayOnStart, "", func(string) { a.togglePlayOnStart() })
+	a.act(actHistory, "", func(string) { a.toggleHistory() })
+	a.act(actUpdateStartup, "", func(string) { a.toggleUpdateStartup() })
+	a.act(actUpdateCheck, events.KindUpdateCheck, func(string) { a.checkUpdates() })
+	a.act(actOpenDataDir, "", func(string) { a.openDataDir() })
+	a.act(actClearHistory, "", func(string) { a.clearHistoryData() }) // nothing recorded: see clearHistoryConfirm
+	a.act(actClearPrefs, "", func(string) { a.clearPrefsData() })     // records KindPrefsClear at source
+	a.act(actOpenAbout, events.KindOpenAbout, func(string) { open.URL(repoURL) })
 }

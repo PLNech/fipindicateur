@@ -27,3 +27,6 @@ func SetLevel(level float64) { fipui.SetLevel(level) }
 
 // Shown reports whether the card is up. Safe from any goroutine.
 func Shown() bool { return fipui.Shown() }
+
+// ShowSettings brings the Réglages window forward.
+func ShowSettings() { fipui.ShowSettings() }

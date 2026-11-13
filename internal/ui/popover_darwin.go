@@ -17,6 +17,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/popover"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/tray"
+	"github.com/PLNech/fipindicateur/internal/version"
 )
 
 type popoverAction struct{ id, arg string }
@@ -144,6 +145,20 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 	if !np.Start.IsZero() && !np.End.IsZero() {
 		s.Start, s.End = float64(np.Start.Unix()), float64(np.End.Unix())
 	}
+	cfg := a.cfgSnapshot()
+	s.Settings = popover.Settings{
+		HiFi: cfg.HiFi, Crossfade: cfg.CrossfadeSecs, Amp: cfg.Amp,
+		Notifications: cfg.Notifications, ShowNotifications: cfg.ShowNotifications,
+		ShowCalendar: cfg.ShowCalendar, AnimatedIcon: cfg.AnimatedIcon,
+		PlayOnStart: cfg.PlayOnStart, History: cfg.History, UpdateStartup: cfg.UpdateStartup,
+		AudioDevice: cfg.AudioDevice, Version: version.String(),
+	}
+	if s.Settings.AudioDevice == "" {
+		s.Settings.AudioDevice = "auto" // empty config means mpv's default
+	}
+	for _, dev := range menuAudioChoices(a.audioDevs, s.Settings.AudioDevice) {
+		s.Settings.AudioDevices = append(s.Settings.AudioDevices, popover.AudioDevice{Name: dev.Name, Label: dev.Label})
+	}
 	// An unreported cast level stays at 0 with the fader drawn empty: never
 	// an invented number (the same rule as the menu's slider).
 	s.Volume, _ = a.activeVolume()
@@ -164,3 +179,14 @@ func (a *App) popoverShown() bool { return popover.Shown() }
 
 // popoverLevel feeds the card's VU meter at the animator's pace.
 func popoverLevel(level float64) { popover.SetLevel(level) }
+
+// hasPopover: the menu shrinks to a short list, the settings move to the
+// Réglages window.
+const hasPopover = true
+
+// openSettings puts the card away and brings the Réglages window forward.
+func (a *App) openSettings() {
+	popover.Close()
+	a.syncPopover()
+	popover.ShowSettings()
+}

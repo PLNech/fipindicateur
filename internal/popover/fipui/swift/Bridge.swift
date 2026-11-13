@@ -7,6 +7,7 @@
 //   Go -> Swift   fipui_set_level(v)       the VU level, at the animator's pace
 //   Go -> Swift   fipui_toggle(anchor)     show or close the card
 //   Go -> Swift   fipui_close()            close it
+//   Go -> Swift   fipui_show_settings()    bring the Réglages window forward
 //   Go -> Swift   fipui_is_shown()         is it up (Go then skips its banners)
 //   Swift -> Go   goFipAction(id, arg)     every user action, one entry point
 //   Go -> Swift   fipui_debug_*            the link test's round trip and renders
@@ -44,6 +45,7 @@ struct Snapshot: Codable {
     var volume = 60
     var muted = false
     var verdict = 0 // -1 pas pour moi, 0 rien, 1 j'aime
+    var settings = Settings()
 
     var current: Station {
         stations.first { $0.key == station } ?? Station(key: "fip", name: "FIP", color: "#e2007a")
@@ -64,6 +66,23 @@ enum Action: String, CaseIterable {
     case station, stationNext = "station_next", stationPrev = "station_prev"
     case openWiki = "open_wiki"
     case openReport = "stats_view"
+    // The Réglages window.
+    case openSettings = "open_settings"
+    case hifiToggle = "hifi_toggle"
+    case crossfade, amp
+    case audioDevice = "audio_device"
+    case notifToggle = "notif_toggle"
+    case showNotifToggle = "show_notif_toggle"
+    case showCalendarToggle = "show_calendar_toggle"
+    case animToggle = "anim_toggle"
+    case playOnStartToggle = "play_on_start_toggle"
+    case historyToggle = "history_toggle"
+    case updateStartupToggle = "update_startup_toggle"
+    case updateCheck = "update_check"
+    case openDataDir = "open_data_dir"
+    case clearHistory = "clear_history"
+    case clearPrefs = "clear_prefs"
+    case openAbout = "open_about"
 }
 
 @_silgen_name("goFipAction")
@@ -212,6 +231,12 @@ public func fipuiClose() {
     onMain { CardController.shared.close() }
 }
 
+/// Brings the Réglages window forward.
+@_cdecl("fipui_show_settings")
+public func fipuiShowSettings() {
+    onMain { SettingsController.shared.show() }
+}
+
 /// 1 while the card is up, from any thread. Go skips the banners that would
 /// land on the same corner to say what the card already shows.
 @_cdecl("fipui_is_shown")
@@ -236,11 +261,11 @@ public func fipuiDebugFire(_ id: UnsafePointer<CChar>, _ arg: UnsafePointer<CCha
     return 1
 }
 
-/// Renders the card offscreen to a PNG at 2x, in one appearance, for a
-/// snapshot: the same view the panel hosts, so a layout can be looked at
-/// without a click. Returns 1 when the file was written.
+/// Renders a view ("card" or "settings") offscreen to a PNG at 2x, in one
+/// appearance, for a snapshot: the same view the app hosts, so a layout can
+/// be looked at without a click. Returns 1 when the file was written.
 @_cdecl("fipui_debug_render")
-public func fipuiDebugRender(_ path: UnsafePointer<CChar>, _ json: UnsafePointer<CChar>, _ dark: Int32) -> Int32 {
+public func fipuiDebugRender(_ view: UnsafePointer<CChar>, _ path: UnsafePointer<CChar>, _ json: UnsafePointer<CChar>, _ dark: Int32) -> Int32 {
     _ = NSApplication.shared
     let model = FipModel()
     guard let snap = try? JSONDecoder().decode(Snapshot.self, from: Data(bytes: json, count: strlen(json)))
@@ -249,7 +274,9 @@ public func fipuiDebugRender(_ path: UnsafePointer<CChar>, _ json: UnsafePointer
     let meter = Meter()
     meter.level = 0.6
     let scheme: ColorScheme = dark != 0 ? .dark : .light
-    let host = NSHostingView(rootView: CardView(model: model, meter: meter).environment(\.colorScheme, scheme))
+    let root = String(cString: view) == "settings"
+        ? AnyView(SettingsView(model: model)) : AnyView(CardView(model: model, meter: meter))
+    let host = NSHostingView(rootView: root.environment(\.colorScheme, scheme))
     let size = host.fittingSize
     let rect = NSRect(origin: .zero, size: size)
     host.frame = rect

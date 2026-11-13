@@ -25,10 +25,11 @@ package fipui
 extern int fipui_push_state(const char *json);
 extern void fipui_toggle(void *anchor);
 extern void fipui_close(void);
+extern void fipui_show_settings(void);
 extern int fipui_is_shown(void);
 extern void fipui_set_level(double level);
 extern int fipui_debug_fire(const char *id, const char *arg);
-extern int fipui_debug_render(const char *path, const char *json, int dark);
+extern int fipui_debug_render(const char *view, const char *path, const char *json, int dark);
 */
 import "C"
 
@@ -94,16 +95,21 @@ func Shown() bool { return C.fipui_is_shown() == 1 }
 // hidden.
 func SetLevel(level float64) { C.fipui_set_level(C.double(level)) }
 
-// DebugRender draws the card for a JSON snapshot into a PNG at path, offscreen.
+// ShowSettings brings the Réglages window forward (created on first use).
+func ShowSettings() { C.fipui_show_settings() }
+
+// DebugRender draws a view ("card" or "settings") for a JSON snapshot into a
+// PNG at path, offscreen.
 // It needs the process main thread (AppKit), so it is for a test binary
 // that pins it, not for the running app.
-func DebugRender(path string, json []byte, dark bool) bool {
-	cp, cj := C.CString(path), C.CString(string(json))
+func DebugRender(view, path string, json []byte, dark bool) bool {
+	cv, cp, cj := C.CString(view), C.CString(path), C.CString(string(json))
+	defer C.free(unsafe.Pointer(cv))
 	defer C.free(unsafe.Pointer(cp))
 	defer C.free(unsafe.Pointer(cj))
 	d := C.int(0)
 	if dark {
 		d = 1
 	}
-	return C.fipui_debug_render(cp, cj, d) == 1
+	return C.fipui_debug_render(cv, cp, cj, d) == 1
 }
