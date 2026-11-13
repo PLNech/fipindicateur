@@ -24,7 +24,11 @@ package fipui
 // Implemented in swift/Bridge.swift (@_cdecl), linked from the .syso.
 extern int fipui_push_state(const char *json);
 extern void fipui_toggle(void *anchor);
+extern void fipui_close(void);
+extern int fipui_is_shown(void);
+extern void fipui_set_level(double level);
 extern int fipui_debug_fire(const char *id, const char *arg);
+extern int fipui_debug_render(const char *path, const char *json, int dark);
 */
 import "C"
 
@@ -65,8 +69,8 @@ func PushState(json []byte) bool {
 	return C.fipui_push_state(cs) == 1
 }
 
-// Toggle shows the popover under anchor (an NSView*, the status item's
-// button) or closes it when it is shown.
+// Toggle shows the card on the screen of anchor (an NSView*, the status
+// item's button) or closes it when it is shown.
 func Toggle(anchor unsafe.Pointer) {
 	C.fipui_toggle(anchor)
 }
@@ -78,4 +82,28 @@ func DebugFire(id, arg string) bool {
 	defer C.free(unsafe.Pointer(cid))
 	defer C.free(unsafe.Pointer(carg))
 	return C.fipui_debug_fire(cid, carg) == 1
+}
+
+// Close puts the card away if it is up.
+func Close() { C.fipui_close() }
+
+// Shown reports whether the card is up. Safe from any goroutine.
+func Shown() bool { return C.fipui_is_shown() == 1 }
+
+// SetLevel feeds the VU meter (0..1). Cheap, and ignored while the card is
+// hidden.
+func SetLevel(level float64) { C.fipui_set_level(C.double(level)) }
+
+// DebugRender draws the card for a JSON snapshot into a PNG at path, offscreen.
+// It needs the process main thread (AppKit), so it is for a test binary
+// that pins it, not for the running app.
+func DebugRender(path string, json []byte, dark bool) bool {
+	cp, cj := C.CString(path), C.CString(string(json))
+	defer C.free(unsafe.Pointer(cp))
+	defer C.free(unsafe.Pointer(cj))
+	d := C.int(0)
+	if dark {
+		d = 1
+	}
+	return C.fipui_debug_render(cp, cj, d) == 1
 }

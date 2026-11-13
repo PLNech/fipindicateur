@@ -1,4 +1,5 @@
-// The popover: cover, transport, fader, station dial. Tokens are DESIGN.md's,
+// The card: sleeve and billing, transport, fader, station dial, in a wide
+// low format (a large notification, not a window). Tokens are DESIGN.md's,
 // declared in OKLCH like the report. Every control calls model.send and
 // nothing else: the views hold no product state (see Bridge.swift).
 
@@ -116,95 +117,115 @@ struct BlankSleeve: View {
     }
 }
 
-// MARK: - Popover
+// MARK: - Card
 
-struct PopoverView: View {
+struct CardView: View {
     let model: FipModel
+    let meter: Meter
     @Environment(\.colorScheme) private var scheme
-    static let width: CGFloat = 340
+    static let width: CGFloat = 440
+    static let sleeve: CGFloat = 124
 
     var body: some View {
         let t = Theme.of(scheme)
-        VStack(spacing: 0) {
-            Hero(model: model, t: t)
-            VStack(spacing: 14) {
-                Transport(model: model, t: t)
-                Fader(model: model, t: t)
-                Dial(model: model, t: t)
+        VStack(spacing: 8) {
+            HStack(alignment: .top, spacing: 14) {
+                Sleeve(model: model, t: t)
+                VStack(alignment: .leading, spacing: 0) {
+                    Billing(model: model, t: t)
+                    Spacer(minLength: 4)
+                    Transport(model: model, t: t)
+                }
+                .frame(height: Self.sleeve)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            Footer(model: model, t: t)
+            Fader(model: model, meter: meter, t: t)
+            Dial(model: model, t: t)
         }
+        .padding(.init(top: 12, leading: 12, bottom: 10, trailing: 14))
         .frame(width: Self.width)
         .background(t.bg)
         .foregroundStyle(t.ink)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(t.hairline.opacity(0.7), lineWidth: 1))
     }
 }
 
-/// The cover, edge to edge. The rundown line sits on top of it, the title
-/// block on a scrim at its foot, and the hairline at the very bottom is the
-/// track's progress (livemeta gives start and end).
-private struct Hero: View {
+/// The cover, square, with the track's progress as a hairline at its foot
+/// (livemeta gives start and end). A click opens the artist's page.
+private struct Sleeve: View {
     let model: FipModel
     let t: Theme
 
     var body: some View {
         let s = model.s
-        let night = Theme.nuit
         ZStack(alignment: .bottomLeading) {
             if let cover = model.cover {
-                Image(nsImage: cover)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: PopoverView.width, height: PopoverView.width)
-                    .clipped()
-                    .transition(.opacity)
+                Image(nsImage: cover).resizable().aspectRatio(contentMode: .fill)
             } else {
                 BlankSleeve()
             }
-            LinearGradient(
-                stops: [.init(color: night.bg.opacity(0.55), location: 0), .init(color: .clear, location: 0.22),
-                        .init(color: .clear, location: 0.48), .init(color: night.bg.opacity(0.94), location: 1)],
-                startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(clock(s.start)).monospacedDigit()
-                    Rectangle().frame(width: 18, height: 1).opacity(0.6)
-                    Text(s.show.isEmpty ? s.current.name : s.show)
-                    Spacer()
+            // The clock ticks the hairline; the snapshot only brings the ends.
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(.black.opacity(0.35))
+                        Rectangle().fill(.white).frame(width: g.size.width * progress(s, ctx.date))
+                    }
                 }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(night.ink.opacity(0.86))
-                Spacer()
-                Text(s.title)
-                    .font(.system(size: 22, weight: .heavy))
-                    .tracking(-0.3)
-                    .lineLimit(2)
-                Text(s.artist).font(.system(size: 14, weight: .semibold))
-                HStack {
-                    Text([s.album, s.year > 0 ? String(s.year) : "", s.label].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .lineLimit(1)
-                    Spacer()
-                    Text(remaining(s)).monospacedDigit()
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(night.muted)
+                .frame(height: 2)
             }
-            .foregroundStyle(night.ink)
-            .padding(.init(top: 12, leading: 16, bottom: 14, trailing: 16))
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Rectangle().fill(night.hairline)
-                    Rectangle().fill(night.ink).frame(width: g.size.width * progress(s))
-                }
-            }
-            .frame(height: 2)
         }
-        .frame(width: PopoverView.width, height: PopoverView.width)
+        .frame(width: CardView.sleeve, height: CardView.sleeve)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { model.send(.openWiki) }
         .help("Ouvrir l'artiste sur Wikipédia")
+    }
+
+    private func progress(_ s: Snapshot, _ now: Date) -> Double {
+        guard s.end > s.start else { return 0 }
+        return min(max((now.timeIntervalSince1970 - s.start) / (s.end - s.start), 0), 1)
+    }
+}
+
+/// The rundown line (start time, programme or antenna), then the track.
+private struct Billing: View {
+    let model: FipModel
+    let t: Theme
+
+    var body: some View {
+        let s = model.s
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 7) {
+                if s.start > 0 {
+                    Text(clock(s.start)).monospacedDigit()
+                    Rectangle().frame(width: 14, height: 1).opacity(0.5)
+                }
+                Text(s.show.isEmpty ? s.current.name : s.show).lineLimit(1)
+                Spacer(minLength: 6)
+                Button { model.send(.openReport) } label: {
+                    Image(systemName: "chart.bar.xaxis").font(.system(size: 12)).frame(width: 22, height: 16)
+                }
+                .buttonStyle(.plain)
+                .help("Rapport d'écoute")
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(t.muted)
+            .padding(.bottom, 3)
+            Text(s.title.isEmpty ? s.current.name : s.title)
+                .font(.system(size: 17, weight: .heavy))
+                .tracking(-0.2)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if !s.artist.isEmpty {
+                Text(s.artist).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            }
+            let credits = [s.album, s.year > 0 ? String(s.year) : "", s.label].filter { !$0.isEmpty }
+            if !credits.isEmpty {
+                Text(credits.joined(separator: " · "))
+                    .font(.system(size: 11)).foregroundStyle(t.muted).lineLimit(1)
+            }
+        }
     }
 
     private func clock(_ unix: Double) -> String {
@@ -212,68 +233,51 @@ private struct Hero: View {
         f.dateFormat = "HH:mm"
         return f.string(from: Date(timeIntervalSince1970: unix))
     }
-
-    private func progress(_ s: Snapshot) -> Double {
-        guard s.end > s.start else { return 0 }
-        return min(max((Date().timeIntervalSince1970 - s.start) / (s.end - s.start), 0), 1)
-    }
-
-    private func remaining(_ s: Snapshot) -> String {
-        let left = Int(max(s.end - Date().timeIntervalSince1970, 0))
-        return s.end > s.start ? String(format: "-%d:%02d", left / 60, left % 60) : ""
-    }
 }
 
+/// Pas pour moi, play, j'aime. The two waves latch: the verdict stays lit on
+/// the track that received it (Go holds that state) and they are dimmed off
+/// when no track is on air, since there is nothing to judge.
 private struct Transport: View {
     let model: FipModel
     let t: Theme
 
     var body: some View {
         let s = model.s
-        HStack(spacing: 0) {
-            verdict(rising: false, on: s.verdict < 0, tint: t.amber.opacity(0.8), help: "Pas pour moi", .dislike)
-            Spacer()
-            step("chevron.left", "Station précédente", .stationPrev)
-            Spacer()
+        HStack(spacing: 10) {
             Button { model.send(.playToggle) } label: {
                 ZStack {
                     Circle().fill(s.playing ? t.fip : .clear)
                     Circle().stroke(s.playing ? .clear : t.hairline, lineWidth: 1)
                     PlayGlyph(playing: s.playing)
                         .fill(s.playing ? Theme.nuit.bg : t.ink)
-                        .frame(width: 15, height: 16)
+                        .frame(width: 12, height: 13)
                         .offset(x: s.playing ? 0 : 1.5)
                 }
-                .frame(width: 48, height: 48)
+                .frame(width: 36, height: 36)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressStyle())
             .keyboardShortcut(.space, modifiers: [])
             .help(s.playing ? "Pause" : "Lecture")
             Spacer()
-            step("chevron.right", "Station suivante", .stationNext)
-            Spacer()
+            verdict(rising: false, on: s.verdict < 0, tint: t.amber, help: "Pas pour moi", .dislike)
             verdict(rising: true, on: s.verdict > 0, tint: t.fip, help: "J'aime ce morceau", .like)
         }
     }
 
     private func verdict(rising: Bool, on: Bool, tint: Color, help: String, _ action: Action) -> some View {
-        Button { model.send(action) } label: {
+        let judgeable = !model.s.title.isEmpty || !model.s.artist.isEmpty
+        return Button { model.send(action) } label: {
             Wave(rising: rising)
-                .stroke(on ? tint : t.muted, style: .init(lineWidth: on ? 2.2 : 1.5, lineCap: .round, lineJoin: .round))
-                .frame(width: 30, height: 22)
-                .padding(7)
-                .background(on ? tint.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .stroke(on ? tint : t.muted, style: .init(lineWidth: on ? 2.4 : 1.5, lineCap: .round, lineJoin: .round))
+                .frame(width: 26, height: 18)
+                .padding(.horizontal, 8).padding(.vertical, 7)
+                .background(on ? tint.opacity(0.18) : t.surface, in: RoundedRectangle(cornerRadius: 8))
+                .animation(.snappy(duration: 0.2), value: on)
         }
-        .buttonStyle(.plain)
-        .help(help)
-    }
-
-    private func step(_ symbol: String, _ help: String, _ action: Action) -> some View {
-        Button { model.send(action) } label: {
-            Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).frame(width: 32, height: 32)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(t.muted)
+        .buttonStyle(PressStyle())
+        .disabled(!judgeable)
+        .opacity(judgeable ? 1 : 0.35)
         .help(help)
     }
 }
@@ -282,6 +286,7 @@ private struct Transport: View {
 /// follow the level, struck out when muted.
 private struct Fader: View {
     let model: FipModel
+    let meter: Meter
     let t: Theme
 
     var body: some View {
@@ -289,8 +294,8 @@ private struct Fader: View {
         HStack(spacing: 12) {
             Button { model.send(.muteToggle) } label: {
                 HStack(alignment: .bottom, spacing: 3) {
-                    bar(s.muted ? 0.12 : 0.25 + s.level * 0.75)
-                    bar(s.muted ? 0.12 : 0.18 + s.level * 0.55)
+                    bar(s.muted || !s.playing ? 0.12 : 0.25 + meter.level * 0.75)
+                    bar(s.muted || !s.playing ? 0.12 : 0.18 + meter.level * 0.55)
                 }
                 .frame(width: 14, height: 18, alignment: .bottom)
             }
@@ -320,7 +325,7 @@ private struct Fader: View {
                     if pct != s.volume { model.send(.volume, String(pct)) }
                 })
             }
-            .frame(height: 30)
+            .frame(height: 26)
 
             Text("\(s.volume)").font(.system(size: 12)).monospacedDigit()
                 .foregroundStyle(t.muted).frame(width: 24, alignment: .trailing)
@@ -332,43 +337,130 @@ private struct Fader: View {
     }
 }
 
-/// The tuner dial: the thirteen antennas on one scale, in wheel order. The
-/// needle stays put, the scale slides. Identity is the label, the colour only
-/// seconds it (13 stations exceed any palette).
+/// The tuner dial: the thirteen antennas on one scale, in wheel order, with
+/// the previous / next steps at its ends. The needle stays put, the scale
+/// slides. It can be dragged and thrown: the throw is deterministic (release
+/// speed decides how many stations go by, a hard one makes a full turn), so
+/// the hand learns it. Identity is the label, the colour only seconds it
+/// (13 stations exceed any palette).
 private struct Dial: View {
     let model: FipModel
     let t: Theme
-    private let pitch: CGFloat = 92
+    static let pitch: CGFloat = 78
+    /// How far a throw carries, per point of predicted travel.
+    private static let carry: CGFloat = 1.7
+
+    /// The scale's position in stations, unbounded (it keeps turning the same
+    /// way round after round); the tuned station is pos modulo the count.
+    @State private var pos: Double = 0
+    @State private var grabbed: Double?
 
     var body: some View {
         let s = model.s
         let n = max(s.stations.count, 1)
         let cur = s.stations.firstIndex { $0.key == s.station } ?? 0
+        HStack(spacing: 2) {
+            step("chevron.left", "Station précédente", .stationPrev)
+            DialFace(pos: pos, stations: s.stations, needle: t.station(s.current.color), t: t) { i in
+                tune(to: nearest(i, n), stations: s.stations)
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(DragGesture(minimumDistance: 4)
+                .onChanged { v in
+                    if grabbed == nil { grabbed = pos }
+                    pos = (grabbed ?? pos) - v.translation.width / Self.pitch
+                }
+                .onEnded { v in
+                    let from = grabbed ?? pos
+                    grabbed = nil
+                    let landing = from - v.predictedEndTranslation.width * Self.carry / Self.pitch
+                    tune(to: landing.rounded(), stations: s.stations)
+                })
+            step("chevron.right", "Station suivante", .stationNext)
+        }
+        .onAppear { pos = Double(cur) }
+        // Go moved the station (arrows, media keys, the menu, our own throw
+        // once it lands): follow by the shortest way round.
+        .onChange(of: cur) { _, now in
+            guard grabbed == nil else { return }
+            let target = nearest(now, n)
+            if target != pos { withAnimation(.snappy(duration: 0.3)) { pos = target } }
+        }
+    }
+
+    /// The position equivalent to station i that is closest to where the
+    /// scale is now.
+    private func nearest(_ i: Int, _ n: Int) -> Double {
+        let turns = ((pos - Double(i)) / Double(n)).rounded()
+        return Double(i) + turns * Double(n)
+    }
+
+    /// Lets the scale coast to target and tunes the station it lands on. The
+    /// longer the way, the longer the coast: a full turn is seen going by.
+    private func tune(to target: Double, stations: [Station]) {
+        guard !stations.isEmpty else { return }
+        let n = stations.count
+        let way = abs(target - pos)
+        withAnimation(.timingCurve(0.16, 0.84, 0.3, 1, duration: min(0.3 + way * 0.11, 1.6))) { pos = target }
+        let i = ((Int(target) % n) + n) % n
+        if stations[i].key != model.s.station { model.send(.station, stations[i].key) }
+    }
+
+    private func step(_ symbol: String, _ help: String, _ action: Action) -> some View {
+        Button { model.send(action) } label: {
+            Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(t.muted).frame(width: 24, height: 40)
+        }
+        .buttonStyle(PressStyle())
+        .help(help)
+    }
+}
+
+/// The sliding scale itself. Animatable on pos, so a coast is drawn frame by
+/// frame as a real scroll instead of each label jumping to its new place.
+private struct DialFace: View, Animatable {
+    var pos: Double
+    let stations: [Station]
+    let needle: Color
+    let t: Theme
+    let pick: (Int) -> Void
+
+    var animatableData: Double {
+        get { pos }
+        set { pos = newValue }
+    }
+
+    var body: some View {
+        let n = Double(max(stations.count, 1))
+        let pitch = Dial.pitch
         GeometryReader { g in
             let mid = g.size.width / 2
             ZStack {
-                ForEach(Array(s.stations.enumerated()), id: \.element.key) { i, st in
-                    let d = ((i - cur + n + n / 2) % n) - n / 2
-                    Button { model.send(.station, st.key) } label: {
-                        Text(st.name)
-                            .font(.system(size: d == 0 ? 17 : 12, weight: d == 0 ? .heavy : .medium))
-                            .foregroundStyle(d == 0 ? t.ink : t.muted)
-                            .fixedSize()
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(max(0, 1 - abs(Double(d)) * 0.42))
-                    .position(x: mid + CGFloat(d) * pitch, y: 12)
+                ForEach(Array(stations.enumerated()), id: \.element.key) { i, st in
+                    // Signed distance to the needle, wrapped to half a turn.
+                    let d = (Double(i) - pos + n / 2).truncatingRemainder(dividingBy: n)
+                    let off = (d < 0 ? d + n : d) - n / 2
+                    let near = max(0, 1 - abs(off)) // 1 under the needle, 0 a station away
+                    Text(st.name)
+                        .font(.system(size: 12 + 4 * near, weight: near > 0.5 ? .heavy : .medium))
+                        .foregroundStyle(near > 0.5 ? t.ink : t.muted)
+                        .fixedSize()
+                        .opacity(max(0, 1 - abs(off) * 0.45))
+                        .position(x: mid + off * pitch, y: 12)
+                        .onTapGesture { pick(i) }
                 }
-                ForEach(-22...22, id: \.self) { i in
+                let frac = pos - pos.rounded(.down)
+                ForEach(-16...16, id: \.self) { i in
+                    // Every fifth graduation is a station; the scale has no
+                    // absolute origin, only the fraction slides.
                     Rectangle().fill(t.hairline)
-                        .frame(width: 1, height: i % 5 == 0 ? 10 : 5)
-                        .position(x: mid + CGFloat(i) * pitch / 5, y: i % 5 == 0 ? 39 : 41.5)
+                        .frame(width: 1, height: i % 5 == 0 ? 9 : 5)
+                        .position(x: mid + (Double(i) - frac * 5) * pitch / 5, y: i % 5 == 0 ? 33 : 35)
                 }
-                Rectangle().fill(t.station(s.current.color)).frame(width: 2, height: 16).position(x: mid, y: 36)
+                Rectangle().fill(needle).frame(width: 2, height: 14).position(x: mid, y: 31)
             }
-            .animation(.snappy(duration: 0.28), value: cur)
         }
-        .frame(height: 46)
+        .frame(height: 40)
         .mask(LinearGradient(
             stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16),
                     .init(color: .black, location: 0.84), .init(color: .clear, location: 1)],
@@ -376,32 +468,13 @@ private struct Dial: View {
     }
 }
 
-private struct Footer: View {
-    let model: FipModel
-    let t: Theme
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if !model.s.output.isEmpty {
-                Label(model.s.output, systemImage: "hifispeaker")
-                    .font(.system(size: 11)).lineLimit(1)
-                    .help("Sortie audio")
-            }
-            Spacer()
-            icon("chart.bar.xaxis", "Rapport d'écoute", .openReport)
-        }
-        .foregroundStyle(t.muted)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .overlay(alignment: .top) { Rectangle().fill(t.hairline.opacity(0.6)).frame(height: 1) }
-        .padding(.top, 10)
-    }
-
-    private func icon(_ symbol: String, _ help: String, _ action: Action) -> some View {
-        Button { model.send(action) } label: {
-            Image(systemName: symbol).font(.system(size: 13)).frame(width: 28, height: 24)
-        }
-        .buttonStyle(.plain)
-        .help(help)
+/// Pressed feedback for the drawn controls: a plain button style gives none,
+/// and a control that does not answer the finger reads as broken.
+struct PressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.88 : 1)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.snappy(duration: 0.12), value: configuration.isPressed)
     }
 }

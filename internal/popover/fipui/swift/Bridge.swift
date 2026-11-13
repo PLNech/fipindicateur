@@ -1,12 +1,15 @@
 // The SwiftUI surface of fipindicateur, compiled to one object and linked INTO
 // the Go binary through cgo (make swiftui). One process, no IPC.
 //
-// The whole contract between the two languages is four C symbols:
+// The whole contract between the two languages is a handful of C symbols:
 //
 //   Go -> Swift   fipui_push_state(json)   one Snapshot, any thread
-//   Go -> Swift   fipui_toggle(anchor)     show or close the popover
+//   Go -> Swift   fipui_set_level(v)       the VU level, at the animator's pace
+//   Go -> Swift   fipui_toggle(anchor)     show or close the card
+//   Go -> Swift   fipui_close()            close it
+//   Go -> Swift   fipui_is_shown()         is it up (Go then skips its banners)
 //   Swift -> Go   goFipAction(id, arg)     every user action, one entry point
-//   Go -> Swift   fipui_debug_fire(id,arg) the link test's round trip
+//   Go -> Swift   fipui_debug_*            the link test's round trip and renders
 //
 // Swift never holds product state and never decides anything: it renders the
 // last Snapshot and reports intents. The telemetry chokepoint stays in Go
@@ -40,9 +43,7 @@ struct Snapshot: Codable {
     var end: Double = 0
     var volume = 60
     var muted = false
-    var output = ""
     var verdict = 0 // -1 pas pour moi, 0 rien, 1 j'aime
-    var level: Double = 0
 
     var current: Station {
         stations.first { $0.key == station } ?? Station(key: "fip", name: "FIP", color: "#e2007a")
@@ -90,35 +91,96 @@ final class FipModel {
     }
 }
 
-// MARK: - Popover
+/// The VU level lives apart from the snapshot: it moves several times a
+/// second and must only redraw the two bars that read it.
+@Observable
+final class Meter {
+    static let shared = Meter()
+    var level: Double = 0
+}
 
-private final class PopoverController: NSObject, NSPopoverDelegate {
-    static let shared = PopoverController()
-    private var closedAt = Date.distantPast
-    private lazy var popover: NSPopover = {
-        let p = NSPopover()
-        p.behavior = .transient
-        p.delegate = self
-        p.contentViewController = NSHostingController(rootView: PopoverView(model: .shared))
-        return p
-    }()
+// MARK: - The card (a temporary panel where notifications appear)
 
-    func toggle(anchor: NSView) {
-        if popover.isShown {
-            popover.performClose(nil)
-            return
-        }
-        // A transient popover closes itself on the very click that lands on
-        // the status item; without this guard that click would reopen it.
-        if Date().timeIntervalSince(closedAt) < 0.25 { return }
-        // A menu bar agent is never the active app: without this the popover
-        // does not take the keyboard and a click elsewhere does not dismiss it.
-        NSApp.activate(ignoringOtherApps: true)
-        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+/// A borderless panel still has to take clicks on the first try and the
+/// keyboard (space, escape) while it is up.
+private final class CardPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override func cancelOperation(_: Any?) { CardController.shared.close() }
+}
+
+/// The card is a menu in spirit: it appears top-right under the menu bar
+/// (never over the status items), and any click elsewhere, escape, or a
+/// second click on the icon puts it away. It is not anchored to the icon:
+/// the icon only tells which screen to use.
+private final class CardController {
+    static let shared = CardController()
+    private var panel: CardPanel?
+    private var monitors: [Any] = []
+    var isShown: Bool { panel?.isVisible ?? false }
+
+    /// The same fact for Go, which asks from its own goroutines: a flag
+    /// behind a lock, written on the main thread by show and close.
+    private static let lock = NSLock()
+    private static var up = false
+    static var shownAnyThread: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return up }
+        set { lock.lock(); up = newValue; lock.unlock() }
     }
 
-    func popoverDidClose(_: Notification) { closedAt = Date() }
+    func toggle(anchor: NSView) {
+        isShown ? close() : show(on: anchor.window?.screen ?? NSScreen.main)
+    }
+
+    private func show(on screen: NSScreen?) {
+        guard let screen else { return }
+        let host = NSHostingView(rootView: CardView(model: .shared, meter: .shared))
+        let size = host.fittingSize
+        // visibleFrame excludes the menu bar: the card hangs just under it,
+        // against the right edge, where the system's own banners arrive.
+        let area = screen.visibleFrame
+        let frame = NSRect(x: area.maxX - size.width - 12, y: area.maxY - size.height - 8,
+                           width: size.width, height: size.height)
+        let p = CardPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                          backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.level = .statusBar
+        p.collectionBehavior = [.transient, .moveToActiveSpace, .fullScreenAuxiliary]
+        p.isReleasedWhenClosed = false
+        p.contentView = host
+        p.alphaValue = 0
+        p.makeKeyAndOrderFront(nil)
+        p.animator().alphaValue = 1
+        panel = p
+        Self.shownAnyThread = true
+
+        // Clicks in other apps (global) and in our own windows outside the
+        // card (local) dismiss it. A click on our status item is neither: it
+        // reaches toggle, which closes.
+        let downs: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: downs, handler: { [weak self] _ in self?.close() }) {
+            monitors.append(m)
+        }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: downs, handler: { [weak self] e in
+            if e.window !== self?.panel, !(e.window?.className.contains("StatusBar") ?? false) { self?.close() }
+            return e
+        }) {
+            monitors.append(m)
+        }
+    }
+
+    func close() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
+        panel?.orderOut(nil)
+        panel = nil
+        Self.shownAnyThread = false
+    }
+}
+
+private func onMain(_ work: @escaping () -> Void) {
+    if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
 }
 
 // MARK: - C surface
@@ -135,16 +197,33 @@ public func fipuiPushState(_ json: UnsafePointer<CChar>) -> Int32 {
     return 1
 }
 
-/// Shows the popover under anchor (the status item's button, an NSView the
-/// tray keeps alive for the life of the process), or closes it when shown.
+/// Shows the card on the screen of anchor (the status item's button, an
+/// NSView the tray keeps alive for the life of the process), or closes it.
 @_cdecl("fipui_toggle")
 public func fipuiToggle(_ anchor: UnsafeMutableRawPointer?) {
     guard let anchor else { return }
     let view = Unmanaged<NSView>.fromOpaque(anchor).takeUnretainedValue()
-    if Thread.isMainThread {
-        PopoverController.shared.toggle(anchor: view)
-    } else {
-        DispatchQueue.main.async { PopoverController.shared.toggle(anchor: view) }
+    onMain { CardController.shared.toggle(anchor: view) }
+}
+
+/// Puts the card away if it is up.
+@_cdecl("fipui_close")
+public func fipuiClose() {
+    onMain { CardController.shared.close() }
+}
+
+/// 1 while the card is up, from any thread. Go skips the banners that would
+/// land on the same corner to say what the card already shows.
+@_cdecl("fipui_is_shown")
+public func fipuiIsShown() -> Int32 {
+    CardController.shownAnyThread ? 1 : 0
+}
+
+/// The VU level (0..1). Dropped while the card is hidden: nothing reads it.
+@_cdecl("fipui_set_level")
+public func fipuiSetLevel(_ level: Double) {
+    DispatchQueue.main.async {
+        if CardController.shared.isShown { Meter.shared.level = level }
     }
 }
 
@@ -155,4 +234,38 @@ public func fipuiDebugFire(_ id: UnsafePointer<CChar>, _ arg: UnsafePointer<CCha
     guard let action = Action(rawValue: String(cString: id)) else { return 0 }
     FipModel.shared.send(action, String(cString: arg))
     return 1
+}
+
+/// Renders the card offscreen to a PNG at 2x, in one appearance, for a
+/// snapshot: the same view the panel hosts, so a layout can be looked at
+/// without a click. Returns 1 when the file was written.
+@_cdecl("fipui_debug_render")
+public func fipuiDebugRender(_ path: UnsafePointer<CChar>, _ json: UnsafePointer<CChar>, _ dark: Int32) -> Int32 {
+    _ = NSApplication.shared
+    let model = FipModel()
+    guard let snap = try? JSONDecoder().decode(Snapshot.self, from: Data(bytes: json, count: strlen(json)))
+    else { return 0 }
+    model.apply(snap)
+    let meter = Meter()
+    meter.level = 0.6
+    let scheme: ColorScheme = dark != 0 ? .dark : .light
+    let host = NSHostingView(rootView: CardView(model: model, meter: meter).environment(\.colorScheme, scheme))
+    let size = host.fittingSize
+    let rect = NSRect(origin: .zero, size: size)
+    host.frame = rect
+    let window = NSWindow(contentRect: rect, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: dark != 0 ? .darkAqua : .aqua)
+    window.backgroundColor = .clear
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+    guard let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+    else { return 0 }
+    rep.size = size
+    host.cacheDisplay(in: host.bounds, to: rep)
+    guard let png = rep.representation(using: .png, properties: [:]) else { return 0 }
+    return (try? png.write(to: URL(fileURLWithPath: String(cString: path)))) != nil ? 1 : 0
 }

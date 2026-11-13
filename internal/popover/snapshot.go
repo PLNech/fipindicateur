@@ -35,9 +35,7 @@ type Snapshot struct {
 	End      float64   `json:"end"`
 	Volume   int       `json:"volume"` // 0..100, the active sink's
 	Muted    bool      `json:"muted"`
-	Output   string    `json:"output"`
 	Verdict  int       `json:"verdict"` // -1 pas pour moi, 0 none, 1 j'aime
-	Level    float64   `json:"level"`   // VU, 0..1
 }
 
 // JSON encodes the snapshot for the bridge. A nil Stations slice is sent as
