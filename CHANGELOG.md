@@ -6,12 +6,13 @@
 - macOS, expérimental (`make swiftui`, macOS 14+) : un clic gauche sur
   l'icône ouvre une carte SwiftUI en haut à droite de l'écran, sous la barre
   de menus : pochette, lecture, J'aime / Pas pour moi qui restent allumés sur
-  le morceau jugé, volume avec vumètre, et un cadran des stations qu'on fait
+  le morceau jugé, volume avec le vumètre à quatre barres de l'icône (les
+  mêmes images, calculées une fois), et un cadran des stations qu'on fait
   glisser ou qu'on lance. Elle se referme au clic ailleurs ou avec Échap, et
   tant qu'elle est ouverte les bannières qui la répéteraient sont omises. Le
   menu passe au clic droit et se réduit à une liste courte : les réglages
-  (son, notifications, affichage, lancement, données) ont leur fenêtre,
-  ouverte par Réglages… ou la roue dentée de la carte. La carte est liée dans le même
+  sont au dos de la carte, qui se retourne sur place (Réglages… ou la roue
+  dentée) : deux pages, Écoute et Appli. La carte est liée dans le même
   binaire, sans second processus, et chacun de ses contrôles passe par le
   registre d'actions qui alimente déjà le menu : rien n'échappe à la mesure.
   La construction par défaut ne change pas et n'a pas besoin de Swift
