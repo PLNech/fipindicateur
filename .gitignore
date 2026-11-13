@@ -9,3 +9,6 @@
 /.claude/
 # Windows cross-build artifacts and the vendored libmpv dev drop.
 /build/
+# The compiled SwiftUI popover object (make swiftui); its sources are in
+# internal/popover/fipui/swift.
+/internal/popover/fipui/*.syso

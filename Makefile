@@ -23,7 +23,7 @@ APPDIR  := $(PREFIX)/share/applications
 ICONDIR := $(PREFIX)/share/icons/hicolor
 MANDIR  := $(PREFIX)/share/man/man1
 
-.PHONY: build run test lint fix icons clean install uninstall windows web app
+.PHONY: build run test lint fix icons clean install uninstall windows web app swiftui swiftui-run swiftui-test
 
 # Rebuild the stats report template from the web/ SPA toolchain (npm + esbuild
 # + D3, subsetted WOFF2 fonts inlined). The GENERATED internal/stats/
@@ -58,6 +58,42 @@ windows: ## Cross-build the Windows tray binary (needs build/windows/mpv-dev, se
 
 run: ## Build and run
 	$(GO) run -ldflags "$(LDFLAGS)" $(PKG)
+
+# The SwiftUI popover (macOS 14+, opt-in behind the swiftui build tag; the
+# default build never needs a Swift toolchain). Command Line Tools are enough,
+# no Xcode. The Swift sources compile to one object dropped next to the cgo
+# seam as a .syso, which Go links with the package and hashes in its build
+# cache.
+#   -wmo    whole-module: one object for all the sources, no archive to unpack
+#   ld -r   Go refuses linker inputs carrying an __LLVM segment (it reads
+#           them as LTO bitcode) and swiftc stamps its object with
+#           __LLVM,__swift_modhash, a 16-byte module hash. The relocatable
+#           re-link moves that section out of __LLVM; nothing else changes.
+#   SWIFTLD the Swift compatibility shims live in the toolchain; the runtime
+#           itself ships with macOS, so nothing is bundled.
+FIPUI     := internal/popover/fipui
+SWIFTARCH := $(shell uname -m)
+SWIFTSYSO := $(FIPUI)/fipui_darwin_$(SWIFTARCH:x86_64=amd64).syso
+SWIFTOBJ  := build/fipui.o
+SWIFTLD    = -L$(shell dirname "$$(dirname "$$(xcrun -f swiftc)")")/lib/swift/macosx -L/usr/lib/swift
+
+$(SWIFTSYSO): $(wildcard $(FIPUI)/swift/*.swift)
+	@if [ "$$(uname)" != "Darwin" ]; then echo "swiftui: macOS only"; exit 1; fi
+	@mkdir -p build
+	swiftc -parse-as-library -emit-object -wmo -O -module-name FipUI \
+		-target $(SWIFTARCH)-apple-macos14 $(FIPUI)/swift/*.swift -o $(SWIFTOBJ)
+	ld -r -arch $(SWIFTARCH) -rename_section __LLVM __swift_modhash __DATA __swift_modhash \
+		$(SWIFTOBJ) -o $@
+
+swiftui: $(SWIFTSYSO) ## Build with the SwiftUI popover (macOS 14+, needs swiftc)
+	CGO_LDFLAGS="$(SWIFTLD)" $(GO) build -tags swiftui $(RELFLAGS) -o $(BIN) $(PKG)
+
+swiftui-run: $(SWIFTSYSO) ## Build and run with the SwiftUI popover
+	CGO_LDFLAGS="$(SWIFTLD)" $(GO) run -tags swiftui -ldflags "$(LDFLAGS)" $(PKG)
+
+swiftui-test: $(SWIFTSYSO) ## Vet and test the tagged build (links the Swift object)
+	CGO_LDFLAGS="$(SWIFTLD)" $(GO) vet -tags swiftui ./...
+	CGO_LDFLAGS="$(SWIFTLD)" $(GO) test -tags swiftui ./internal/popover/... ./internal/ui/ ./internal/tray/
 
 test: ## Run tests
 	$(GO) test ./...
