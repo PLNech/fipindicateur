@@ -4,9 +4,12 @@
 
 ### Added
 - macOS, expérimental (`make swiftui`, macOS 14+) : un clic gauche sur
-  l'icône ouvre un popover SwiftUI (lecture, volume, cadran des stations ;
-  la pochette est encore un visuel provisoire), le menu passe au clic droit.
-  Le popover est lié dans le même
+  l'icône ouvre une carte SwiftUI en haut à droite de l'écran, sous la barre
+  de menus : pochette, lecture, J'aime / Pas pour moi qui restent allumés sur
+  le morceau jugé, volume avec vumètre, et un cadran des stations qu'on fait
+  glisser ou qu'on lance. Elle se referme au clic ailleurs ou avec Échap, et
+  tant qu'elle est ouverte les bannières qui la répéteraient sont omises. Le
+  menu passe au clic droit. La carte est liée dans le même
   binaire, sans second processus, et chacun de ses contrôles passe par le
   registre d'actions qui alimente déjà le menu : rien n'échappe à la mesure.
   La construction par défaut ne change pas et n'a pas besoin de Swift
