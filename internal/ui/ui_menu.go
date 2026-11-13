@@ -206,7 +206,18 @@ func (a *App) buildMenu() {
 	a.mCalendar.Hide()
 
 	// Réglages
+	// With the card (macOS swiftui build) the settings live in a window: one
+	// item opens it, and the submenus it replaces are built all the same,
+	// then hidden, so every handler keeps its checkbox to tick.
+	if hasPopover {
+		window := addMenuItem("Réglages…", "Ouvrir la fenêtre de réglages")
+		a.on(window, "", a.firing(actOpenSettings))
+		a.mVolume.Hide() // the card has the fader
+	}
 	settings := addMenuItem("Réglages", "Options")
+	if hasPopover {
+		settings.Hide()
+	}
 	a.mHiFi = settings.AddSubMenuItemCheckbox("Haute qualité (AAC 192k)", "", a.cfg.HiFi)
 	a.on(a.mHiFi, "", a.toggleHiFi)
 	// Fondu enchaîné (crossfade on a live station zap). With zenity a single item
@@ -313,6 +324,9 @@ func (a *App) buildMenu() {
 	// Mises à jour: "Vérifier maintenant" is the on-demand check; the checkbox
 	// is the opt-in startup check. Both off + never clicking = never checks.
 	maj := addMenuItem("Mises à jour", "Vérifier les nouvelles versions")
+	if hasPopover {
+		maj.Hide()
+	}
 	checkNow := maj.AddSubMenuItem("Vérifier maintenant", "Comparer avec la dernière release sur GitHub")
 	a.on(checkNow, events.KindUpdateCheck, a.checkUpdates)
 	a.mUpdateStartup = maj.AddSubMenuItemCheckbox("Vérifier au démarrage", "Un contrôle discret au lancement (sinon jamais)", a.cfg.UpdateStartup)
