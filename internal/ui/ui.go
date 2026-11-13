@@ -29,6 +29,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/nowplay"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/player"
+	"github.com/PLNech/fipindicateur/internal/popover"
 	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/stats"
@@ -647,6 +648,9 @@ func (a *App) notifyShow(s metadata.Show) {
 	if s.Description != "" {
 		body = s.Description
 	}
+	if a.carton(popover.Carton{Kind: "show", Title: summary, Subtitle: body}) {
+		return
+	}
 	a.notif.Notify(summary, body, "", a.cfgSnapshot().NotifTimeoutMs)
 }
 
@@ -784,6 +788,13 @@ func (a *App) recordTaste(verdict string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		iconPath := a.notif.FetchCover(ctx, np.CoverURL)
+		kind := "verdict-up"
+		if verdict == prefs.Dislike {
+			kind = "verdict-down"
+		}
+		if a.carton(popover.Carton{Kind: kind, Title: summary, Subtitle: np.Title, Detail: np.Artist, Cover: iconPath}) {
+			return
+		}
 		a.notif.Notify(summary, body, iconPath, a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
@@ -837,7 +848,25 @@ func (a *App) notify(np metadata.NowPlaying) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	iconPath := a.notif.FetchCover(ctx, np.CoverURL)
+	if a.carton(popover.Carton{Kind: "track", Title: np.Title, Subtitle: np.Artist, Detail: trackDetail(np), Cover: iconPath}) {
+		return
+	}
 	a.notif.NotifyTrack(np.Title, np.Artist, body, iconPath, np.Link, timeout)
+}
+
+// trackDetail is the carton's third line: album (year) · label.
+func trackDetail(np metadata.NowPlaying) string {
+	d := np.Album
+	if np.Album != "" && np.Year > 0 {
+		d = fmt.Sprintf("%s (%d)", d, np.Year)
+	}
+	if np.Label != "" {
+		if d != "" {
+			d += " · "
+		}
+		d += np.Label
+	}
+	return d
 }
 
 // pushHistoryLocked prepends np to the history ring (caller holds a.mu).
@@ -1073,7 +1102,9 @@ func (a *App) setStation(key string) {
 	// poll, or never during an émission. The banner rides the same
 	// replace-in-place channel, so the arriving track metadata replaces it.
 	if a.cfgSnapshot().Notifications && a.notif != nil && !a.popoverShown() {
-		a.notif.Notify(s.Display, "En écoute", "", a.cfgSnapshot().NotifTimeoutMs)
+		if !a.carton(popover.Carton{Kind: "zap", Title: s.Display, Subtitle: "En écoute"}) {
+			a.notif.Notify(s.Display, "En écoute", "", a.cfgSnapshot().NotifTimeoutMs)
+		}
 	}
 	a.startStation(s, true)
 }

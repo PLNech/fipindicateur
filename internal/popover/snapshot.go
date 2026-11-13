@@ -39,6 +39,26 @@ type Snapshot struct {
 	Settings Settings  `json:"settings"`
 }
 
+// Carton is one banner of the card build: the carton d'antenne, a small
+// card that drops under the menu bar for a few seconds and goes away by
+// itself. It carries everything it shows (Swift does no network and keeps no
+// state for it), so it can never render the previous track.
+type Carton struct {
+	Kind     string `json:"kind"` // track, show, zap, verdict-up, verdict-down
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle"`
+	Detail   string `json:"detail"`
+	Cover    string `json:"cover"`   // path of a cached cover PNG, "" for the glyph tile
+	Station  string `json:"station"` // display name
+	Color    string `json:"color"`   // #rrggbb
+}
+
+// JSON encodes the carton for the bridge.
+func (c Carton) JSON() []byte {
+	b, _ := json.Marshal(c)
+	return b
+}
+
 // AudioDevice is one output Réglages offers.
 type AudioDevice struct {
 	Name  string `json:"name"` // mpv's device name, "auto" for the default

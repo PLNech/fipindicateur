@@ -26,6 +26,7 @@ extern int fipui_push_state(const char *json);
 extern void fipui_toggle(void *anchor);
 extern void fipui_close(void);
 extern void fipui_show_settings(void);
+extern void fipui_show_carton(const char *json);
 extern int fipui_is_shown(void);
 extern void fipui_set_bars(double a, double b, double c, double d);
 extern int fipui_debug_fire(const char *id, const char *arg);
@@ -95,6 +96,13 @@ func Shown() bool { return C.fipui_is_shown() == 1 }
 // ignored while the card is hidden.
 func SetBars(b [4]float64) {
 	C.fipui_set_bars(C.double(b[0]), C.double(b[1]), C.double(b[2]), C.double(b[3]))
+}
+
+// ShowCarton shows one carton (JSON of popover.Carton) for a few seconds.
+func ShowCarton(json []byte) {
+	cs := C.CString(string(json))
+	defer C.free(unsafe.Pointer(cs))
+	C.fipui_show_carton(cs)
 }
 
 // ShowSettings turns the card to its Réglages face, showing it if needed.

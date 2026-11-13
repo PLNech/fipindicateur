@@ -181,6 +181,16 @@ func (a *App) popoverSnapshot() popover.Snapshot {
 // land on the very corner the card occupies.
 func (a *App) popoverShown() bool { return popover.Shown() }
 
+// carton drops a carton d'antenne in place of the system banner. The station
+// is the tuned one at the call, the cover a path Go already cached. True
+// means it was handled here: the caller sends no system banner.
+func (a *App) carton(c popover.Carton) bool {
+	st := a.currentStation()
+	c.Station, c.Color = st.Display, st.Color
+	popover.ShowCarton(c)
+	return true
+}
+
 // popoverBars hands the card the frame the tray glyph is drawing: the same
 // four heights, scaled to 0..1.
 func popoverBars(h vu.Heights) {

@@ -2,7 +2,10 @@
 
 package ui
 
-import "github.com/PLNech/fipindicateur/internal/vu"
+import (
+	"github.com/PLNech/fipindicateur/internal/popover"
+	"github.com/PLNech/fipindicateur/internal/vu"
+)
 
 // The SwiftUI popover exists only on darwin behind the swiftui build tag
 // (popover_darwin.go). Everywhere else the seams the shared code calls are
@@ -15,6 +18,9 @@ func (a *App) syncPopover() {}
 func (a *App) popoverShown() bool { return false }
 
 func popoverBars(vu.Heights) {}
+
+// carton: no card on this build, the system banner stays.
+func (a *App) carton(popover.Carton) bool { return false }
 
 // hasPopover: no card on this build, the menu carries every setting.
 const hasPopover = false

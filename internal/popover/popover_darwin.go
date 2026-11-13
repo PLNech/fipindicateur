@@ -29,5 +29,8 @@ func SetBars(b [4]float64) { fipui.SetBars(b) }
 // Shown reports whether the card is up. Safe from any goroutine.
 func Shown() bool { return fipui.Shown() }
 
+// ShowCarton drops a carton under the menu bar (ignored while the card is up).
+func ShowCarton(c Carton) { fipui.ShowCarton(c.JSON()) }
+
 // ShowSettings turns the card to its Réglages face, showing it if needed.
 func ShowSettings() { fipui.ShowSettings() }

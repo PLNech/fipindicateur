@@ -7,6 +7,7 @@
 //   Go -> Swift   fipui_set_bars(a,b,c,d)  the tray glyph's four bars, same frames
 //   Go -> Swift   fipui_toggle(anchor)     show or close the card
 //   Go -> Swift   fipui_close()            close it
+//   Go -> Swift   fipui_show_carton(json) a banner: the carton d'antenne
 //   Go -> Swift   fipui_show_settings()    turn the card to its Réglages face
 //   Go -> Swift   fipui_is_shown()         is it up (Go then skips its banners)
 //   Swift -> Go   goFipAction(id, arg)     every user action, one entry point
@@ -139,7 +140,7 @@ private final class CardPanel: NSPanel {
 /// (never over the status items), and any click elsewhere, escape, or a
 /// second click on the icon puts it away. It is not anchored to the icon:
 /// the icon only tells which screen to use.
-private final class CardController {
+final class CardController {
     static let shared = CardController()
     private var panel: CardPanel?
     private var monitors: [Any] = []
@@ -221,6 +222,7 @@ private final class CardController {
     private func show(on screen: NSScreen?) {
         guard let screen else { return }
         FipModel.shared.settingsUp = false
+        CartonController.shared.hide()
         Meter.shared.bars = [0, 0, 0, 0]
         let host = NSHostingView(rootView: CardView(model: .shared, meter: .shared))
         let size = host.fittingSize
@@ -304,6 +306,15 @@ public func fipuiClose() {
     onMain { CardController.shared.close() }
 }
 
+/// Drops a carton d'antenne (one banner, JSON of popover.Carton). Ignored
+/// while the card is up. A JSON that is not a Carton is dropped.
+@_cdecl("fipui_show_carton")
+public func fipuiShowCarton(_ json: UnsafePointer<CChar>) {
+    let data = Data(bytes: json, count: strlen(json))
+    guard let c = try? JSONDecoder().decode(Carton.self, from: data) else { return }
+    onMain { CartonController.shared.show(c) }
+}
+
 /// Turns the card to its Réglages face (and shows it if it was closed).
 @_cdecl("fipui_show_settings")
 public func fipuiShowSettings() {
@@ -350,7 +361,17 @@ public func fipuiDebugRender(_ view: UnsafePointer<CChar>, _ path: UnsafePointer
     let which = String(cString: view)
     model.settingsUp = which.hasPrefix("settings")
     model.settingsPage = which == "settings-appli" ? 1 : 0
-    let host = NSHostingView(rootView: CardView(model: model, meter: meter).environment(\.colorScheme, scheme))
+    let cartonModel = CartonModel()
+    cartonModel.apply(Carton(
+        kind: which == "carton-zap" ? "zap" : which == "carton-up" ? "verdict-up" : "track",
+        title: which == "carton" ? snap.title : snap.current.name,
+        subtitle: which == "carton" ? snap.artist : "En écoute",
+        detail: which == "carton" ? "\(snap.album) (\(snap.year)) · \(snap.label)" : "",
+        cover: which == "carton" ? snap.cover : "", station: snap.current.name, color: snap.current.color))
+    let root: AnyView = which.hasPrefix("carton")
+        ? AnyView(CartonView(model: cartonModel, seconds: 5.5))
+        : AnyView(CardView(model: model, meter: meter))
+    let host = NSHostingView(rootView: root.environment(\.colorScheme, scheme))
     let size = host.fittingSize
     let rect = NSRect(origin: .zero, size: size)
     host.frame = rect
