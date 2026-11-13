@@ -17,7 +17,6 @@ import (
 	"github.com/PLNech/fipindicateur/internal/icon"
 	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/open"
-	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/version"
 )
@@ -78,7 +77,7 @@ func (a *App) buildUI() {
 
 func (a *App) buildMenu() {
 	a.mNow = addMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
-	a.on(a.mNow, events.KindOpenWiki, a.openNow)
+	a.on(a.mNow, "", a.firing(actOpenWiki))
 
 	// The programme (émission) currently on air. Display-only (disabled), hidden
 	// until a show is playing. Shows exist only on the main antenna.
@@ -88,28 +87,29 @@ func (a *App) buildMenu() {
 
 	voir := addMenuItem("Voir…", "Liens pour ce titre")
 	a.mVoirWiki = voir.AddSubMenuItem("Wikipédia (artiste)", "Chercher l'artiste sur fr.wikipedia.org")
-	a.on(a.mVoirWiki, events.KindOpenWiki, a.openNow)
+	a.on(a.mVoirWiki, "", a.firing(actOpenWiki))
 	a.mVoirLink = voir.AddSubMenuItem("Écouter ailleurs (lien FIP)", "Lien musique fourni par Radio France")
 	a.mVoirLink.Disable()
 	a.on(a.mVoirLink, events.KindOpenLink, a.openNowLink)
 
 	// Taste signals: an explicit verdict on the current track. Unlike the events
 	// log, prefs has no opt-in gate: the click itself is the consent (see
-	// internal/prefs). The a.on chokepoint records the behaviour (KindLike/
-	// KindDislike, station only, no track identity); the handler snapshots the
-	// track into prefs.jsonl. Both are no-ops when nothing is playing.
+	// internal/prefs). The registered action records the behaviour (KindLike/
+	// KindDislike, station only, no track identity) and its handler snapshots
+	// the track into prefs.jsonl (actions.go: the popover fires the same two).
+	// Both are no-ops when nothing is playing.
 	a.mLike = addMenuItem("J'aime ce morceau", "Mémoriser que vous aimez ce titre (prefs.jsonl)")
 	a.mLike.Disable() // enabled once a track is known (see onNowPlaying)
-	a.on(a.mLike, events.KindLike, func() { a.recordTaste(prefs.Like) })
+	a.on(a.mLike, "", a.firing(actLike))
 	a.mDislike = addMenuItem("Pas pour moi", "Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)")
 	a.mDislike.Disable()
-	a.on(a.mDislike, events.KindDislike, func() { a.recordTaste(prefs.Dislike) })
+	a.on(a.mDislike, "", a.firing(actDislike))
 
 	addSeparator()
 	a.mPlay = addMenuItem("⏸ Pause", "Lecture / pause")
 	// Play/pause is state-dependent: setPlayingUI records the resulting
 	// play/pause event (so media keys and MPRIS are captured too), hence "".
-	a.on(a.mPlay, "", a.togglePlay)
+	a.on(a.mPlay, "", a.firing(actPlayToggle))
 
 	// Volume submenu. Volume stays measurable through the same setters as
 	// every other entry point, and every item drives the ACTIVE sink: the cast
@@ -117,7 +117,7 @@ func (a *App) buildMenu() {
 	// The submenu's own title says which one it is talking to (applyVolumeUI).
 	a.mVolume = addMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
 	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
-	a.on(a.mMute, "", a.toggleActiveMute) // records the resulting state at source
+	a.on(a.mMute, "", a.firing(actMuteToggle)) // records the resulting state at source
 	a.volMI = map[int]*menuItem{}
 	for _, pct := range volumePresets {
 		it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
@@ -293,7 +293,7 @@ func (a *App) buildMenu() {
 	// toggle above. The submenu lets you see, locate and delete the data.
 	statsMenu := settings.AddSubMenuItem("Statistiques", "Voir et gérer vos statistiques d'écoute")
 	mStatsView := statsMenu.AddSubMenuItem("Voir le rapport", "Ouvrir le rapport d'écoute dans le navigateur")
-	a.on(mStatsView, events.KindStatsView, a.viewStats)
+	a.on(mStatsView, "", a.firing(actStatsView))
 	mStatsFolder := statsMenu.AddSubMenuItem("Ouvrir le dossier de données", "Dossier ~/.local/share/fipindicateur")
 	a.on(mStatsFolder, "", a.openDataDir)
 	a.mHistClear = statsMenu.AddSubMenuItem("Effacer l'historique…", "Supprimer history.jsonl et events.jsonl (vos goûts ne sont pas touchés)")

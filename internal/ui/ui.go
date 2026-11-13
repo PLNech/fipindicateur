@@ -61,6 +61,10 @@ type App struct {
 	notif   *notify.Notifier
 	current stations.Station
 
+	// actions is the surface-neutral registry behind App.fire (actions.go):
+	// written once by registerActions before the UI is built, read-only after.
+	actions map[string]func(arg string)
+
 	mu       sync.Mutex
 	now      metadata.NowPlaying
 	history  []metadata.NowPlaying
@@ -304,6 +308,7 @@ func (a *App) OnReady() {
 	})
 	a.anim.app = a
 
+	a.registerActions()
 	a.buildUI()
 	if a.mpris != nil {
 		a.mpris.SetVolume(float64(a.cfgSnapshot().Volume) / 100)
@@ -838,13 +843,12 @@ func (a *App) refreshHistoryMenu() {
 //
 // Invariant (enforced by TestSingleOnClickCallSite): the only onClick loop in
 // this package lives below. Add clickable items via a.on, never onClick.
+//
+// The recording itself lives in recorded (actions.go), shared with App.fire:
+// an action another surface can also trigger (the popover) is registered once
+// in registerActions and its menu item delegates with a.firing(id).
 func (a *App) on(mi *menuItem, kind events.Kind, fn func()) {
-	go a.onClick(mi.ClickedCh, func() {
-		if kind != "" {
-			a.rec.Record(events.Event{Kind: kind, Station: a.currentStation().Key})
-		}
-		fn()
-	})
+	go a.onClick(mi.ClickedCh, a.recorded(kind, fn))
 }
 
 // onClick loops over a menu item's click channel, running fn each time. The
