@@ -65,8 +65,12 @@ struct CartonView: View {
                         .padding(.top, 1)
                     }
                 }
+                .frame(maxHeight: .infinity, alignment: .center)
                 Spacer(minLength: 0)
             }
+            // One height for every carton (room for four lines): the panel is
+            // sized once from this, so a later, taller carton is never clipped.
+            .frame(height: 66)
             .padding(.init(top: 10, leading: 10, bottom: 10, trailing: 14))
             // The countdown: the station's colour drains out over the time on show.
             GeometryReader { g in
@@ -154,6 +158,12 @@ final class CartonController {
                 ctx.duration = 0.28
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 p.animator().setFrame(frame, display: true)
+                p.animator().alphaValue = 1
+            }
+        } else {
+            // A carton arriving mid-fade must come back to full strength.
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.12
                 p.animator().alphaValue = 1
             }
         }
