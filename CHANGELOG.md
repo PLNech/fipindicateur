@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+- macOS, expérimental (`make swiftui`, macOS 14+) : un clic gauche sur
+  l'icône ouvre un popover SwiftUI (pochette, lecture, volume, cadran des
+  stations), le menu passe au clic droit. Le popover est lié dans le même
+  binaire, sans second processus, et chacun de ses contrôles passe par le
+  registre d'actions qui alimente déjà le menu : rien n'échappe à la mesure.
+  La construction par défaut ne change pas et n'a pas besoin de Swift
+
 ### Fixed
 - Un flux qui meurt (relais icecast, réseau) ne laisse plus l'app dans un état
   zombie : l'icône animée se figeait sur ses tigettes, le menu gardait
