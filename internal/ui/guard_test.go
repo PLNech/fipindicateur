@@ -6,6 +6,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/PLNech/fipindicateur/internal/metadata"
+	"github.com/PLNech/fipindicateur/internal/prefs"
 )
 
 // TestSingleOnClickCallSite enforces the "measurable by design" invariant: the
@@ -130,5 +133,121 @@ func TestSingleSetIconCallSite(t *testing.T) {
 	}
 	if total != 1 {
 		t.Fatalf("guarded-icon invariant: `systray.SetIcon(` must appear exactly once (inside setTrayIcon); found %d. Route icon sets through a.setIcon.", total)
+	}
+}
+
+// swiftActionIDs reads the raw values of the Swift `enum Action` that the
+// popover's controls fire (the source, not the binary: the default build
+// never compiles Swift). A case without an explicit raw value has its own
+// name as raw value, the Swift rule for String enums.
+func swiftActionIDs(t *testing.T, src string) []string {
+	t.Helper()
+	m := regexp.MustCompile(`(?s)enum Action: String[^{]*\{(.*?)\n\}`).FindStringSubmatch(src)
+	if m == nil {
+		t.Fatal("Bridge.swift: `enum Action: String { ... }` not found; the guard reads the action ids from it")
+	}
+	one := regexp.MustCompile(`^(\w+)(?:\s*=\s*"([^"]*)")?$`)
+	var ids []string
+	for _, line := range strings.Split(m[1], "\n") {
+		line = strings.TrimSpace(line)
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		if line == "" {
+			continue
+		}
+		rest, ok := strings.CutPrefix(line, "case ")
+		if !ok {
+			t.Fatalf("Bridge.swift: enum Action holds something other than plain cases (%q); keep it a list of string cases so this guard can read it", line)
+		}
+		for _, c := range strings.Split(rest, ",") {
+			p := one.FindStringSubmatch(strings.TrimSpace(c))
+			if p == nil {
+				t.Fatalf("Bridge.swift: unreadable Action case %q", c)
+			}
+			if p[2] != "" {
+				ids = append(ids, p[2])
+			} else {
+				ids = append(ids, p[1])
+			}
+		}
+	}
+	return ids
+}
+
+// TestPopoverActionsRegistered carries the "measurable by design" invariant
+// across the language boundary. The SwiftUI popover can only leave Swift
+// through FipModel.send(Action), which lands in App.fire(id): every id the
+// Swift enum names must therefore be a registered action, declared in
+// registerActions with its telemetry decision. A control added in Swift with
+// no Go handler fails here, on every platform, without a Swift toolchain.
+func TestPopoverActionsRegistered(t *testing.T) {
+	const dir = "../popover/fipui/swift"
+	bridge, err := os.ReadFile(filepath.Join(dir, "Bridge.swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{}
+	a.registerActions()
+	ids := swiftActionIDs(t, string(bridge))
+	if len(ids) == 0 {
+		t.Fatal("Bridge.swift: enum Action is empty")
+	}
+	for _, id := range ids {
+		if _, ok := a.actions[id]; !ok {
+			t.Errorf("popover action %q (Bridge.swift, enum Action) has no handler: register it in registerActions (actions.go) with its events.Kind, or \"\" if it records at source", id)
+		}
+	}
+
+	// The single exit: goFipAction is declared and called once, both inside
+	// FipModel.send. A view calling it directly would bypass the enum.
+	files, err := filepath.Glob(filepath.Join(dir, "*.swift"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(src), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "//") { // prose may name it
+				calls += strings.Count(line, "goFipAction(")
+			}
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("goFipAction( must appear exactly twice in the Swift sources (its declaration and the call in FipModel.send); found %d. Controls fire through model.send(Action).", calls)
+	}
+}
+
+// The registry's own contract: an unknown id runs nothing and says so.
+func TestFireUnknownAction(t *testing.T) {
+	a := &App{}
+	a.registerActions()
+	if a.fire("no_such_action", "") {
+		t.Fatal("fire reported an unknown action as run")
+	}
+}
+
+// The latched verdict belongs to one track: it must not follow the listener
+// onto the next one, and an empty track never carries a verdict.
+func TestTasteForLatchesOnTheTrack(t *testing.T) {
+	a := &App{}
+	liked := metadata.NowPlaying{Artist: "A", Title: "T"}
+	a.taste.artist, a.taste.title, a.taste.verdict = "A", "T", prefs.Like
+	if got := a.tasteFor(liked); got != 1 {
+		t.Fatalf("liked track: got %d, want 1", got)
+	}
+	if got := a.tasteFor(metadata.NowPlaying{Artist: "A", Title: "Autre"}); got != 0 {
+		t.Fatalf("next track inherited the verdict: %d", got)
+	}
+	a.taste.verdict = prefs.Dislike
+	if got := a.tasteFor(liked); got != -1 {
+		t.Fatalf("disliked track: got %d, want -1", got)
+	}
+	if got := a.tasteFor(metadata.NowPlaying{}); got != 0 {
+		t.Fatalf("empty track carries a verdict: %d", got)
 	}
 }

@@ -20,6 +20,7 @@ extern void trayItemSelected(int id);
 extern void trayScrollWheel(double deltaY, int precise);
 extern void traySliderChanged(int sliderID, int value);
 extern void trayMenuOpen(void);
+extern void trayPrimaryClick(void *anchor);
 extern void trayAppearanceChanged(void);
 
 // The autosave name hands position persistence to AppKit: it stores the
@@ -54,6 +55,11 @@ static void placeStatusItemDefault(void) {
 @interface TrayScrollView : NSView
 @end
 
+// primaryClick is the primary-click mode switch (main thread only).
+// presentTrayMenu asks the delegate, defined further down, for the menu.
+static BOOL primaryClick = NO;
+static void presentTrayMenu(void);
+
 @implementation TrayScrollView
 
 // scrollWheel hands the raw gesture to Go (trayScrollWheel): precise trackpad
@@ -70,11 +76,26 @@ static void placeStatusItemDefault(void) {
 // Clicks are not consumed: the status item presents its menu on the button's
 // mouse down, so the gesture is handed straight down the responder chain (the
 // overlay's next responder is the button itself).
+//
+// Primary-click mode (trayEnablePrimaryClick, off by default) splits the
+// gesture here instead, where every click on the item already lands: a plain
+// left click goes to Go with the button as anchor (a popover opens under it),
+// a right or control click presents the menu.
 - (void)mouseDown:(NSEvent *)event {
-    [[self nextResponder] mouseDown:event];
+    if (!primaryClick) {
+        [[self nextResponder] mouseDown:event];
+    } else if (event.modifierFlags & NSEventModifierFlagControl) {
+        presentTrayMenu();
+    } else {
+        trayPrimaryClick((__bridge void *)[self superview]);
+    }
 }
 
 - (void)rightMouseDown:(NSEvent *)event {
+    if (primaryClick) {
+        presentTrayMenu();
+        return;
+    }
     [[self nextResponder] rightMouseDown:event];
 }
 
@@ -84,8 +105,8 @@ static void placeStatusItemDefault(void) {
 
 @end
 
-// TraySliderView is the custom view behind the Volume submenu's first entry:
-// an NSSlider with a little padding. A menu item's custom view receives the
+// TraySliderView is the custom view behind the top-level slider item: an
+// NSSlider with a little padding. A menu item's custom view receives the
 // mouse events during tracking (that is what NSMenuItem.view exists for),
 // which is how menu-bar audio apps host a live slider. Continuous: every drag
 // tick reports to Go, which applies the level and lets the events coalescer
@@ -189,6 +210,24 @@ static void placeStatusItemDefault(void) {
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app {
     (void)app;
     return YES;
+}
+
+// setPrimaryClick switches the item between its two click behaviors. Off
+// (the default): the menu lives on the item and any click opens it. On: the
+// item carries no menu, so AppKit stops presenting one by itself and the
+// scroll overlay routes the clicks (see TrayScrollView).
+- (void)setPrimaryClick:(NSNumber *)on {
+    primaryClick = on.boolValue;
+    statusItem.menu = primaryClick ? nil : menu;
+}
+
+// presentMenu shows the menu in primary-click mode: attached for the length
+// of one synthesized click (performClick tracks the menu and returns when it
+// closes), then detached again so the next left click stays ours.
+- (void)presentMenu {
+    statusItem.menu = menu;
+    [statusItem.button performClick:nil];
+    statusItem.menu = primaryClick ? nil : menu;
 }
 
 - (void)menuHandler:(id)sender {
@@ -339,24 +378,27 @@ static void placeStatusItemDefault(void) {
     }
 }
 
-// insertSlider hosts a slider item as the FIRST entry of the parent's
-// submenu: the volume slider lives at the top of the Volume submenu, above
-// the mute toggle and the preset checkboxes. The submenu is reached by tag
-// traversal (findItem), never by index, so a cast-list refresh cannot shift
-// it out from under us.
+// insertSlider hosts a slider item in the ROOT menu, immediately before the
+// anchor item (spec[0], its tag): the volume slider is a top-level entry, so
+// adjusting it is one click to open the menu and one drag, with no submenu
+// hop. The Volume submenu keeps the mute toggle and the preset checkboxes.
+// The anchor is found by tag, never by index, so a cast-list refresh cannot
+// shift the insertion point out from under us; a missing anchor appends at
+// the end rather than dropping the slider.
 - (void)insertSlider:(NSArray *)spec {
-    int parent = [spec[0] intValue];
+    int before = [spec[0] intValue];
     int sliderID = [spec[1] intValue];
     int value = [spec[2] intValue];
-    NSMenuItem *parentItem = [self findItem:parent inMenu:menu];
-    if (parentItem == nil || !parentItem.hasSubmenu) {
-        return;
-    }
     NSMenuItem *item = [[NSMenuItem alloc] init];
     item.title = @"";
     item.view = [[TraySliderView alloc] initWithID:sliderID value:value];
     item.tag = sliderID;
-    [parentItem.submenu insertItem:item atIndex:0];
+    NSUInteger idx = [menu indexOfItemWithTag:before];
+    if (idx == NSNotFound) {
+        [menu addItem:item];
+    } else {
+        [menu insertItem:item atIndex:idx];
+    }
 }
 
 - (void)setSliderState:(NSArray *)args {
@@ -383,6 +425,7 @@ static void placeStatusItemDefault(void) {
 }
 
 @end
+
 
 static TrayAppDelegate *owner = nil;
 
@@ -424,6 +467,14 @@ void trayRegister(void) {
 
 void trayRunLoop(void) {
     [NSApp run];
+}
+
+static void presentTrayMenu(void) {
+    [owner presentMenu];
+}
+
+void trayEnablePrimaryClick(short on) {
+    onMain(@selector(setPrimaryClick:), @(on != 0));
 }
 
 void trayQuit(void) {

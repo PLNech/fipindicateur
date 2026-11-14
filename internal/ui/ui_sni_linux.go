@@ -524,9 +524,12 @@ func (a *App) buildMenu(m *sni.Menu) {
 	pos := settings.AddCheckbox("Lecture au lancement", a.cfg.PlayOnStart, false)
 	a.mPlayOnStart = mitem(pos)
 	a.on(a.mPlayOnStart, "", a.togglePlayOnStart)
-	histFile := settings.AddCheckbox("Historique local (fichier)", a.cfg.HistoryFile, false)
-	a.mHistFile = mitem(histFile)
-	a.on(a.mHistFile, "", a.toggleHistFile)
+	// Historique d'écoute: the single local switch. One checkbox gates both
+	// files, history.jsonl (titres) and events.jsonl (comportement); the
+	// Statistiques submenu below covers see / locate / erase.
+	histToggle := settings.AddCheckbox("Historique d'écoute (local)", a.cfg.History, false)
+	a.mHistToggle = mitem(histToggle)
+	a.on(a.mHistToggle, "", a.toggleHistory)
 	anim := settings.AddCheckbox("Icône animée", a.cfg.AnimatedIcon, false)
 	a.mAnim = mitem(anim)
 	a.on(a.mAnim, "", a.toggleAnim)
@@ -550,19 +553,15 @@ func (a *App) buildMenu(m *sni.Menu) {
 		a.on(a.audioMI[ch.Name], events.KindAudioDevice, func() { a.setAudioDevice(name) })
 	}
 
-	// Statistiques d'écoute: opt-in (default off), local-only. The toggle
-	// gates the recorder; the submenu lets you see, locate and delete the
-	// data.
-	statsToggle := settings.AddCheckbox("Statistiques d'écoute (local)", a.cfg.Stats, false)
-	a.mStats = mitem(statsToggle)
-	a.on(a.mStats, "", a.toggleStats)
+	// Statistiques d'écoute: local-only, default on via the single Historique
+	// toggle above. The submenu lets you see, locate and delete the data.
 	statsMenu := settings.Add("Statistiques")
 	mStatsView := mitem(statsMenu.Add("Voir le rapport"))
 	a.on(mStatsView, events.KindStatsView, a.viewStats)
 	mStatsFolder := mitem(statsMenu.Add("Ouvrir le dossier de données"))
 	a.on(mStatsFolder, "", a.openDataDir)
-	a.mStatsClear = mitem(statsMenu.Add("Effacer les statistiques…"))
-	a.on(a.mStatsClear, "", a.clearStatsConfirm)
+	a.mHistClear = mitem(statsMenu.Add("Effacer l'historique…"))
+	a.on(a.mHistClear, "", a.clearHistoryConfirm)
 	// Taste verdicts (J'aime / Pas pour moi) persist to a separate file,
 	// prefs.jsonl, with its own consent. It gets its own delete affordance
 	// so the "see / edit / delete" promise covers every local log.

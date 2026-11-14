@@ -38,6 +38,12 @@ function build() {
     const node = render(DATA, mk);
     if (node) root.appendChild(node);
   }
+  // The sections exist only after this JS runs, so a URL hash (the onboarding
+  // banner deep-links #fin) lands here, after the build, not at page load.
+  if (location.hash) {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target) target.scrollIntoView({ behavior: reduced() ? "auto" : "smooth" });
+  }
   wireTheme();
 }
 

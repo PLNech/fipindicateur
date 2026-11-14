@@ -1,5 +1,6 @@
 // Package histlog appends track changes to a local JSONL file, one JSON
-// object per line. Opt-in (default off). JSONL over SQLite: zero new
+// object per line. Gated by the single config.History switch (default on),
+// shared with the events behaviour log. JSONL over SQLite: zero new
 // dependencies, greppable, and the schema extends naturally when
 // likes/dislikes arrive later. Writes are best-effort: an error is returned
 // for logging but must never affect playback.
@@ -111,4 +112,16 @@ func Load(path string) ([]Entry, error) {
 		}
 	}
 	return out, nil
+}
+
+// Clear deletes the history log, half of the "Effacer l'historique" data right
+// (events.Recorder.Clear removes the other half). A missing file is not an
+// error. history.jsonl has no live writer object: appends are synchronous and
+// gated at the call site, so a plain remove cannot race an in-flight write.
+func Clear(path string) error {
+	err := os.Remove(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }

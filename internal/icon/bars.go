@@ -131,10 +131,11 @@ func renderBars(h vu.Heights, dark bool, tint color.NRGBA) []byte {
 
 	// Phantom outline first (under the ink), then the bars on top so the glyph
 	// body stays crisp and only the surrounding ring carries the halo. The rim
-	// exists where the panel downscales the 44px PNG (haloOnPanel); a platform
-	// that draws the PNG at its native point size skips it.
-	if haloOnPanel(dark) {
-		drawHalo(img, mask[:], barsSize)
+	// exists where the panel downscales the 44px PNG (haloOnPanel); a colored
+	// brand ink carries it on every panel (the black keyline is panel-proof),
+	// a platform that draws the PNG at its native point size skips it otherwise.
+	if inkIsColored(ink) || haloOnPanel(dark) {
+		drawHalo(img, mask[:], barsSize, haloInk(ink))
 	}
 	for y := 0; y < barsSize; y++ {
 		for x := 0; x < barsSize; x++ {
@@ -195,16 +196,37 @@ const (
 	haloInner = 1.0  // px at full strength before the feather begins
 )
 
+// haloWhite and haloBlack are the two phantom-outline inks. White is the
+// tuned default for the neutral theme glyphs (it lifts them off a near-black
+// panel and vanishes on a light one). A colored brand ink gets a black rim
+// instead: a dark surround reads as a keyline on any panel, and unlike white
+// it raises the perceived saturation of the color it frames instead of
+// washing it.
+var (
+	haloWhite = color.NRGBA{0xFF, 0xFF, 0xFF, 0xFF}
+	haloBlack = color.NRGBA{0x00, 0x00, 0x00, 0xFF}
+)
+
+// haloInk picks the outline color for a glyph ink: black under a saturated
+// brand color, the tuned white under the neutral theme inks.
+func haloInk(ink color.NRGBA) color.NRGBA {
+	if inkIsColored(ink) {
+		return haloBlack
+	}
+	return haloWhite
+}
+
 // haloWidth is the outer ring radius in pixels. It grows slower than the canvas
 // (a fixed offset plus a small fraction), so the ring is relatively thinner at
 // larger sizes: ~1.6px look at 22px display, ~3.2px on the 44px bars canvas.
 func haloWidth(size int) float64 { return 1.0 + float64(size)*0.05 }
 
 // drawHalo paints the phantom outline into img for the glyph described by mask
-// (true == glyph pixel). Each transparent pixel within haloWidth of a glyph
-// pixel gets white at haloAlpha, feathered to zero at the ring's outer edge.
-// Mask pixels are left untouched: the caller paints the ink over them.
-func drawHalo(img *image.NRGBA, mask []bool, size int) {
+// (true == glyph pixel), in the given outline color. Each transparent pixel
+// within haloWidth of a glyph pixel gets that color at haloAlpha, feathered to
+// zero at the ring's outer edge. Mask pixels are left untouched: the caller
+// paints the ink over them.
+func drawHalo(img *image.NRGBA, mask []bool, size int, halo color.NRGBA) {
 	width := haloWidth(size)
 	ring := haloRing(size)
 	at := func(x, y int) bool {
@@ -235,7 +257,7 @@ func drawHalo(img *image.NRGBA, mask []bool, size int) {
 			if a <= 0 {
 				continue
 			}
-			img.SetNRGBA(x, y, color.NRGBA{0xFF, 0xFF, 0xFF, uint8(a * 255)})
+			img.SetNRGBA(x, y, color.NRGBA{halo.R, halo.G, halo.B, uint8(a * 255)})
 		}
 	}
 }

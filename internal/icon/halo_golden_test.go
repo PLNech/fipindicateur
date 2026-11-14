@@ -37,8 +37,8 @@ func TestDrawHaloMatchesReference(t *testing.T) {
 		got := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
 		want := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
 		mask := barMask(h)
-		drawHalo(got, mask[:], barsSize)
-		refDrawHalo(want, mask[:], barsSize)
+		drawHalo(got, mask[:], barsSize, haloWhite)
+		refDrawHalo(want, mask[:], barsSize, haloWhite)
 		if !bytes.Equal(got.Pix, want.Pix) {
 			t.Fatalf("halo for %v differs from the reference", h)
 		}
@@ -50,8 +50,8 @@ func TestDrawHaloMatchesReference(t *testing.T) {
 	}
 	got := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
 	want := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
-	drawHalo(got, edge, barsSize)
-	refDrawHalo(want, edge, barsSize)
+	drawHalo(got, edge, barsSize, haloWhite)
+	refDrawHalo(want, edge, barsSize, haloWhite)
 	if !bytes.Equal(got.Pix, want.Pix) {
 		t.Fatal("halo for an edge-touching mask differs from the reference")
 	}

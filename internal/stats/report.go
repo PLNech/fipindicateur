@@ -92,13 +92,16 @@ func loadEnriched() *Enriched {
 	return LoadEnriched(filepath.Join(dir, "enriched.json"))
 }
 
-// ServeAndOpen serves the HTML on an ephemeral 127.0.0.1 port and opens it in
+// ServeAndOpen serves the self-contained report over an ephemeral 127.0.0.1
+// port (Snap Firefox cannot open file:// under hidden dirs) and opens it in
 // the browser. It serves over HTTP (not file://) because Firefox on Ubuntu is
 // a Snap and cannot read file:// under hidden dirs like ~/.local/share. The
 // server shuts down a few seconds after the page is fetched, or after a hard
-// timeout if the browser never connects. Blocking: callers wanting the tray to
-// stay responsive should run it in a goroutine.
-func ServeAndOpen(html []byte) error {
+// timeout if the browser never connects. fragment scrolls to an anchor id
+// when non-empty: the page builds its sections in JS, so the hash lands after
+// the build. Blocking: callers wanting the tray to stay responsive should run
+// it in a goroutine.
+func ServeAndOpen(html []byte, fragment string) error {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
@@ -119,6 +122,9 @@ func ServeAndOpen(html []byte) error {
 	go func() { _ = srv.Serve(ln) }()
 
 	url := fmt.Sprintf("http://%s/", ln.Addr().String())
+	if fragment != "" {
+		url += "#" + fragment
+	}
 	open.URL(url)
 
 	// Give the browser a moment to load the (self-contained) page, then stop.
@@ -169,7 +175,7 @@ func RunCLI(args []string) int {
 	}
 
 	if open {
-		if err := ServeAndOpen(html); err != nil {
+		if err := ServeAndOpen(html, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "fipindicateur: serve: %v\n", err)
 			return 1
 		}

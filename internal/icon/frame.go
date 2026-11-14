@@ -40,19 +40,21 @@ var (
 )
 
 // shapeKey is the shape identity: the bar heights plus whether the halo rides
-// along. The halo used to be a build-time constant; on darwin it now follows
-// the live panel darkness (haloOnPanel), so it keys the memo like any other
-// pixel-changing input.
+// along. The halo used to be a build-time constant; it now follows the live
+// panel darkness (haloOnPanel) and, for a colored brand ink, rides on every
+// panel, so both inputs key the memo like any other pixel-changing input.
+// The memo stores alphas only: the halo's color (white or black) is applied
+// at paint time and never keys the shape.
 type shapeKey struct {
 	h    vu.Heights
 	halo bool
 }
 
-// shapeOf returns the class map for the heights and panel: 0 transparent,
-// inkClass for a bar pixel, otherwise the halo alpha. It reuses drawHalo, so
-// the halo is the very one the PNG renderer draws.
-func shapeOf(h vu.Heights, dark bool) *[barsSize * barsSize]uint8 {
-	key := shapeKey{h: h, halo: haloOnPanel(dark)}
+// shapeOf returns the class map for the heights, panel and tintedness:
+// 0 transparent, inkClass for a bar pixel, otherwise the halo alpha. It
+// reuses drawHalo, so the halo is the very one the PNG renderer draws.
+func shapeOf(h vu.Heights, dark, tinted bool) *[barsSize * barsSize]uint8 {
+	key := shapeKey{h: h, halo: tinted || haloOnPanel(dark)}
 	shapeMu.Lock()
 	if s, ok := shapes[key]; ok {
 		shapeMu.Unlock()
@@ -63,7 +65,7 @@ func shapeOf(h vu.Heights, dark bool) *[barsSize * barsSize]uint8 {
 	mask := barMask(h)
 	halo := image.NewNRGBA(image.Rect(0, 0, barsSize, barsSize))
 	if key.halo {
-		drawHalo(halo, mask[:], barsSize)
+		drawHalo(halo, mask[:], barsSize, haloWhite)
 	}
 	s := new([barsSize * barsSize]uint8)
 	for i := range s {
@@ -106,20 +108,21 @@ func TrayFrame(h vu.Heights, tint, wash color.NRGBA, mixT float64) *Frame {
 	if (tint != color.NRGBA{}) {
 		ink = tint
 	}
-	shape := shapeOf(h, dark)
+	shape := shapeOf(h, dark, inkIsColored(ink))
 
 	// One washed value per class actually met, computed on first use.
 	var (
 		lut  [256][4]byte
 		seen [256]bool
 	)
+	rim := haloInk(ink)
 	pix := make([]byte, 4*barsSize*barsSize)
 	for i, c := range shape {
 		if c == 0 {
 			continue // transparent, already zero
 		}
 		if !seen[c] {
-			src := color.NRGBA{0xFF, 0xFF, 0xFF, c}
+			src := color.NRGBA{rim.R, rim.G, rim.B, c}
 			if c == inkClass {
 				src = ink
 			}

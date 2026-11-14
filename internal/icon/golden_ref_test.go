@@ -13,8 +13,9 @@ import (
 // The reference pipeline: the original, unoptimized implementations kept
 // verbatim as oracles. The optimized paths must reproduce them pixel for pixel.
 
-// refDrawHalo is the original brute-force phantom outline.
-func refDrawHalo(img *image.NRGBA, mask []bool, size int) {
+// refDrawHalo is the original brute-force phantom outline, in the given
+// outline color.
+func refDrawHalo(img *image.NRGBA, mask []bool, size int, halo color.NRGBA) {
 	width := haloWidth(size)
 	r := int(math.Ceil(width))
 	at := func(x, y int) bool {
@@ -46,7 +47,7 @@ func refDrawHalo(img *image.NRGBA, mask []bool, size int) {
 			if a <= 0 {
 				continue
 			}
-			img.SetNRGBA(x, y, color.NRGBA{0xFF, 0xFF, 0xFF, uint8(a * 255)})
+			img.SetNRGBA(x, y, color.NRGBA{halo.R, halo.G, halo.B, uint8(a * 255)})
 		}
 	}
 }
@@ -76,8 +77,8 @@ func refBarsImage(h vu.Heights, dark bool, tint color.NRGBA) *image.NRGBA {
 			}
 		}
 	}
-	if haloOnPanel(dark) {
-		refDrawHalo(img, mask[:], barsSize)
+	if inkIsColored(ink) || haloOnPanel(dark) {
+		refDrawHalo(img, mask[:], barsSize, haloInk(ink))
 	}
 	for y := 0; y < barsSize; y++ {
 		for x := 0; x < barsSize; x++ {

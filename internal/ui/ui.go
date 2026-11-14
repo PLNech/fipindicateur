@@ -29,6 +29,7 @@ import (
 	"github.com/PLNech/fipindicateur/internal/nowplay"
 	"github.com/PLNech/fipindicateur/internal/open"
 	"github.com/PLNech/fipindicateur/internal/player"
+	"github.com/PLNech/fipindicateur/internal/popover"
 	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/stats"
@@ -61,10 +62,15 @@ type App struct {
 	notif   *notify.Notifier
 	current stations.Station
 
+	// actions is the surface-neutral registry behind App.fire (actions.go):
+	// written once by registerActions before the UI is built, read-only after.
+	actions map[string]func(arg string)
+
 	mu       sync.Mutex
 	now      metadata.NowPlaying
 	history  []metadata.NowPlaying
 	upcoming []metadata.Show // upcoming programmes, for the calendar submenu
+	zapPeek  zapPeek         // the track the last zap banner named
 
 	// lastShowConcept is the conceptUuid of the programme we last notified for,
 	// so a show is announced once at its start and not re-announced for every
@@ -75,9 +81,15 @@ type App struct {
 
 	histPath  string // resolved once; empty if unresolvable
 	prefsPath string // resolved once; empty if unresolvable
-	anim      animator
-	wiki      *wiki.Resolver
-	rec       *events.Recorder
+
+	// taste is the last verdict given and the track it was given to (guarded
+	// by mu): a surface that shows the verdict as a state (the popover's
+	// latched glyph) asks tasteFor, and the latch falls off by itself when
+	// the track changes. Display only: prefs.jsonl stays the record.
+	taste struct{ artist, title, verdict string }
+	anim  animator
+	wiki  *wiki.Resolver
+	rec   *events.Recorder
 
 	// iconMu guards lastIcon, the last bytes handed to systray.SetIcon. The
 	// static-icon path (setPlayingUI) and the animator goroutine both set the
@@ -106,7 +118,7 @@ type App struct {
 	volRecOnce sync.Once
 	volRec     *volCoalescer
 
-	statsClearArmed bool // two-click confirm state for "Effacer les statistiques"
+	histClearArmed  bool // two-click confirm state for "Effacer l.historique…"
 	prefsClearArmed bool // two-click confirm state for "Effacer mes goûts"
 
 	// volSettleUntil bounds the grace window after a playback restart during
@@ -157,11 +169,10 @@ type App struct {
 	mShowCalendar  *menuItem
 	mAuto          *menuItem
 	mPlayOnStart   *menuItem
-	mHistFile      *menuItem
+	mHistToggle    *menuItem // the single local-history switch (Réglages)
 	mAnim          *menuItem
 	audioMI        map[string]*menuItem // audio-output items, keyed by device name ("auto" = automatic)
-	mStats         *menuItem
-	mStatsClear    *menuItem
+	mHistClear     *menuItem
 	mPrefsClear    *menuItem
 	mUpdateStartup *menuItem
 	mCastLocal     *menuItem   // "Cet ordinateur", checked when not casting
@@ -195,7 +206,7 @@ func New() *App {
 		cfg:       cfg,
 		meta:      metadata.NewManager(),
 		wiki:      wiki.NewResolver(),
-		rec:       events.NewRecorder(cfg.Stats),
+		rec:       events.NewRecorder(cfg.History),
 		stationMI: map[string]*menuItem{},
 	}
 }
@@ -206,6 +217,8 @@ func New() *App {
 func (a *App) OnReady() {
 	readyT0 := time.Now()
 	a.current = stations.ByKey(a.cfg.Station)
+	// Know what is on air everywhere, so a zap can name its destination's track.
+	a.meta.StartPeek(context.Background(), stations.All)
 
 	// Set a valid icon as the very first thing, before building the menu: the
 	// StatusNotifierItem is registered by the systray runtime the instant it is
@@ -305,6 +318,7 @@ func (a *App) OnReady() {
 	})
 	a.anim.app = a
 
+	a.registerActions()
 	a.buildUI()
 	if a.mpris != nil {
 		a.mpris.SetVolume(float64(a.cfgSnapshot().Volume) / 100)
@@ -312,6 +326,9 @@ func (a *App) OnReady() {
 	// (icon already set at the top of OnReady, before the menu, to shrink the
 	// null-pixmap window at SNI registration.)
 	a.rec.Record(events.Event{Kind: events.KindAppStart, Station: a.currentStation().Key})
+	// The one-shot default-on notice, after the menu exists: a click opens the
+	// report, so it must be reachable by the time the banner shows.
+	a.onboardHistory()
 	// Autostart is not autoplay: launch tunes the antenna (station selected,
 	// icon, metadata polling) but only starts the stream when the user opted in
 	// with PlayOnStart. When off, startStation(_, false) leaves playback paused
@@ -381,6 +398,7 @@ func (a *App) OnExit() {
 // A change of station (from != to) is recorded as the Markov transition edge;
 // the initial start (from == to) is not a transition.
 func (a *App) startStation(s stations.Station, play bool) {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	if a.watchCancel != nil {
 		a.watchCancel()
 	}
@@ -460,6 +478,7 @@ func showConcept(s *metadata.Show) string {
 // otherwise land after the new watcher started and briefly claim the label,
 // the history and a notification for a station we already left.
 func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	// A trackless update can still carry the programme on air: some émissions
 	// (continuous mixes like "Fip Tape") expose no per-song grain in livemeta,
 	// and the Radio France streams send no inline ICY titles either, so during
@@ -597,7 +616,7 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	if changed && cfg.Notifications && !notifiedShow {
 		a.notify(np)
 	}
-	if changed && cfg.HistoryFile {
+	if changed && cfg.History {
 		a.appendHistFile(s, np)
 	}
 	// A trackless programme starting writes one show-start marker line to the
@@ -605,7 +624,7 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 	// carries the show's display name into the report (identity lives in the
 	// histlog, never in the events log); the listening time itself is derived
 	// from the show_change boundaries, so the marker is identity, not duration.
-	if fresh && !hasTrack && np.Show != nil && cfg.HistoryFile {
+	if fresh && !hasTrack && np.Show != nil && cfg.History {
 		a.appendHistFile(s, np)
 	}
 	// The programme boundary, recorded like the station-change Markov edge but
@@ -621,6 +640,9 @@ func (a *App) onNowPlaying(s stations.Station, np metadata.NowPlaying) {
 // notifyShow announces a programme starting on the antenna. Best-effort, like
 // the track notification, and reusing the same replace-in-place channel.
 func (a *App) notifyShow(s metadata.Show) {
+	if a.popoverShown() {
+		return
+	}
 	summary := s.Title
 	if summary == "" {
 		summary = "Nouvelle émission"
@@ -628,6 +650,9 @@ func (a *App) notifyShow(s metadata.Show) {
 	body := "En ce moment sur l'antenne"
 	if s.Description != "" {
 		body = s.Description
+	}
+	if a.carton(popover.Carton{Kind: "show", Title: summary, Subtitle: body}) {
+		return
 	}
 	a.notif.Notify(summary, body, "", a.cfgSnapshot().NotifTimeoutMs)
 }
@@ -747,7 +772,12 @@ func (a *App) recordTaste(verdict string) {
 		log.Printf("ui: prefs append: %v", err)
 		return
 	}
-	if a.cfgSnapshot().Notifications && a.notif != nil {
+	a.mu.Lock()
+	a.taste.artist, a.taste.title, a.taste.verdict = np.Artist, np.Title, verdict
+	a.mu.Unlock()
+	a.syncPopover()
+	// With the card up, the wave that lights is the acknowledgement.
+	if a.cfgSnapshot().Notifications && a.notif != nil && !a.popoverShown() {
 		summary := "C'est noté"
 		if verdict == prefs.Dislike {
 			summary = "Noté : pas pour vous"
@@ -761,8 +791,33 @@ func (a *App) recordTaste(verdict string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		iconPath := a.notif.FetchCover(ctx, np.CoverURL)
+		kind := "verdict-up"
+		if verdict == prefs.Dislike {
+			kind = "verdict-down"
+		}
+		if a.carton(popover.Carton{Kind: kind, Title: summary, Subtitle: np.Title, Detail: np.Artist, Cover: iconPath}) {
+			return
+		}
 		a.notif.Notify(summary, body, iconPath, a.cfgSnapshot().NotifTimeoutMs)
 	}
+}
+
+// tasteFor is the verdict latched on np: +1 liked, -1 disliked, 0 none (or a
+// verdict given to another track).
+func (a *App) tasteFor(np metadata.NowPlaying) int {
+	a.mu.Lock()
+	t := a.taste
+	a.mu.Unlock()
+	if np.Empty() || t.artist != np.Artist || t.title != np.Title {
+		return 0
+	}
+	switch t.verdict {
+	case prefs.Like:
+		return 1
+	case prefs.Dislike:
+		return -1
+	}
+	return 0
 }
 
 // notify posts the track banner. macOS splits the fields across the banner's
@@ -770,6 +825,12 @@ func (a *App) recordTaste(verdict string) {
 // body. The station closes the line so a banner is never ambiguous after a
 // zap, and the listen link rides along for click-to-open on macOS.
 func (a *App) notify(np metadata.NowPlaying) {
+	if a.popoverShown() {
+		return // the card is up and already shows the track
+	}
+	if a.zapPeeked(np) {
+		return // the zap banner just named it
+	}
 	timeout := a.cfgSnapshot().NotifTimeoutMs
 	body := ""
 	if np.Album != "" {
@@ -793,7 +854,25 @@ func (a *App) notify(np metadata.NowPlaying) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	iconPath := a.notif.FetchCover(ctx, np.CoverURL)
+	if a.carton(popover.Carton{Kind: "track", Title: np.Title, Subtitle: np.Artist, Detail: trackDetail(np), Cover: iconPath}) {
+		return
+	}
 	a.notif.NotifyTrack(np.Title, np.Artist, body, iconPath, np.Link, timeout)
+}
+
+// trackDetail is the carton's third line: album (year) · label.
+func trackDetail(np metadata.NowPlaying) string {
+	d := np.Album
+	if np.Album != "" && np.Year > 0 {
+		d = fmt.Sprintf("%s (%d)", d, np.Year)
+	}
+	if np.Label != "" {
+		if d != "" {
+			d += " · "
+		}
+		d += np.Label
+	}
+	return d
 }
 
 // pushHistoryLocked prepends np to the history ring (caller holds a.mu).
@@ -836,13 +915,12 @@ func (a *App) refreshHistoryMenu() {
 //
 // Invariant (enforced by TestSingleOnClickCallSite): the only onClick loop in
 // this package lives below. Add clickable items via a.on, never onClick.
+//
+// The recording itself lives in recorded (actions.go), shared with App.fire:
+// an action another surface can also trigger (the popover) is registered once
+// in registerActions and its menu item delegates with a.firing(id).
 func (a *App) on(mi *menuItem, kind events.Kind, fn func()) {
-	go a.onClick(mi.ClickedCh, func() {
-		if kind != "" {
-			a.rec.Record(events.Event{Kind: kind, Station: a.currentStation().Key})
-		}
-		fn()
-	})
+	go a.onClick(mi.ClickedCh, a.recorded(kind, fn))
 }
 
 // onClick loops over a menu item's click channel, running fn each time. The
@@ -886,6 +964,7 @@ func (a *App) audible() bool {
 }
 
 func (a *App) setPlayingUI(playing bool) {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	// The single chokepoint for playback state: menu toggle, MPRIS, media keys
 	// and station switches all pass through here, so recording play/pause here
 	// captures every source. Redundant same-state events are deduplicated in
@@ -998,7 +1077,9 @@ func (a *App) toggleAnim() {
 		}
 	} else {
 		a.mAnim.Uncheck()
-		a.anim.stop()
+		if !a.popoverShown() {
+			a.anim.stop() // with the card up the loop keeps feeding its meter
+		}
 		a.applyIconState(!a.player.IsPlaying())
 	}
 	a.rec.Record(events.Event{Kind: events.KindAnim, Value: b2i(on)})
@@ -1026,10 +1107,57 @@ func (a *App) setStation(key string) {
 	// the first track banner of the new station only lands after its metadata
 	// poll, or never during an émission. The banner rides the same
 	// replace-in-place channel, so the arriving track metadata replaces it.
-	if a.cfgSnapshot().Notifications && a.notif != nil {
-		a.notif.Notify(s.Display, "En écoute", "", a.cfgSnapshot().NotifTimeoutMs)
+	if a.cfgSnapshot().Notifications && a.notif != nil && !a.popoverShown() {
+		go a.zapBanner(s)
 	}
 	a.startStation(s, true)
+}
+
+// zapBanner announces a zap. When the peeker already knows the track on air
+// at the destination it names it at once, so the track banner that follows
+// the first poll is not needed (zapPeeked mutes it); otherwise it falls back
+// to "En écoute".
+func (a *App) zapBanner(s stations.Station) {
+	timeout := a.cfgSnapshot().NotifTimeoutMs
+	np, ok := a.meta.Peeked(s.Key)
+	if !ok {
+		c := popover.Carton{Kind: "zap", Title: s.Display, Subtitle: "En écoute", Station: s.Display, Color: s.Color}
+		if !a.carton(c) {
+			a.notif.Notify(s.Display, "En écoute", "", timeout)
+		}
+		return
+	}
+	a.mu.Lock()
+	a.zapPeek = zapPeek{key: s.Key, artist: np.Artist, title: np.Title, at: time.Now()}
+	a.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cover := a.notif.FetchCover(ctx, np.CoverURL)
+	c := popover.Carton{Kind: "zap", Title: np.Title, Subtitle: np.Artist, Detail: trackDetail(np), Cover: cover,
+		Station: s.Display, Color: s.Color}
+	if !a.carton(c) {
+		body := np.Title
+		if np.Artist != "" {
+			body = np.Artist + " · " + np.Title
+		}
+		a.notif.Notify(s.Display, body, "", timeout)
+	}
+}
+
+// zapPeek remembers the track a zap banner already named.
+type zapPeek struct {
+	key, artist, title string
+	at                 time.Time
+}
+
+// zapPeeked reports whether np is the track the last zap banner already
+// announced for the tuned station (within a minute), so it is not announced
+// a second time when the watcher's first poll lands.
+func (a *App) zapPeeked(np metadata.NowPlaying) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	z := a.zapPeek
+	return z.key == a.current.Key && z.artist == np.Artist && z.title == np.Title && time.Since(z.at) < time.Minute
 }
 
 // zapStation switches to the next (dir 1) or previous (dir -1) webradio in
@@ -1213,6 +1341,7 @@ func (a *App) toggleActiveMute() {
 // audible. An unreported level shows as « Volume (appareil) », never as an
 // invented number.
 func (a *App) applyVolumeUI() {
+	defer a.syncPopover() // the popover mirrors this state (no-op without it)
 	// The darwin inline slider mirrors the ACTIVE sink wherever the volume UI
 	// syncs; a no-op seam off darwin (volumeui_other.go). known=false (a cast
 	// device that has not reported a level) grays it out instead of
@@ -1585,15 +1714,26 @@ func (a *App) setAmp(level int) {
 	a.applyAmpUI()
 }
 
-func (a *App) toggleHistFile() {
+// toggleHistory flips the single local-history switch (history.jsonl track
+// log + events.jsonl behaviour log) and starts/stops the recorder at runtime.
+// The histlog appends are synchronous, gated at their call sites on the same
+// config value, so one flip covers both writers. The history_toggle event is
+// recorded while recording is still active on the edge that keeps it (on the
+// way on: after enabling; on the way off: before disabling), so the toggle
+// itself always lands in the log.
+func (a *App) toggleHistory() {
 	a.cfgMu.Lock()
-	a.cfg.HistoryFile = !a.cfg.HistoryFile
-	on := a.cfg.HistoryFile
+	a.cfg.History = !a.cfg.History
+	on := a.cfg.History
 	a.cfgMu.Unlock()
 	if on {
-		a.mHistFile.Check()
+		a.mHistToggle.Check()
+		a.rec.SetEnabled(true)
+		a.rec.Record(events.Event{Kind: events.KindHistoryToggle, Station: a.currentStation().Key, Value: 1})
 	} else {
-		a.mHistFile.Uncheck()
+		a.rec.Record(events.Event{Kind: events.KindHistoryToggle, Station: a.currentStation().Key, Value: 0})
+		a.mHistToggle.Uncheck()
+		a.rec.SetEnabled(false)
 	}
 	a.save()
 }
@@ -2104,44 +2244,58 @@ func (a *App) toggleCastMuted(sess *cast.Session) {
 	a.rec.Record(events.Event{Kind: events.KindMute, Station: a.currentStation().Key, Value: b2i(muted)})
 }
 
-// --- statistics (opt-in listening analytics) ---
-
-// toggleStats flips the opt-in and starts/stops the recorder at runtime. The
-// stats_toggle event is recorded while recording is still active on the edge
-// that keeps it (on the way on: after enabling; on the way off: before
-// disabling), so the toggle itself always lands in the log.
-func (a *App) toggleStats() {
-	a.cfgMu.Lock()
-	a.cfg.Stats = !a.cfg.Stats
-	on := a.cfg.Stats
-	a.cfgMu.Unlock()
-	if on {
-		a.mStats.Check()
-		a.rec.SetEnabled(true)
-		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.currentStation().Key, Value: 1})
-	} else {
-		a.rec.Record(events.Event{Kind: events.KindStatsToggle, Station: a.currentStation().Key, Value: 0})
-		a.mStats.Uncheck()
-		a.rec.SetEnabled(false)
-	}
-	a.save()
-}
+// --- statistics (local listening analytics, one switch in Réglages) ---
 
 // viewStats builds the local report and opens it in the browser. It runs in a
 // goroutine so the tray never blocks on report generation or the short-lived
 // HTTP server. Works whether or not recording is currently enabled, as long as
 // a log exists (you can view, then delete).
-func (a *App) viewStats() {
+func (a *App) viewStats() { a.viewStatsAt("") }
+
+// viewStatsAt is viewStats, opened on an anchor: the onboarding banner lands
+// the reader straight on the privacy section (fin) that names the files.
+func (a *App) viewStatsAt(fragment string) {
 	go func() {
 		html, _, err := stats.Generate(time.Now())
 		if err != nil {
 			log.Printf("ui: stats generate: %v", err)
 			return
 		}
-		if err := stats.ServeAndOpen(html); err != nil {
+		if err := stats.ServeAndOpen(html, fragment); err != nil {
 			log.Printf("ui: stats serve: %v", err)
 		}
 	}()
+}
+
+// onboardHistory shows the one-shot default-on notice. History is on for
+// every install since the single-switch flip; the banner names what is
+// logged, where it lives and how to turn it off, and clicking it opens the
+// report straight on the privacy section. Shown exactly once per install
+// (HistoryOnboarded is set and saved when the banner is posted, not when it
+// is clicked). The banner itself is ambient: no event is recorded for
+// showing it; the click is a KindStatsView like any report opening.
+func (a *App) onboardHistory() {
+	if a.cfgSnapshot().HistoryOnboarded {
+		return
+	}
+	a.cfgMu.Lock()
+	a.cfg.HistoryOnboarded = true
+	a.cfgMu.Unlock()
+	a.save()
+	if a.notif == nil {
+		return
+	}
+	cfg := a.cfgSnapshot()
+	a.notif.NotifyAction(
+		"Historique d'écoute activé",
+		"Titres joués et actions sont notés localement (history.jsonl, events.jsonl). Rien ne quitte la machine. Pour tout effacer ou désactiver : Réglages · Historique d'écoute.",
+		"", cfg.NotifTimeoutMs,
+		"Voir le rapport",
+		func() {
+			a.rec.Record(events.Event{Kind: events.KindStatsView, Station: a.currentStation().Key})
+			a.viewStatsAt("fin")
+		},
+	)
 }
 
 // openDataDir opens the data folder (events.jsonl, history.jsonl) in the file
@@ -2155,49 +2309,71 @@ func (a *App) openDataDir() {
 	open.URL("file://" + dir)
 }
 
-// clearStatsConfirm deletes events.jsonl with a two-click confirmation (a tray
-// menu has no dialog). First click arms and relabels; a second click within a
-// short window deletes. It removes only events.jsonl, never history.jsonl.
-func (a *App) clearStatsConfirm() {
+// clearHistoryConfirm deletes the local listening logs with a two-click
+// confirmation (a tray menu has no dialog). First click arms and relabels; a
+// second click within a short window deletes. One entry covers both files:
+// history.jsonl and events.jsonl share the single History setting, so they
+// share the erase. Nothing is recorded afterwards: a toggle event right after
+// the wipe would resurrect events.jsonl behind a "cleared" notice.
+func (a *App) clearHistoryConfirm() {
 	a.mu.Lock()
-	armed := a.statsClearArmed
-	a.statsClearArmed = !armed // arm on first click, disarm on the confirming click
+	armed := a.histClearArmed
+	a.histClearArmed = !armed // arm on first click, disarm on the confirming click
 	a.mu.Unlock()
 
 	if !armed {
-		a.mStatsClear.SetTitle("Confirmer l'effacement ?")
+		a.mHistClear.SetTitle("Confirmer l'effacement ?")
 		go func() {
 			time.Sleep(5 * time.Second)
 			a.mu.Lock()
-			still := a.statsClearArmed
-			a.statsClearArmed = false
+			still := a.histClearArmed
+			a.histClearArmed = false
 			a.mu.Unlock()
 			if still {
-				a.mStatsClear.SetTitle("Effacer les statistiques…")
+				a.mHistClear.SetTitle("Effacer l'historique…")
 			}
 		}()
 		return
 	}
 
-	a.mStatsClear.SetTitle("Effacer les statistiques…")
-	a.clearStatsData()
+	a.mHistClear.SetTitle("Effacer l'historique…")
+	a.clearHistoryData()
 }
 
-// clearStatsData is the CONFIRMED "Effacer les statistiques" action: it
-// deletes only events.jsonl, never history.jsonl. Called by the
-// menu's two-click confirm.
-func (a *App) clearStatsData() {
+// clearHistoryData is the CONFIRMED "Effacer l'historique" action: it deletes
+// both listening logs, events.jsonl and history.jsonl (prefs.jsonl keeps its
+// own entry and its own consent). Called by the menu's two-click confirm.
+func (a *App) clearHistoryData() {
 	if err := a.rec.Clear(); err != nil {
-		log.Printf("ui: stats clear: %v", err)
+		log.Printf("ui: history clear: %v", err)
+		return
+	}
+	if err := histlog.Clear(a.historyPath()); err != nil {
+		log.Printf("ui: history clear: %v", err)
 		return
 	}
 	if a.notif != nil {
-		a.notif.Notify("Statistiques effacées", "Le journal events.jsonl a été supprimé.", "", a.cfgSnapshot().NotifTimeoutMs)
+		a.notif.Notify("Historique effacé", "Les journaux history.jsonl et events.jsonl ont été supprimés.", "", a.cfgSnapshot().NotifTimeoutMs)
 	}
 }
 
+// historyPath resolves the histlog path once (best-effort), mirroring
+// appendHistFile. On failure it returns the plain default so a clear attempt
+// still tries the standard location.
+func (a *App) historyPath() string {
+	if a.histPath == "" {
+		p, err := histlog.DefaultPath()
+		if err != nil {
+			log.Printf("ui: history file path: %v", err)
+			return ""
+		}
+		a.histPath = p
+	}
+	return a.histPath
+}
+
 // clearPrefsConfirm deletes prefs.jsonl (the taste verdicts) with the same
-// two-click confirmation as clearStatsConfirm: first click arms and relabels, a
+// two-click confirmation as clearHistoryConfirm: first click arms and relabels, a
 // second click within a short window deletes. It removes only prefs.jsonl,
 // never events.jsonl or history.jsonl. The KindPrefsClear behaviour event is
 // recorded at source on the confirming click only (not on the arming click, so

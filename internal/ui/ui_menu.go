@@ -17,7 +17,6 @@ import (
 	"github.com/PLNech/fipindicateur/internal/icon"
 	"github.com/PLNech/fipindicateur/internal/metadata"
 	"github.com/PLNech/fipindicateur/internal/open"
-	"github.com/PLNech/fipindicateur/internal/prefs"
 	"github.com/PLNech/fipindicateur/internal/stations"
 	"github.com/PLNech/fipindicateur/internal/version"
 )
@@ -74,11 +73,12 @@ func (a *App) buildUI() {
 	a.wireTrayScroll()
 	a.wirePanelFlip()
 	a.buildMenu()
+	a.wirePopover() // no-op unless built with the swiftui tag on darwin
 }
 
 func (a *App) buildMenu() {
 	a.mNow = addMenuItem("FIP", "Titre en cours : cliquer pour ouvrir Wikipédia")
-	a.on(a.mNow, events.KindOpenWiki, a.openNow)
+	a.on(a.mNow, "", a.firing(actOpenWiki))
 
 	// The programme (émission) currently on air. Display-only (disabled), hidden
 	// until a show is playing. Shows exist only on the main antenna.
@@ -88,28 +88,29 @@ func (a *App) buildMenu() {
 
 	voir := addMenuItem("Voir…", "Liens pour ce titre")
 	a.mVoirWiki = voir.AddSubMenuItem("Wikipédia (artiste)", "Chercher l'artiste sur fr.wikipedia.org")
-	a.on(a.mVoirWiki, events.KindOpenWiki, a.openNow)
+	a.on(a.mVoirWiki, "", a.firing(actOpenWiki))
 	a.mVoirLink = voir.AddSubMenuItem("Écouter ailleurs (lien FIP)", "Lien musique fourni par Radio France")
 	a.mVoirLink.Disable()
 	a.on(a.mVoirLink, events.KindOpenLink, a.openNowLink)
 
 	// Taste signals: an explicit verdict on the current track. Unlike the events
 	// log, prefs has no opt-in gate: the click itself is the consent (see
-	// internal/prefs). The a.on chokepoint records the behaviour (KindLike/
-	// KindDislike, station only, no track identity); the handler snapshots the
-	// track into prefs.jsonl. Both are no-ops when nothing is playing.
+	// internal/prefs). The registered action records the behaviour (KindLike/
+	// KindDislike, station only, no track identity) and its handler snapshots
+	// the track into prefs.jsonl (actions.go: the popover fires the same two).
+	// Both are no-ops when nothing is playing.
 	a.mLike = addMenuItem("J'aime ce morceau", "Mémoriser que vous aimez ce titre (prefs.jsonl)")
 	a.mLike.Disable() // enabled once a track is known (see onNowPlaying)
-	a.on(a.mLike, events.KindLike, func() { a.recordTaste(prefs.Like) })
+	a.on(a.mLike, "", a.firing(actLike))
 	a.mDislike = addMenuItem("Pas pour moi", "Mémoriser que ce titre n'est pas pour vous (prefs.jsonl)")
 	a.mDislike.Disable()
-	a.on(a.mDislike, events.KindDislike, func() { a.recordTaste(prefs.Dislike) })
+	a.on(a.mDislike, "", a.firing(actDislike))
 
 	addSeparator()
 	a.mPlay = addMenuItem("⏸ Pause", "Lecture / pause")
 	// Play/pause is state-dependent: setPlayingUI records the resulting
 	// play/pause event (so media keys and MPRIS are captured too), hence "".
-	a.on(a.mPlay, "", a.togglePlay)
+	a.on(a.mPlay, "", a.firing(actPlayToggle))
 
 	// Volume submenu. Volume stays measurable through the same setters as
 	// every other entry point, and every item drives the ACTIVE sink: the cast
@@ -117,26 +118,35 @@ func (a *App) buildMenu() {
 	// The submenu's own title says which one it is talking to (applyVolumeUI).
 	a.mVolume = addMenuItem(volumeLabel(a.cfg.Volume), "Volume de lecture")
 	a.mMute = a.mVolume.AddSubMenuItemCheckbox("Muet", "Couper le son", a.cfg.Mute)
-	a.on(a.mMute, "", a.toggleActiveMute) // records the resulting state at source
+	a.on(a.mMute, "", a.firing(actMuteToggle)) // records the resulting state at source
 	a.volMI = map[int]*menuItem{}
-	for _, pct := range volumePresets {
-		it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
-		a.volMI[pct] = it
-		p := pct
-		a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
+	// The card has the fader (and the status item its scroll wheel): in the
+	// card build the preset ladder, the inline slider and the zenity slider
+	// are not built at all. Only Muet stays, hidden with its submenu, so the
+	// mute handler still has a checkbox to tick.
+	if !hasPopover {
+		for _, pct := range volumePresets {
+			it := a.mVolume.AddSubMenuItemCheckbox(fmt.Sprintf("%d %%", pct), "", pct == a.cfg.Volume)
+			a.volMI[pct] = it
+			p := pct
+			a.on(it, "", func() { a.setActiveVolume(p) }) // records the level at source
+		}
 	}
-	// The native slider on macOS (the hand-rolled tray hosts an NSSlider as
-	// this submenu's first entry, above the mute toggle). It writes through
-	// the same chokepoint as the presets below (setActiveVolume, which
-	// records at source, drag ticks coalesced by recordVolume); a no-op
-	// elsewhere (volumeui_other.go).
-	a.addVolumeSlider()
+	// The native slider on macOS (the hand-rolled tray hosts an NSSlider as a
+	// top-level entry, inserted just above this Volume item: one click opens
+	// the menu, one drag sets the level). It writes through the same
+	// chokepoint as the presets below (setActiveVolume, which records at
+	// source, drag ticks coalesced by recordVolume); a no-op elsewhere
+	// (volumeui_other.go).
+	if !hasPopover {
+		a.addVolumeSlider()
+	}
 	// A real slider, when zenity is present. Absent on macOS/Windows and
 	// minimal installs, so the item is only added when the binary exists (no
 	// dead item). The resulting volume change is the measurable action,
 	// recorded once at source on OK inside runVolumeSlider, so this click
 	// carries no Kind.
-	if zenityAvailable() {
+	if !hasPopover && zenityAvailable() {
 		slider := a.mVolume.AddSubMenuItem("Régler au curseur…", "Curseur de volume (zenity)")
 		a.on(slider, "", a.openVolumeSlider)
 	}
@@ -204,14 +214,29 @@ func (a *App) buildMenu() {
 	a.mCalendar.Hide()
 
 	// Réglages
+	// With the card (macOS swiftui build) the settings live on its back: one
+	// item turns it over, and the submenus it replaces are built all the same,
+	// then hidden, so every handler keeps its checkbox to tick.
+	if hasPopover {
+		window := addMenuItem("Réglages…", "Ouvrir les réglages")
+		a.on(window, "", a.firing(actOpenSettings))
+		a.mVolume.Hide() // the card has the fader
+	}
 	settings := addMenuItem("Réglages", "Options")
+	if hasPopover {
+		settings.Hide()
+	}
 	a.mHiFi = settings.AddSubMenuItemCheckbox("Haute qualité (AAC 192k)", "", a.cfg.HiFi)
 	a.on(a.mHiFi, "", a.toggleHiFi)
 	// Fondu enchaîné (crossfade on a live station zap). With zenity a single item
 	// opens a 0..10s slider; without it, a preset-checkbox submenu is the fallback
 	// (macOS / minimal installs). Either way setCrossfade records KindCrossfade at
 	// source, so the a.on click carries no Kind.
-	if zenityAvailable() {
+	if hasPopover {
+		// The card's slider drives it (the crossfade action): the item only
+		// keeps a title for applyCrossfadeUI to write, no ladder, no dialog.
+		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, true), "")
+	} else if zenityAvailable() {
 		a.mCrossfade = settings.AddSubMenuItem(crossfadeTitle(a.cfg.CrossfadeSecs, true), "Durée du fondu entre stations (curseur zenity)")
 		a.on(a.mCrossfade, "", a.openCrossfadeSlider)
 	} else {
@@ -227,13 +252,16 @@ func (a *App) buildMenu() {
 	// Amplification (loudness preamp in the mpv filter chain): the FIP streams
 	// sit ~4.5 dB below streaming-platform loudness (measured -18.5 LUFS vs
 	// ~-14). Radio presets, no slider: the loudness barely varies.
-	a.mAmp = settings.AddSubMenuItem("Amplification", "Amplification du flux (les radios FIP jouent plus discret que les plateformes)")
+	// In the card build the three segments of Réglages replace the ladder.
 	a.ampMI = map[int]*menuItem{}
-	for _, lvl := range ampPresets {
-		it := a.mAmp.AddSubMenuItemCheckbox(ampPresetLabel(lvl), "", lvl == a.cfg.Amp)
-		a.ampMI[lvl] = it
-		l := lvl
-		a.on(it, "", func() { a.setAmp(l) }) // setAmp records KindAmp at source
+	if !hasPopover {
+		a.mAmp = settings.AddSubMenuItem("Amplification", "Amplification du flux (les radios FIP jouent plus discret que les plateformes)")
+		for _, lvl := range ampPresets {
+			it := a.mAmp.AddSubMenuItemCheckbox(ampPresetLabel(lvl), "", lvl == a.cfg.Amp)
+			a.ampMI[lvl] = it
+			l := lvl
+			a.on(it, "", func() { a.setAmp(l) }) // setAmp records KindAmp at source
+		}
 	}
 	a.mNotif = settings.AddSubMenuItemCheckbox("Notifications", "", a.cfg.Notifications)
 	a.on(a.mNotif, "", a.toggleNotif)
@@ -252,8 +280,11 @@ func (a *App) buildMenu() {
 	// antenna silently, and you press play when you want sound.
 	a.mPlayOnStart = settings.AddSubMenuItemCheckbox("Lecture au lancement", "Démarrer la lecture au lancement (sinon l'antenne est en pause)", a.cfg.PlayOnStart)
 	a.on(a.mPlayOnStart, "", a.togglePlayOnStart)
-	a.mHistFile = settings.AddSubMenuItemCheckbox("Historique local (fichier)", "Journal des titres dans ~/.local/share/fipindicateur/history.jsonl", a.cfg.HistoryFile)
-	a.on(a.mHistFile, "", a.toggleHistFile)
+	// Historique d'écoute: the single local switch. One checkbox gates both
+	// files, history.jsonl (titres) and events.jsonl (comportement); the
+	// Statistiques submenu below covers see / locate / erase.
+	a.mHistToggle = settings.AddSubMenuItemCheckbox("Historique d'écoute (local)", "Journal local : titres joués et actions (history.jsonl, events.jsonl). Rien ne quitte la machine", a.cfg.History)
+	a.on(a.mHistToggle, "", a.toggleHistory)
 	a.mAnim = settings.AddSubMenuItemCheckbox("Icône animée", "Barres qui suivent le niveau audio", a.cfg.AnimatedIcon)
 	a.on(a.mAnim, "", a.toggleAnim)
 
@@ -285,17 +316,15 @@ func (a *App) buildMenu() {
 		a.on(it, events.KindAudioDevice, func() { a.setAudioDevice("auto") })
 	}
 
-	// Statistiques d'écoute: opt-in (default off), local-only. The toggle
-	// gates the recorder; the submenu lets you see, locate and delete the data.
-	a.mStats = settings.AddSubMenuItemCheckbox("Statistiques d'écoute (local)", "Journal d'actions local pour vos statistiques (events.jsonl)", a.cfg.Stats)
-	a.on(a.mStats, "", a.toggleStats)
+	// Statistiques d'écoute: local-only, default on via the single Historique
+	// toggle above. The submenu lets you see, locate and delete the data.
 	statsMenu := settings.AddSubMenuItem("Statistiques", "Voir et gérer vos statistiques d'écoute")
 	mStatsView := statsMenu.AddSubMenuItem("Voir le rapport", "Ouvrir le rapport d'écoute dans le navigateur")
-	a.on(mStatsView, events.KindStatsView, a.viewStats)
+	a.on(mStatsView, "", a.firing(actStatsView))
 	mStatsFolder := statsMenu.AddSubMenuItem("Ouvrir le dossier de données", "Dossier ~/.local/share/fipindicateur")
 	a.on(mStatsFolder, "", a.openDataDir)
-	a.mStatsClear = statsMenu.AddSubMenuItem("Effacer les statistiques…", "Supprimer events.jsonl (l'historique des titres n'est pas touché)")
-	a.on(a.mStatsClear, "", a.clearStatsConfirm)
+	a.mHistClear = statsMenu.AddSubMenuItem("Effacer l'historique…", "Supprimer history.jsonl et events.jsonl (vos goûts ne sont pas touchés)")
+	a.on(a.mHistClear, "", a.clearHistoryConfirm)
 	// Taste verdicts (J'aime / Pas pour moi) persist to a separate file,
 	// prefs.jsonl, with its own consent. It gets its own delete affordance so
 	// the "see / edit / delete" promise covers every local log.
@@ -310,6 +339,9 @@ func (a *App) buildMenu() {
 	// Mises à jour: "Vérifier maintenant" is the on-demand check; the checkbox
 	// is the opt-in startup check. Both off + never clicking = never checks.
 	maj := addMenuItem("Mises à jour", "Vérifier les nouvelles versions")
+	if hasPopover {
+		maj.Hide()
+	}
 	checkNow := maj.AddSubMenuItem("Vérifier maintenant", "Comparer avec la dernière release sur GitHub")
 	a.on(checkNow, events.KindUpdateCheck, a.checkUpdates)
 	a.mUpdateStartup = maj.AddSubMenuItemCheckbox("Vérifier au démarrage", "Un contrôle discret au lancement (sinon jamais)", a.cfg.UpdateStartup)

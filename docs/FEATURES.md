@@ -114,10 +114,10 @@ written until you enable them, nothing leaves your machine, ever. See the
 Every webradio wears its own official color, lifted straight from
 radiofrance.fr. The tray VU glyph is inked in whatever station you're on, and
 when you zap it crossfades to the next color over 10 seconds (6 fps, smoothstep
-easing, quantized to 16 steps so the icon cache stays tiny). Each hue is nudged
-just enough to stay legible on your panel (3:1 contrast, hue kept), and the same
-palette is reused verbatim by the local stats report's per-station bars, so one
-set of colors runs from tray to report.
+easing, quantized to 16 steps so the icon cache stays tiny). Each hue keeps its
+full saturation; only the lightness is nudged until the ink clears 3:1 contrast
+on your panel. A phantom outline frames the glyph: black under a colored ink, the
+tuned white under the neutral pause glyph.
 
 ![Le glyphe passe de Rock à Jazz en fondu](tint-transition.gif)
 

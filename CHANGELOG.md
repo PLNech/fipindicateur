@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## v0.9.0 · 2026-11-14 · La carte d'antenne (macOS)
+
+### Added
+- Un zap annonce tout de suite le morceau en cours à la station d'arrivée
+  (titre, artiste, pochette) au lieu de « En écoute » puis du titre une
+  interrogation plus tard : l'appli suit désormais en tâche de fond ce qui
+  passe sur chaque station, avec la même source publique et le même rythme que
+  la station écoutée, sans rien envoyer sur toi. Inconnu, on retombe sur
+  « En écoute ».
+- macOS, expérimental (`make swiftui`, macOS 14+) : un clic gauche sur
+  l'icône ouvre une carte SwiftUI en haut à droite de l'écran, sous la barre
+  de menus : pochette, lecture, un cœur (J'aime) et un cœur brisé (Pas pour
+  moi) qui restent allumés sur le morceau jugé, le second dans une version
+  désaturée de la couleur de la station, volume avec le vumètre à quatre barres de l'icône (les
+  mêmes images, calculées une fois), et un cadran des stations qu'on fait
+  glisser ou qu'on lance. Elle se referme au clic ailleurs ou avec Échap, et
+  tant qu'elle est ouverte les bannières qui la répéteraient sont omises. Le
+  menu passe au clic droit et se réduit à une liste courte : les réglages
+  sont au dos de la carte, qui se retourne sur place (Réglages… ou la roue
+  dentée) : deux pages, Écoute et Appli. La carte est liée dans le même
+  binaire, sans second processus, et chacun de ses contrôles passe par le
+  registre d'actions qui alimente déjà le menu : rien n'échappe à la mesure.
+  Au clavier, carte ouverte : espace lecture/pause, ←/→ station voisine,
+  ↑/↓ volume, M muet, ⌘, réglages ; Échap revient de Réglages puis ferme.
+  Laissée seule 8 s (hors survol), elle se range : ouverte, elle fait taire
+  toutes les bannières. Celles-ci deviennent des cartons d'antenne (morceau,
+  émission, zap, verdict) : une petite carte de la même famille sous la barre
+  de menus, 5 s, la pochette ou une tuile à la couleur de la station, un filet
+  qui se vide ; elle ne prend jamais le clavier ni le pointeur et cède la
+  place à la carte. À savoir : ce n'est plus une notification système, donc
+  « Ne pas déranger » ne la masque pas. Dans cette construction, le menu
+  n'embarque plus les échelles de préréglages (volume, fondu, amplification)
+  ni le curseur de volume du menu : la carte les remplace.
+  La construction par défaut ne change pas et n'a pas besoin de Swift
+
 ### Fixed
 - Un flux qui meurt (relais icecast, réseau) ne laisse plus l'app dans un état
   zombie : l'icône animée se figeait sur ses tigettes, le menu gardait
@@ -27,6 +62,27 @@
   tray plus de deux secondes
 
 ### Changed
+- L'historique d'écoute passe en activé par défaut, avec un seul réglage : la
+  case « Historique d'écoute (local) » des Réglages pilote d'un coup les deux
+  journaux locaux, `history.jsonl` (les titres) et `events.jsonl` (les
+  actions). Les deux vivent sur la machine, rien ne quitte jamais le réseau ;
+  le rapport est là quand on le cherche, au lieu d'attendre un opt-in que
+  personne ne trouvait. L'ancienne paire (history_file, stats) part avec le
+  prochain enregistrement de la configuration. Un message unique annonce le
+  changement à la première relance : son clic ouvre le rapport directement sur
+  la rubrique confidentialité. « Effacer l'historique… » couvre les deux
+  fichiers d'une seule confirmation ; « Effacer mes goûts… » garde son entrée
+  et son consentement propres. Qui préfère le silence décoche la case, et les
+  journaux s'arrêtent net
+- Les couleurs de station sur le tray ne se délavent plus. L'encre garde
+  désormais la saturation maximale de sa teinte (le teal Jazz passe de
+  S=0,76 terne à un teal franc, le hip-hop d'un gris-mauve S=0,15 à un
+  violet assumé) et seule la luminosité bouge, juste assez pour tenir le
+  contraste 3:1 sur le panel. L'ancien mélange vers le blanc atteignait le
+  même ratio en transformant les marques en pastels
+- Le liseré fantôme autour du glyphe devient noir sous une encre colorée (il
+  creuse le fond au lieu de l'éclaircir, et la couleur paraît plus dense) ;
+  le liseré blanc accordé aux encres neutres ne bouge pas
 - La configuration et la station courante se lisent et s'écrivent sous
   verrou : l'écho de volume de mpv, les polls de métadonnées, l'animateur et
   les clics du tray se marchaient dessus sans le savoir (les tests passent

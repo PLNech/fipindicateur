@@ -87,3 +87,23 @@ func TestRenderBarsThemeSplit(t *testing.T) {
 		t.Error("the light-panel render must carry the dark theme ink")
 	}
 }
+
+// TestHaloInk pins the outline choice: the neutral theme inks (playing and
+// dimmed) keep the tuned white rim, a saturated brand ink gets the black
+// keyline.
+func TestHaloInk(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		neutral := ThemeInk(dark)
+		if got := haloInk(neutral); got != haloWhite {
+			t.Errorf("haloInk(theme ink dark=%v) is not white", dark)
+		}
+		dim := neutral
+		dim.A = restDimAlpha
+		if got := haloInk(dim); got != haloWhite {
+			t.Errorf("haloInk(dimmed theme ink dark=%v) is not white", dark)
+		}
+	}
+	if got := haloInk(Legible("#13898d", true)); got != haloBlack {
+		t.Error("haloInk(colored brand ink) is not black")
+	}
+}

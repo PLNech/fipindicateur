@@ -10,10 +10,12 @@ import (
 
 // Station brand tinting for the animated VU glyph. Brand hues are not a tuned
 // palette: some melt into the panel surface (gold on a light bar, navy on a
-// dark one). Legible keeps the hue but mixes it toward white or black just
-// until the ink clears 3:1 non-text contrast against the assumed panel
-// surface. This mirrors legible() in internal/stats/report.html.tmpl (8% mix
-// steps, at most 12 iterations, so the mixing tops out near 60%).
+// dark one). Legible keeps the hue at full HSL saturation (the brand colors
+// are timid: jazz's teal is S=0.76 out of the box) and moves only the
+// lightness, up on a dark panel and down on a light one, just until the ink
+// clears 3:1 non-text contrast against the assumed panel surface. The old
+// toward-white/toward-black RGB mixing reached the same ratio but bled the
+// color out: hip-hop landed at S=0.15 gray-mauve on a dark bar.
 
 // Assumed panel surfaces. GNOME's default top bar is near-black; a light theme
 // gives a near-white bar. We cannot read the exact pixel, so we tune against
@@ -101,21 +103,120 @@ func mix(a, b color.NRGBA, t float64) color.NRGBA {
 	}
 }
 
-// Legible returns the brand color mixed toward white (dark panel) or black
-// (light panel) in 8% steps until it clears 3:1 contrast against the assumed
-// panel surface, capped at 12 iterations (so the mixing tops out near 60%).
+// hslOf converts an NRGBA to HSL (h in degrees, s and l in 0..1).
+func hslOf(c color.NRGBA) (h, s, l float64) {
+	r, g, b := float64(c.R)/255, float64(c.G)/255, float64(c.B)/255
+	max, min := r, r
+	for _, v := range []float64{g, b} {
+		if v > max {
+			max = v
+		}
+		if v < min {
+			min = v
+		}
+	}
+	l = (max + min) / 2
+	if max == min {
+		return 0, 0, l
+	}
+	d := max - min
+	if l > 0.5 {
+		s = d / (2 - max - min)
+	} else {
+		s = d / (max + min)
+	}
+	switch max {
+	case r:
+		h = (g - b) / d
+		if g < b {
+			h += 6
+		}
+		h *= 60
+	case g:
+		h = (b-r)/d*60 + 120
+	default:
+		h = (r-g)/d*60 + 240
+	}
+	return h, s, l
+}
+
+// hslColorOf converts HSL back to an opaque NRGBA.
+func hslColorOf(h, s, l float64) color.NRGBA {
+	if s <= 0 {
+		v := uint8(math.Round(l * 255))
+		return color.NRGBA{v, v, v, 0xFF}
+	}
+	var q float64
+	if l < 0.5 {
+		q = l * (1 + s)
+	} else {
+		q = l + s - l*s
+	}
+	p := 2*l - q
+	chanAt := func(t float64) float64 {
+		if t < 0 {
+			t++
+		}
+		if t > 1 {
+			t--
+		}
+		switch {
+		case t < 1.0/6:
+			return p + (q-p)*6*t
+		case t < 0.5:
+			return q
+		case t < 2.0/3:
+			return p + (q-p)*(2.0/3-t)*6
+		default:
+			return p
+		}
+	}
+	hk := h / 360
+	to8 := func(v float64) uint8 { return uint8(math.Round(v * 255)) }
+	return color.NRGBA{
+		R: to8(chanAt(hk + 1.0/3)),
+		G: to8(chanAt(hk)),
+		B: to8(chanAt(hk - 1.0/3)),
+		A: 0xFF,
+	}
+}
+
+// Legible returns the station ink for the assumed panel surface: the brand
+// hue at full HSL saturation, with the lightness walked up (dark panel) or
+// down (light panel) just until the ink clears 3:1 contrast. Lightness moves
+// are monotone in luminance at fixed hue and saturation, so a bounded linear
+// walk cannot overshoot the ratio and come back. Achromatic input keeps its
+// (hueless) gray: there is no saturation to boost.
 func Legible(hex string, darkPanel bool) color.NRGBA {
 	surface := panelSurfaceLight
-	toward := color.NRGBA{0x00, 0x00, 0x00, 0xFF}
 	if darkPanel {
 		surface = panelSurfaceDark
-		toward = color.NRGBA{0xFF, 0xFF, 0xFF, 0xFF}
 	}
-	c := ParseHex(hex)
-	for i := 0; i < 12 && contrastRatio(c, surface) < 3; i++ {
-		c = mix(c, toward, 0.08)
+	h, s, l := hslOf(ParseHex(hex))
+	if s >= 0.02 {
+		s = 1 // the whole point: full-strength hue, never a pastel
+	}
+	step := 0.01
+	if !darkPanel {
+		step = -0.01
+	}
+	c := hslColorOf(h, s, l)
+	for i := 0; i < 100 && contrastRatio(c, surface) < 3; i++ {
+		l += step
+		if l < 0 || l > 1 {
+			break // white or black necessarily clears; the guard is paranoia
+		}
+		c = hslColorOf(h, s, l)
 	}
 	return c
+}
+
+// inkIsColored reports whether an ink is a saturated brand color rather than
+// the neutral theme ink (or its dimmed pause variant). The halo branches on
+// it: see haloInk.
+func inkIsColored(c color.NRGBA) bool {
+	_, s, _ := hslOf(c)
+	return s >= 0.3
 }
 
 // Lerp linearly interpolates between two colors, t clamped to 0..1.

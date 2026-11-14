@@ -13,6 +13,7 @@ type Actions struct {
 	Dislike func()
 	Open    func(link string)
 	Denied  func()
+	Default func()
 }
 
 // Notifier is a no-op notifier.
@@ -23,6 +24,9 @@ func New(Actions) *Notifier { return &Notifier{} }
 
 // Notify is a no-op.
 func (*Notifier) Notify(string, string, string, int) {}
+
+// NotifyAction is a no-op.
+func (*Notifier) NotifyAction(string, string, string, int, string, func()) {}
 
 // NotifyTrack is a no-op.
 func (*Notifier) NotifyTrack(string, string, string, string, string, int) {}

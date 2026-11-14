@@ -88,6 +88,41 @@ func TestLoadCorruptYieldsDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadMigratesHistoryDefaultOn: a config.json written before the single
+// history switch carries the retired opt-in pair (history_file, stats), off in
+// the default case. Load must not fail on them and must land the install on
+// the new default (History on): the 2026-11 flip is deliberate, the banner
+// announces it. The next Save drops the dead keys like any retired setting.
+func TestLoadMigratesHistoryDefaultOn(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	writeRaw(t, dir, `{"station":"jazz","volume":34,"history_file":false,"stats":false}`)
+
+	got := Load()
+	want := Default()
+	want.Station = "jazz"
+	want.Volume = 34
+	if got != want {
+		t.Fatalf("migrated config did not land on the new default:\n got  %+v\n want %+v", got, want)
+	}
+	if !got.History {
+		t.Fatalf("History did not default on after migration: %+v", got)
+	}
+
+	if err := got.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, "fipindicateur", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dead := range []string{"history_file", `"stats"`} {
+		if strings.Contains(string(saved), dead) {
+			t.Errorf("Save re-wrote the retired key %s", dead)
+		}
+	}
+}
+
 func writeRaw(t *testing.T, xdg, body string) {
 	t.Helper()
 	d := filepath.Join(xdg, "fipindicateur")
