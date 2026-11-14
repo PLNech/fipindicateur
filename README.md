@@ -44,6 +44,41 @@ fipindicateur stats                   # open your listening report (after opting
 fip status                            # drive the running app from a terminal (fip pause, fip station jazz)
 ```
 
+## The macOS card (experimental)
+
+On macOS 14+, `make swiftui` builds an opt-in variant where a **left click on
+the tray icon opens a card** under the menu bar instead of the menu (the menu
+moves to right click). Same binary, no second process, and every control goes
+through the same action registry as the menu, so nothing escapes the local,
+measurable-by-design event log.
+
+![La carte, de nuit](docs/macos-card-nuit.png)
+![La carte sur papier](docs/macos-card-papier.png)
+
+The card holds the sleeve, play / pause, a heart (**J'aime**) and a broken
+heart (**Pas pour moi**) that stay lit on the judged track, the volume with
+the icon's four-bar meter, and a dial of the stations you drag or tap. The
+gear flips the card over to the settings, in place.
+
+![Les réglages, au dos de la carte](docs/macos-reglages-nuit.png)
+
+With the card open: <kbd>Space</kbd> play / pause, <kbd>←</kbd> <kbd>→</kbd>
+neighbouring station, <kbd>↑</kbd> <kbd>↓</kbd> volume, <kbd>M</kbd> mute,
+<kbd>⌘,</kbd> settings, <kbd>Esc</kbd> back then close. Left alone for 8 s it
+tucks itself away.
+
+Notifications become **cartons d'antenne**: a small sibling of the card (track,
+émission, zap, verdict) that fades by itself, never takes the keyboard or the
+pointer, and gives way to the card. Zapping announces the track already on air
+at the destination: a background watcher follows every station with the same
+public source and rhythm as the one you listen to, and sends nothing about you.
+Being no system notification, it ignores Do Not Disturb.
+
+![Un carton d'antenne](docs/macos-carton-nuit.png)
+
+> Screens are rendered offscreen with the project's own test
+> (`FIPUI_RENDER_DIR=… make swiftui-test`), on fixture data.
+
 ## The report
 
 <a name="privacy"></a>
