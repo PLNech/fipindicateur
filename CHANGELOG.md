@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.9.0 · 2026-11-14 · La carte d'antenne (macOS)
+
 ### Added
 - Un zap annonce tout de suite le morceau en cours à la station d'arrivée
   (titre, artiste, pochette) au lieu de « En écoute » puis du titre une
@@ -11,8 +13,9 @@
   « En écoute ».
 - macOS, expérimental (`make swiftui`, macOS 14+) : un clic gauche sur
   l'icône ouvre une carte SwiftUI en haut à droite de l'écran, sous la barre
-  de menus : pochette, lecture, J'aime / Pas pour moi qui restent allumés sur
-  le morceau jugé, volume avec le vumètre à quatre barres de l'icône (les
+  de menus : pochette, lecture, un cœur (J'aime) et un cœur brisé (Pas pour
+  moi) qui restent allumés sur le morceau jugé, le second dans une version
+  désaturée de la couleur de la station, volume avec le vumètre à quatre barres de l'icône (les
   mêmes images, calculées une fois), et un cadran des stations qu'on fait
   glisser ou qu'on lance. Elle se referme au clic ailleurs ou avec Échap, et
   tant qu'elle est ouverte les bannières qui la répéteraient sont omises. Le
