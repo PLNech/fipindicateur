@@ -56,14 +56,21 @@ func TestRenderCard(t *testing.T) {
 	for _, r := range []struct {
 		view, name string
 		dark       bool
+		verdict    int
 	}{
-		{"card", "card-nuit.png", true}, {"card", "card-papier.png", false},
-		{"settings", "reglages-nuit.png", true}, {"settings", "reglages-papier.png", false},
-		{"settings-appli", "reglages-appli-nuit.png", true},
-		{"carton", "carton-nuit.png", true}, {"carton", "carton-papier.png", false},
-		{"carton-zap", "carton-zap-nuit.png", true}, {"carton-up", "carton-up-papier.png", false},
+		{"card", "card-nuit.png", true, 0}, {"card", "card-papier.png", false, 0},
+		{"card", "card-pasmoi-nuit.png", true, -1},
+		{"settings", "reglages-nuit.png", true, 0}, {"settings", "reglages-papier.png", false, 0},
+		{"settings-appli", "reglages-appli-nuit.png", true, 0},
+		{"carton", "carton-nuit.png", true, 0}, {"carton", "carton-papier.png", false, 0},
+		{"carton-zap", "carton-zap-nuit.png", true, 0}, {"carton-up", "carton-up-papier.png", false, 0},
+		{"carton-down", "carton-down-nuit.png", true, 0},
 	} {
 		name, dark, view := r.name, r.dark, r.view
+		snap := snap
+		if r.verdict != 0 {
+			snap.Verdict = r.verdict
+		}
 		path := filepath.Join(dir, name)
 		ok := make(chan bool, 1)
 		onMain <- func() { ok <- fipui.DebugRender(view, path, snap.JSON(), dark) }

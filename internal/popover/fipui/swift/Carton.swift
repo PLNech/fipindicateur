@@ -106,11 +106,9 @@ struct CartonView: View {
                 accent.opacity(0.22)
                 switch model.c.kind {
                 case "verdict-up":
-                    Wave(rising: true).stroke(accent, style: .init(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                        .frame(width: 30, height: 20)
+                    Heart().fill(accent).frame(width: 28, height: 25)
                 case "verdict-down":
-                    Wave(rising: false).stroke(t.amber, style: .init(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                        .frame(width: 30, height: 20)
+                    Heart(broken: true).fill(accent.desaturated()).frame(width: 28, height: 25)
                 case "show":
                     Image(systemName: "mic.fill").font(.system(size: 20, weight: .semibold)).foregroundStyle(accent)
                 default:

@@ -61,19 +61,56 @@ struct Theme {
 // MARK: - Drawn glyphs (no emoji, no stock icons for the signature controls)
 
 /// A wave whose amplitude rises (j'aime) or falls (pas pour moi).
-struct Wave: Shape {
-    var rising: Bool
+/// The verdict glyphs: a heart, and the same heart split along a zigzag crack
+/// with its halves nudged apart. Filled when lit, outlined when not.
+struct Heart: Shape {
+    var broken = false
+
+    private func pt(_ r: CGRect, _ x: Double, _ y: Double) -> CGPoint {
+        CGPoint(x: r.minX + x * r.width, y: r.minY + y * r.height)
+    }
+
     func path(in r: CGRect) -> Path {
-        var p = Path()
-        let steps = 48
-        for i in 0...steps {
-            let t = Double(i) / Double(steps)
-            let amp = (rising ? t : 1 - t) * 0.42 + 0.06
-            let y = r.midY - sin(t * .pi * 5) * amp * r.height
-            let pt = CGPoint(x: r.minX + t * r.width, y: y)
-            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        let crack = [(0.5, 0.24), (0.41, 0.44), (0.58, 0.60), (0.45, 0.78), (0.5, 1.0)]
+        let left = { (p: inout Path) in
+            p.move(to: pt(r, 0.5, 1.0))
+            p.addCurve(to: pt(r, 0.0, 0.33), control1: pt(r, 0.30, 0.84), control2: pt(r, 0.0, 0.62))
+            p.addCurve(to: pt(r, 0.5, 0.24), control1: pt(r, 0.0, 0.08), control2: pt(r, 0.40, 0.0))
         }
-        return p
+        let right = { (p: inout Path) in
+            p.addCurve(to: pt(r, 1.0, 0.33), control1: pt(r, 0.60, 0.0), control2: pt(r, 1.0, 0.08))
+            p.addCurve(to: pt(r, 0.5, 1.0), control1: pt(r, 1.0, 0.62), control2: pt(r, 0.70, 0.84))
+        }
+        if !broken {
+            var p = Path()
+            left(&p); right(&p); p.closeSubpath()
+            return p
+        }
+        let gap = r.width * 0.05
+        var l = Path()
+        left(&l)
+        for c in crack.dropFirst() { l.addLine(to: pt(r, c.0, c.1)) }
+        l.closeSubpath()
+        var rt = Path()
+        rt.move(to: pt(r, 0.5, 0.24))
+        right(&rt)
+        for c in crack.dropLast().reversed() { rt.addLine(to: pt(r, c.0, c.1)) }
+        rt.closeSubpath()
+        var out = Path()
+        out.addPath(l, transform: .init(translationX: -gap, y: 0))
+        out.addPath(rt, transform: .init(translationX: gap, y: 0))
+        return out
+    }
+}
+
+extension Color {
+    /// The same hue with most of its colour drained: the "no" that stays in
+    /// the station's family without shouting.
+    func desaturated(_ keep: Double = 0.3) -> Color {
+        guard let c = NSColor(self).usingColorSpace(.sRGB) else { return self }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: h, saturation: s * keep, brightness: b, opacity: a)
     }
 }
 
@@ -278,7 +315,7 @@ private struct Transport: View {
             .keyboardShortcut(.space, modifiers: [])
             .help(s.playing ? "Pause" : "Lecture")
             Spacer()
-            verdict(rising: false, on: s.verdict < 0, tint: t.amber, help: "Pas pour moi", .dislike)
+            verdict(rising: false, on: s.verdict < 0, tint: accent.desaturated(), help: "Pas pour moi", .dislike)
             verdict(rising: true, on: s.verdict > 0, tint: accent, help: "J'aime ce morceau", .like)
         }
     }
@@ -286,12 +323,17 @@ private struct Transport: View {
     private func verdict(rising: Bool, on: Bool, tint: Color, help: String, _ action: Action) -> some View {
         let judgeable = !model.s.title.isEmpty || !model.s.artist.isEmpty
         return Button { model.send(action) } label: {
-            Wave(rising: rising)
-                .stroke(on ? tint : t.muted, style: .init(lineWidth: on ? 2.4 : 1.5, lineCap: .round, lineJoin: .round))
-                .frame(width: 26, height: 18)
-                .padding(.horizontal, 8).padding(.vertical, 7)
-                .background(on ? tint.opacity(0.18) : t.surface, in: RoundedRectangle(cornerRadius: 8))
-                .animation(.snappy(duration: 0.2), value: on)
+            ZStack {
+                if on {
+                    Heart(broken: !rising).fill(tint)
+                } else {
+                    Heart(broken: !rising).stroke(t.muted, style: .init(lineWidth: 1.5, lineJoin: .round))
+                }
+            }
+            .frame(width: 22, height: 20)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(on ? tint.opacity(0.18) : t.surface, in: RoundedRectangle(cornerRadius: 8))
+            .animation(.snappy(duration: 0.2), value: on)
         }
         .buttonStyle(PressStyle())
         .disabled(!judgeable)

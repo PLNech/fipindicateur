@@ -363,7 +363,7 @@ public func fipuiDebugRender(_ view: UnsafePointer<CChar>, _ path: UnsafePointer
     model.settingsPage = which == "settings-appli" ? 1 : 0
     let cartonModel = CartonModel()
     cartonModel.apply(Carton(
-        kind: which == "carton-zap" ? "zap" : which == "carton-up" ? "verdict-up" : "track",
+        kind: which == "carton-zap" ? "zap" : which == "carton-up" ? "verdict-up" : which == "carton-down" ? "verdict-down" : "track",
         title: which == "carton" ? snap.title : snap.current.name,
         subtitle: which == "carton" ? snap.artist : "En écoute",
         detail: which == "carton" ? "\(snap.album) (\(snap.year)) · \(snap.label)" : "",
